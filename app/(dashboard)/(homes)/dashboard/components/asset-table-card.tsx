@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -10,8 +11,13 @@ import LoadingSkeleton from "@/components/loading-skeleton"
 import Link from "next/link"
 
 export default function AssetTableCard() {
+  const router = useRouter()
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
+
+  const handleAssetClick = (assetId: string | number) => {
+    router.push(`/asset/view/${assetId}`)
+  }
 
   useEffect(() => {
     loadAssets()
@@ -85,7 +91,11 @@ export default function AssetTableCard() {
                     const unitCount = getUnitCount(asset)
                     
                     return (
-                      <TableRow key={asset.id}>
+                      <TableRow 
+                        key={asset.id}
+                        className="cursor-pointer hover:bg-gray-50 transition-colors"
+                        onClick={() => handleAssetClick(asset.id)}
+                      >
                         <TableCell className="font-medium text-sm text-gray-900 max-w-[150px]">
                           <Tooltip>
                             <TooltipTrigger asChild>

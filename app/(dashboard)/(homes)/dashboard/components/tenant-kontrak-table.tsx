@@ -7,6 +7,7 @@ import Link from "next/link"
 import { DashboardExpiringTenant, Tenant, TenantPaymentLog } from "@/lib/api"
 import { tenantsApi } from "@/lib/api"
 import { useEffect, useState } from "react"
+import TenantDetailDialog from "@/components/dialogs/tenant-detail-dialog"
 
 interface TenantWithPayment extends Tenant {
   deadlineDate?: string
@@ -17,6 +18,8 @@ interface TenantWithPayment extends Tenant {
 export default function TenantKontrakTable() {
   const [tenants, setTenants] = useState<TenantWithPayment[]>([])
   const [loading, setLoading] = useState(true)
+  const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
 
   useEffect(() => {
     loadTenants()
@@ -233,7 +236,14 @@ export default function TenantKontrakTable() {
               </TableHeader>
               <TableBody>
                 {tenants.map((tenant) => (
-                  <TableRow key={tenant.id}>
+                  <TableRow 
+                    key={tenant.id}
+                    className="cursor-pointer hover:bg-gray-50 transition-colors"
+                    onClick={() => {
+                      setSelectedTenant(tenant)
+                      setDialogOpen(true)
+                    }}
+                  >
                     <TableCell className="font-medium text-sm text-gray-900 max-w-xs whitespace-normal break-words">
                       {getTenantUnitName(tenant)}
                     </TableCell>
@@ -267,6 +277,13 @@ export default function TenantKontrakTable() {
           </div>
         )}
       </CardContent>
+
+      {/* Tenant Detail Dialog */}
+      <TenantDetailDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        tenant={selectedTenant}
+      />
     </Card>
   )
 }

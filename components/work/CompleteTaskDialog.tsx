@@ -39,7 +39,9 @@ export function CompleteTaskDialog({
   const [qrLocation, setQrLocation] = useState<{ latitude: number; longitude: number } | null>(null)
   const [isLocationValid, setIsLocationValid] = useState<boolean | null>(null)
   const [isCheckingLocation, setIsCheckingLocation] = useState(false)
-  const [radiusDistance, setRadiusDistance] = useState<number>(20000) // Default 20000 meters
+  const [isScanCodeValid, setIsScanCodeValid] = useState<boolean | null>(null)
+  const [scannedCode, setScannedCode] = useState<string | null>(null)
+  const [radiusDistance, setRadiusDistance] = useState<number>(5) // Default 20000 meters
 
   const task = userTask?.task
   const userRoleName = userTask?.user?.role?.name?.toLowerCase()
@@ -50,14 +52,28 @@ export function CompleteTaskDialog({
       try {
         const response = await settingsApi.getSettingByKey('task_radius_distance')
         if (response.success && response.data) {
-          const value = parseFloat(response.data.value)
-          if (!isNaN(value) && value > 0) {
-            setRadiusDistance(value)
+          // Handle different response structures
+          const settingData = response.data as any
+          // Get value from setting object - could be direct or nested
+          const settingValue = settingData.value || (settingData.data && settingData.data.value)
+          
+          if (settingValue) {
+            const value = parseFloat(settingValue)
+            if (!isNaN(value) && value > 0) {
+              console.log('Loaded task radius distance from settings:', value)
+              setRadiusDistance(value)
+            } else {
+              console.warn('Invalid task radius distance value from settings:', settingValue)
+            }
+          } else {
+            console.warn('No value found in task radius distance setting')
           }
+        } else {
+          console.warn('Failed to load task radius distance setting:', response.error || response.message)
         }
       } catch (error) {
         console.error('Error loading task radius distance:', error)
-        // Keep default value on error
+        // Keep default value (20000 meters) on error
       }
     }
     loadRadiusDistance()
@@ -604,14 +620,48 @@ export function CompleteTaskDialog({
           
           // Parse QR code data
           let qrData: { code?: string; latitude?: number; longitude?: number } = {}
+          let scannedCodeValue: string = ''
           try {
             qrData = JSON.parse(decodedText)
             console.log('[SCAN] Parsed QR data:', qrData)
+            // Extract scan code from QR data
+            scannedCodeValue = qrData.code || decodedText
           } catch (e) {
             console.error('[SCAN] Failed to parse QR code as JSON:', e)
             // If not JSON, just use the text as scan code
+            scannedCodeValue = decodedText
             qrData = { code: decodedText }
           }
+
+          // Validate scan code matches task scan code
+          const taskScanCode = task?.scan_code?.trim()
+          const isValidScanCode = taskScanCode && scannedCodeValue.trim() === taskScanCode
+          
+          console.log('[SCAN] Scan code validation:', {
+            scannedCode: scannedCodeValue,
+            taskScanCode: taskScanCode,
+            isValid: isValidScanCode
+          })
+
+          if (!isValidScanCode) {
+            // Scan code doesn't match
+            scanStatus.textContent = 'QR Code tidak sesuai dengan task ini!'
+            scanStatus.className = 'text-sm text-center text-red-600 mb-4 font-medium'
+            setIsScanCodeValid(false)
+            setScannedCode(scannedCodeValue)
+            toast.error(`QR Code tidak sesuai! Task ini memerlukan scan code: ${taskScanCode || 'tidak ada'}`)
+            
+            // Stop scanner and close modal
+            await safeStopScanner()
+            if (document.body.contains(modal)) {
+              document.body.removeChild(modal)
+            }
+            return
+          }
+
+          // Scan code is valid, continue with location check
+          setIsScanCodeValid(true)
+          setScannedCode(scannedCodeValue)
 
           // Check location if latitude and longitude are present
           if (qrData.latitude !== undefined && qrData.longitude !== undefined) {
@@ -871,6 +921,27 @@ export function CompleteTaskDialog({
         return
       }
 
+      // Validate scan code matches task scan code
+      let scannedCodeValue = ''
+      try {
+        const qrData = JSON.parse(formData.scanCode)
+        scannedCodeValue = qrData.code || formData.scanCode
+      } catch (e) {
+        scannedCodeValue = formData.scanCode
+      }
+
+      const taskScanCode = task.scan_code?.trim()
+      if (taskScanCode && scannedCodeValue.trim() !== taskScanCode) {
+        toast.error(`QR Code tidak sesuai dengan task ini! Task ini memerlukan scan code: ${taskScanCode}`)
+        return
+      }
+
+      // Check if scan code validation failed
+      if (isScanCodeValid === false) {
+        toast.error('QR Code tidak sesuai dengan task ini. Silakan scan QR code yang benar.')
+        return
+      }
+
       // Check location validation if QR code has location data
       if (qrLocation) {
         if (isLocationValid === false) {
@@ -984,6 +1055,8 @@ export function CompleteTaskDialog({
     setQrLocation(null)
     setIsLocationValid(null)
     setIsCheckingLocation(false)
+    setIsScanCodeValid(null)
+    setScannedCode(null)
   }
 
   // Check if all child tasks are completed and auto-complete parent if needed
@@ -1230,8 +1303,21 @@ export function CompleteTaskDialog({
               {formData.scanCode && (
                 <div className="mt-2 space-y-2">
                   <div className="p-2 bg-gray-100 rounded text-xs sm:text-sm break-all">
-                    <span className="font-medium">Kode:</span> {formData.scanCode}
+                    <span className="font-medium">Kode:</span> {scannedCode || formData.scanCode}
                   </div>
+                  {/* Scan Code Validation Status */}
+                  {isScanCodeValid === false && (
+                    <div className="flex items-start sm:items-center gap-2 text-xs sm:text-sm text-red-600 font-medium">
+                      <span className="text-base sm:text-lg flex-shrink-0">✗</span>
+                      <span className="break-words">QR Code tidak sesuai dengan task ini. Task ini memerlukan scan code: {task.scan_code || 'tidak ada'}</span>
+                    </div>
+                  )}
+                  {isScanCodeValid === true && (
+                    <div className="flex items-start sm:items-center gap-2 text-xs sm:text-sm text-green-600 font-medium">
+                      <span className="text-base sm:text-lg flex-shrink-0">✓</span>
+                      <span className="break-words">QR Code sesuai dengan task ini</span>
+                    </div>
+                  )}
                   {qrLocation && (
                     <div className="space-y-1.5">
                       {isCheckingLocation && (
@@ -1292,13 +1378,63 @@ export function CompleteTaskDialog({
             </Button>
             <Button
               onClick={handleSubmit}
-              disabled={
-                isSubmitting || 
-                isCheckingLocation || 
-                (qrLocation !== null && isLocationValid === false) ||
-                (task.is_scan && (!formData.scanCode || formData.scanCode.trim() === '')) ||
-                (task.is_need_validation && !formData.fileBefore && !formData.fileAfter)
-              }
+              disabled={(() => {
+                // Always disabled if submitting or checking location
+                if (isSubmitting || isCheckingLocation) {
+                  return true
+                }
+
+                // Validation for scan barcode
+                if (task.is_scan) {
+                  // Must have scan code
+                  if (!formData.scanCode || formData.scanCode.trim() === '') {
+                    return true
+                  }
+                  
+                  // Scan code must be valid (match task scan code)
+                  if (isScanCodeValid === false) {
+                    return true
+                  }
+                  
+                  // If QR code has location data, location must be valid
+                  if (qrLocation !== null) {
+                    // Disabled if location is invalid or validation hasn't completed
+                    if (isLocationValid === false || isLocationValid === null) {
+                      return true
+                    }
+                    // Only enabled if location is valid (isLocationValid === true)
+                  }
+                  // If no location data, just need scan code (already checked above)
+                }
+
+                // Validation for photo attachments (is_need_validation)
+                if (task.is_need_validation) {
+                  // For keamanan role: only need fileAfter
+                  if (userRoleName?.toLowerCase() === 'keamanan' || userRoleName?.toLowerCase() === 'security') {
+                    if (!formData.fileAfter) {
+                      return true
+                    }
+                    // Must not have fileBefore for keamanan
+                    if (formData.fileBefore) {
+                      return true
+                    }
+                  }
+                  // For kebersihan role: need both fileBefore and fileAfter
+                  else if (userRoleName?.toLowerCase() === 'kebersihan' || userRoleName?.toLowerCase() === 'cleaning') {
+                    if (!formData.fileBefore || !formData.fileAfter) {
+                      return true
+                    }
+                  }
+                  // For other roles: need at least one file
+                  else {
+                    if (!formData.fileBefore && !formData.fileAfter) {
+                      return true
+                    }
+                  }
+                }
+
+                return false
+              })()}
             >
               {isSubmitting ? (
                 <>

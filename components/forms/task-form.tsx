@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Task, CreateTaskData, UpdateTaskData, assetsApi, rolesApi, taskGroupsApi, tasksApi, Asset, Role, TaskGroup } from '@/lib/api'
+import { Task, CreateTaskData, UpdateTaskData, assetsApi, rolesApi, taskGroupsApi, tasksApi, scanInfoApi, Asset, Role, TaskGroup, ScanInfo } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -210,13 +210,37 @@ export default function TaskForm({ task, onSubmit, onCancel, loading = false }: 
             t.task_group_id && t.scan_code && t.scan_code.trim() !== ''
           )
           
-          // Extract unique scan codes with task names
+          // Extract unique scan codes with task names from tasks
           const scanCodeMap = new Map<string, string>()
           tasksWithScanCode.forEach((t: Task) => {
             if (t.scan_code && !scanCodeMap.has(t.scan_code)) {
               scanCodeMap.set(t.scan_code, t.name || '')
             }
           })
+          
+          // Also get scan codes from scan_infos table
+          try {
+            const scanInfoResponse = await scanInfoApi.getScanInfos({ 
+              asset_id: selectedAssetId 
+            })
+            if (scanInfoResponse.success && scanInfoResponse.data) {
+              const responseData = scanInfoResponse.data as any
+              const scanInfosData = responseData.data?.scanInfos || responseData.scanInfos || responseData.data || []
+              
+              // Add scan codes from scan_infos (use scan_code as name if not already in map)
+              scanInfosData.forEach((si: ScanInfo) => {
+                if (si.scan_code && si.scan_code.trim() !== '') {
+                  if (!scanCodeMap.has(si.scan_code)) {
+                    // Use scan_code as name if no task name available
+                    scanCodeMap.set(si.scan_code, si.scan_code)
+                  }
+                }
+              })
+            }
+          } catch (error) {
+            console.error('Load scan codes from scan_infos error:', error)
+            // Continue with codes from tasks only
+          }
           
           // Convert to array
           const codes = Array.from(scanCodeMap.entries()).map(([code, taskName]) => ({
