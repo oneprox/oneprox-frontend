@@ -154,7 +154,12 @@ export default function UnitsTable({
 
   const getPageStart = () => {
     if (!pagination) return 0
-    return pagination.offset + 1
+    // Ensure offset is valid (not negative and reasonable)
+    // Maximum offset should be (totalPages - 1) * limit
+    const maxPages = Math.ceil(pagination.total / pagination.limit)
+    const maxOffset = Math.max(0, (maxPages - 1) * pagination.limit)
+    const validOffset = Math.max(0, Math.min(pagination.offset, maxOffset))
+    return validOffset + 1
   }
 
   const getPageEnd = () => {
@@ -177,90 +182,85 @@ export default function UnitsTable({
 
   return (
     <>
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>No</TableHead>
-              <TableHead>Nama Unit</TableHead>
-              <TableHead>Asset</TableHead>
-              <TableHead>Luas Lahan (m²)</TableHead>
-              <TableHead>Luas Bangunan (m²)</TableHead>
-              <TableHead>Daya Listrik</TableHead>
-              <TableHead>Toilet</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Dibuat</TableHead>
-              <TableHead>Diperbarui</TableHead>
-              <TableHead className="w-[70px]">Aksi</TableHead>
-            </TableRow>
-          </TableHeader>
+      <div className="rounded-md border overflow-hidden w-full">
+        <div className="overflow-x-hidden w-full">
+          <Table className="w-full table-fixed">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[4%]">No</TableHead>
+                <TableHead className="w-[18%]">Nama Unit</TableHead>
+                <TableHead className="w-[17%]">Asset</TableHead>
+                <TableHead className="w-[8%]">Luas Lahan (m²)</TableHead>
+                <TableHead className="w-[9%]">Luas Bangunan (m²)</TableHead>
+                <TableHead className="w-[9%]">Daya Listrik</TableHead>
+                <TableHead className="w-[8%]">Status</TableHead>
+                <TableHead className="w-[9%]">Dibuat</TableHead>
+                <TableHead className="w-[9%]">Diperbarui</TableHead>
+                <TableHead className="w-[9%]">Aksi</TableHead>
+              </TableRow>
+            </TableHeader>
           <TableBody>
             {units.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                   Tidak ada data unit
                 </TableCell>
               </TableRow>
             ) : (
               units.map((unit, index) => {
                 const isLast = index === units.length - 1;
+                const rowNumber = pagination 
+                  ? getPageStart() + index
+                  : index + 1;
                 return (
                 <TableRow key={unit.id}>
-                  <TableCell className="font-medium">{String(index + 1)}</TableCell>
-                  <TableCell className="font-medium">
+                  <TableCell className="font-medium text-center">{String(rowNumber)}</TableCell>
+                  <TableCell className="font-medium truncate" title={unit.name || '-'}>
                     {unit.name || '-'}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="truncate" title={unit.asset?.name || '-'}>
                     {unit.asset?.name || '-'}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="text-center">
                     {unit.size ? `${unit.size} m²` : '-'}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="text-center">
                     {unit.building_area ? `${unit.building_area} m²` : '-'}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="truncate" title={unit.electrical_power ? `${unit.electrical_power} ${unit.electrical_unit || 'Watt'}` : '-'}>
                     {unit.electrical_power ? `${unit.electrical_power} ${unit.electrical_unit || 'Watt'}` : '-'}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={unit.is_toilet_exist ? 'default' : 'secondary'}>
-                      {unit.is_toilet_exist ? 'Ada' : 'Tidak Ada'}
-                    </Badge>
                   </TableCell>
                   <TableCell>
                     {(() => {
                       const statusInfo = getStatusBadge(unit.status)
                       return (
                         <span
-                          className={`px-3 py-1.5 rounded text-sm font-medium border ${statusInfo.className}`}
+                          className={`px-2 py-1 rounded text-xs font-medium border ${statusInfo.className}`}
                         >
                           {statusInfo.label}
                         </span>
                       )
                     })()}
                   </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
+                  <TableCell className="text-xs text-muted-foreground truncate" title={formatDate(unit.created_at)}>
                     {formatDate(unit.created_at)}
                   </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
+                  <TableCell className="text-xs text-muted-foreground truncate" title={formatDate(unit.updated_at)}>
                     {formatDate(unit.updated_at)}
                   </TableCell>
-                  <TableCell
-                      className={`py-4 px-4 border-b text-center first:border-s last:border-e border-neutral-200 dark:border-slate-600 ${isLast ? "rounded-bl-lg" : ""
-                          }`}
-                  >
-                      <div className="flex justify-center gap-2">
-                          <Button size="icon" variant="ghost" onClick={() => onView(unit)} className="rounded-[50%] text-blue-500 bg-blue-500/10">
-                              <Eye className="w-5 h-5" />
+                  <TableCell className="py-2 px-2 text-center">
+                      <div className="flex justify-center gap-1">
+                          <Button size="icon" variant="ghost" onClick={() => onView(unit)} className="h-8 w-8 rounded-full text-blue-500 bg-blue-500/10 hover:bg-blue-500/20">
+                              <Eye className="w-4 h-4" />
                           </Button>
                           {can_edit && (
-                            <Button size="icon" variant="ghost" onClick={() => onEdit(unit)} className="rounded-[50%] text-green-600 bg-green-600/10">
-                                <Edit className="w-5 h-5" />
+                            <Button size="icon" variant="ghost" onClick={() => onEdit(unit)} className="h-8 w-8 rounded-full text-green-600 bg-green-600/10 hover:bg-green-600/20">
+                                <Edit className="w-4 h-4" />
                             </Button>
                           )}
                           {can_delete && (
-                            <Button size="icon" variant="ghost" onClick={() => handleDeleteClick(unit)} className="rounded-[50%] text-red-500 bg-red-500/10">
-                                <Trash2 className="w-5 h-5" />
+                            <Button size="icon" variant="ghost" onClick={() => handleDeleteClick(unit)} className="h-8 w-8 rounded-full text-red-500 bg-red-500/10 hover:bg-red-500/20">
+                                <Trash2 className="w-4 h-4" />
                             </Button>
                           )}
                       </div>
@@ -271,6 +271,7 @@ export default function UnitsTable({
             )}
           </TableBody>
         </Table>
+        </div>
       </div>
 
       {/* Pagination */}

@@ -184,7 +184,12 @@ export default function AssetsTable({
 
   const getPageStart = () => {
     if (!pagination) return 0
-    return pagination.offset + 1
+    // Ensure offset is valid (not negative and reasonable)
+    // Maximum offset should be (totalPages - 1) * limit
+    const maxPages = Math.ceil(pagination.total / pagination.limit)
+    const maxOffset = Math.max(0, (maxPages - 1) * pagination.limit)
+    const validOffset = Math.max(0, Math.min(pagination.offset, maxOffset))
+    return validOffset + 1
   }
 
   const getPageEnd = () => {
@@ -232,9 +237,12 @@ export default function AssetsTable({
             ) : (
               assets.map((asset, index) => {
                 const isLast = index === assets.length - 1;
+                const rowNumber = pagination 
+                  ? getPageStart() + index
+                  : index + 1;
                 return (
                 <TableRow key={asset.id}>
-                  <TableCell className="font-medium">{String(index + 1)}</TableCell>
+                  <TableCell className="font-medium">{String(rowNumber)}</TableCell>
                   <TableCell className="font-medium">
                     {asset.name || '-'}
                   </TableCell>

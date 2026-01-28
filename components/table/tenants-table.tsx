@@ -232,7 +232,12 @@ export default function TenantsTable({
 
   const getPageStart = () => {
     if (!pagination) return 0
-    return pagination.offset + 1
+    // Ensure offset is valid (not negative and reasonable)
+    // Maximum offset should be (totalPages - 1) * limit
+    const maxPages = Math.ceil(pagination.total / pagination.limit)
+    const maxOffset = Math.max(0, (maxPages - 1) * pagination.limit)
+    const validOffset = Math.max(0, Math.min(pagination.offset, maxOffset))
+    return validOffset + 1
   }
 
   const getPageEnd = () => {
@@ -300,6 +305,9 @@ export default function TenantsTable({
             ) : (
               filteredTenantsWithPayment.map((tenant, index) => {
                 const isLast = index === filteredTenantsWithPayment.length - 1;
+                const rowNumber = pagination 
+                  ? getPageStart() + index
+                  : index + 1;
                 // Use status from database if available, otherwise calculate based on contract_end_at
                 let tenantStatus: string;
                 if (tenant.status) {
@@ -318,7 +326,7 @@ export default function TenantsTable({
                 
                 return (
                 <TableRow key={tenant.id}>
-                  <TableCell className="font-medium">{String(index + 1)}</TableCell>
+                  <TableCell className="font-medium">{String(rowNumber)}</TableCell>
                   <TableCell className="font-medium">
                     {tenant.name}
                   </TableCell>
