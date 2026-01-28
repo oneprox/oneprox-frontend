@@ -30,6 +30,7 @@ export default function UnitForm({ unit, onSubmit, loading = false }: UnitFormPr
     name: '',
     asset_id: '',
     size: '',
+    building_area: '',
     electrical_power: '',
     electrical_unit: 'Watt',
     is_toilet_exist: false,
@@ -69,6 +70,7 @@ export default function UnitForm({ unit, onSubmit, loading = false }: UnitFormPr
         name: unit.name || '',
         asset_id: unit.asset?.id || '',
         size: unit.size?.toString() || '',
+        building_area: unit.building_area?.toString() || '',
         electrical_power: unit.electrical_power?.toString() || '',
         electrical_unit: unit.electrical_unit || 'Watt',
         is_toilet_exist: unit.is_toilet_exist || false,
@@ -103,6 +105,10 @@ export default function UnitForm({ unit, onSubmit, loading = false }: UnitFormPr
       newErrors.size = 'Ukuran harus diisi dan lebih dari 0'
     }
 
+    if (!formData.building_area || parseFloat(formData.building_area) <= 0) {
+      newErrors.building_area = 'Luas bangunan harus diisi dan lebih dari 0'
+    }
+
     if (!formData.electrical_power || parseFloat(formData.electrical_power) <= 0) {
       newErrors.electrical_power = 'Daya listrik harus diisi dan lebih dari 0'
     }
@@ -122,6 +128,7 @@ export default function UnitForm({ unit, onSubmit, loading = false }: UnitFormPr
       name: formData.name.trim(),
       asset_id: formData.asset_id,
       size: parseFloat(formData.size),
+      building_area: parseFloat(formData.building_area),
       electrical_power: parseFloat(formData.electrical_power),
       electrical_unit: formData.electrical_unit,
       is_toilet_exist: formData.is_toilet_exist,
@@ -132,8 +139,6 @@ export default function UnitForm({ unit, onSubmit, loading = false }: UnitFormPr
   }
 
   const handleInputChange = (field: string, value: string | boolean) => {
-    console.log('value', value);
-    console.log('field', field);
     setFormData(prev => ({ ...prev, [field]: value }))
     // Clear error when user starts typing
     if (errors[field]) {
@@ -188,7 +193,7 @@ export default function UnitForm({ unit, onSubmit, loading = false }: UnitFormPr
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="size">Ukuran (m²) *</Label>
+              <Label htmlFor="size">Luas Lahan (m²) *</Label>
               <Input
                 id="size"
                 type="number"
@@ -201,6 +206,23 @@ export default function UnitForm({ unit, onSubmit, loading = false }: UnitFormPr
               />
               {errors.size && (
                 <p className="text-sm text-red-500">{errors.size}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="building_area">Luas Bangunan (m²) *</Label>
+              <Input
+                id="building_area"
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.building_area}
+                onChange={(e) => handleInputChange('building_area', e.target.value)}
+                placeholder="Masukkan luas bangunan dalam m²"
+                className={errors.building_area ? 'border-red-500' : ''}
+              />
+              {errors.building_area && (
+                <p className="text-sm text-red-500">{errors.building_area}</p>
               )}
             </div>
 
@@ -248,6 +270,7 @@ export default function UnitForm({ unit, onSubmit, loading = false }: UnitFormPr
                   <SelectContent>
                     <SelectItem value="Watt">Watt</SelectItem>
                     <SelectItem value="kW">kW</SelectItem>
+                    <SelectItem value="kVA">kVA</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

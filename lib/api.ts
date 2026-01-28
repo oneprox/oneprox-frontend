@@ -917,6 +917,7 @@ export interface Unit {
   asset_id: string
   name: string
   size: number
+  building_area?: number
   rent_price: number
   lamp: number
   electric_socket: number
@@ -937,6 +938,7 @@ export interface CreateUnitData {
   name: string
   asset_id: string
   size: number
+  building_area?: number
   rent_price: number
   lamp?: number
   electric_socket?: number
@@ -949,6 +951,7 @@ export interface CreateUnitData {
 export interface UpdateUnitData {
   name?: string
   size?: number
+  building_area?: number
   rent_price?: number
   lamp?: number
   electric_socket?: number

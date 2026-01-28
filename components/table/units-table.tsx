@@ -184,7 +184,8 @@ export default function UnitsTable({
               <TableHead>No</TableHead>
               <TableHead>Nama Unit</TableHead>
               <TableHead>Asset</TableHead>
-              <TableHead>Ukuran (m²)</TableHead>
+              <TableHead>Luas Lahan (m²)</TableHead>
+              <TableHead>Luas Bangunan (m²)</TableHead>
               <TableHead>Daya Listrik</TableHead>
               <TableHead>Toilet</TableHead>
               <TableHead>Status</TableHead>
@@ -196,7 +197,7 @@ export default function UnitsTable({
           <TableBody>
             {units.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
                   Tidak ada data unit
                 </TableCell>
               </TableRow>
@@ -214,6 +215,9 @@ export default function UnitsTable({
                   </TableCell>
                   <TableCell>
                     {unit.size ? `${unit.size} m²` : '-'}
+                  </TableCell>
+                  <TableCell>
+                    {unit.building_area ? `${unit.building_area} m²` : '-'}
                   </TableCell>
                   <TableCell>
                     {unit.electrical_power ? `${unit.electrical_power} ${unit.electrical_unit || 'Watt'}` : '-'}
