@@ -12,6 +12,7 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -29,18 +30,33 @@ import * as z from 'zod'
 
 const taskSchema = z.object({
   name: z.string().min(1, 'Name is required').trim(),
+  is_non_repeat: z.boolean().optional(),
+  status: z.string().optional(),
+  area_id: z.string().optional(),
   is_main_task: z.boolean().optional(),
   is_need_validation: z.boolean().optional(),
   is_scan: z.boolean().optional(),
   scan_code: z.string().optional().nullable(),
-  duration: z.number().int().min(1, 'Duration must be at least 1 minute'),
-  asset_id: z.string().min(1, 'Asset is required').uuid('Asset ID must be a valid UUID'),
-  role_id: z.number().int().min(1, 'Role is required'),
+  duration: z.number().int().min(1, 'Duration must be at least 1 minute').optional(),
+  asset_id: z.string().optional(),
+  role_id: z.number().int().optional(),
   parent_task_ids: z.array(z.number().int()).optional(),
   task_group_id: z.number().int().optional().nullable(),
   days: z.array(z.number().int()).optional(),
   times: z.array(z.string()).optional(),
-})
+}).refine(
+  (data) => {
+    if (data.is_non_repeat) return true
+    return (data.duration != null && data.duration >= 1) && (data.role_id != null && data.role_id >= 1)
+  },
+  { message: 'Duration and Role are required for repeat tasks', path: ['duration'] }
+).refine(
+  (data) => {
+    if (data.is_non_repeat) return true
+    return data.asset_id != null && data.asset_id.length > 0 && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.asset_id)
+  },
+  { message: 'Asset is required for repeat tasks', path: ['asset_id'] }
+)
 
 type TaskFormData = z.infer<typeof taskSchema>
 
@@ -78,6 +94,9 @@ export default function TaskForm({ task, onSubmit, onCancel, loading = false }: 
     mode: 'onChange',
     defaultValues: {
       name: '',
+      is_non_repeat: false,
+      status: 'active',
+      area_id: 'All area',
       is_main_task: false,
       is_need_validation: false,
       is_scan: false,
@@ -94,6 +113,14 @@ export default function TaskForm({ task, onSubmit, onCancel, loading = false }: 
 
   const isMainTask = form.watch('is_main_task')
   const selectedAssetId = form.watch('asset_id')
+  const isNonRepeat = form.watch('is_non_repeat')
+
+  // When non-repeat is enabled, default area to "All area" if not set
+  useEffect(() => {
+    if (isNonRepeat && (form.getValues('area_id') === '' || form.getValues('area_id') === undefined)) {
+      form.setValue('area_id', 'All area')
+    }
+  }, [isNonRepeat, form])
 
   // Load assets
   useEffect(() => {
@@ -287,6 +314,9 @@ export default function TaskForm({ task, onSubmit, onCancel, loading = false }: 
       
       form.reset({
         name: task.name || '',
+        is_non_repeat: (task as any).is_non_repeat ?? false,
+        status: (task as any).status || 'active',
+        area_id: (task as any).area_id || 'All area',
         is_main_task: task.is_main_task || false,
         is_need_validation: task.is_need_validation || false,
         is_scan: task.is_scan || false,
@@ -305,11 +335,14 @@ export default function TaskForm({ task, onSubmit, onCancel, loading = false }: 
       // Reset to default values when creating new task
       form.reset({
         name: '',
+        is_non_repeat: false,
+        status: 'active',
+        area_id: 'All area',
         is_main_task: false,
         is_need_validation: false,
         is_scan: false,
         scan_code: null,
-        duration: 0,
+        duration: 1,
         asset_id: '',
         role_id: 0,
         parent_task_ids: [],
@@ -325,23 +358,27 @@ export default function TaskForm({ task, onSubmit, onCancel, loading = false }: 
     console.log('Form errors:', form.formState.errors)
     
     try {
+      const isNonRepeatTask = data.is_non_repeat === true
       const submitData: CreateTaskData | UpdateTaskData = {
         name: data.name.trim(),
-        is_main_task: data.is_main_task,
-        is_need_validation: data.is_need_validation,
-        is_scan: data.is_scan,
-        scan_code: data.scan_code?.trim() || undefined,
-        duration: data.duration,
-        asset_id: data.asset_id,
-        role_id: data.role_id,
-        // Only include parent_task_ids if it has items
-        ...(data.parent_task_ids && data.parent_task_ids.length > 0 ? { parent_task_ids: data.parent_task_ids } : {}),
-        // Only include task_group_id if it has a value
-        ...(data.task_group_id ? { task_group_id: data.task_group_id } : {}),
-        // Only include days if it has items
-        ...(data.days && data.days.length > 0 ? { days: data.days } : {}),
-        // Only include times if it has items
-        ...(data.times && data.times.length > 0 ? { times: data.times } : {}),
+        is_non_repeat: data.is_non_repeat,
+        status: data.status || undefined,
+        area_id: isNonRepeatTask ? (data.area_id?.trim() || undefined) : undefined,
+        is_main_task: isNonRepeatTask ? false : data.is_main_task,
+        is_need_validation: isNonRepeatTask ? false : data.is_need_validation,
+        is_scan: isNonRepeatTask ? false : data.is_scan,
+        scan_code: isNonRepeatTask ? undefined : (data.scan_code?.trim() || undefined),
+        duration: isNonRepeatTask ? 1 : (data.duration ?? 1),
+        asset_id: isNonRepeatTask ? (assets[0]?.id ? String(assets[0].id) : '') : (data.asset_id ?? ''),
+        role_id: isNonRepeatTask ? (roles[0]?.id ? Number(roles[0].id) : 0) : (data.role_id ?? 0),
+        // Only include parent_task_ids if it has items and not non-repeat
+        ...(!isNonRepeatTask && data.parent_task_ids && data.parent_task_ids.length > 0 ? { parent_task_ids: data.parent_task_ids } : {}),
+        // Only include task_group_id if it has a value and not non-repeat
+        ...(!isNonRepeatTask && data.task_group_id ? { task_group_id: data.task_group_id } : {}),
+        // Only include days if it has items and not non-repeat
+        ...(!isNonRepeatTask && data.days && data.days.length > 0 ? { days: data.days } : {}),
+        // Only include times if it has items and not non-repeat
+        ...(!isNonRepeatTask && data.times && data.times.length > 0 ? { times: data.times } : {}),
       }
       console.log('Submitting data:', submitData)
       await onSubmit(submitData)
@@ -387,6 +424,89 @@ export default function TaskForm({ task, onSubmit, onCancel, loading = false }: 
         console.error('Form validation errors:', errors)
         console.error('Form values:', form.getValues())
       })} className="space-y-6">
+        {/* Non repeat task toggle */}
+        <FormField
+          control={form.control}
+          name="is_non_repeat"
+          render={({ field }) => (
+            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+              <div className="space-y-0.5">
+                <FormLabel className="text-base">Non repeat task</FormLabel>
+                <div className="text-sm text-muted-foreground">
+                  Enable for a one-time task (only name, status, and area)
+                </div>
+              </div>
+              <FormControl>
+                <Switch
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                />
+              </FormControl>
+            </FormItem>
+          )}
+        />
+
+        {isNonRepeat ? (
+          /* Non-repeat task: only Name, Status, Area */
+          <>
+            <FormField
+              control={form.control}
+              name="name"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Name <span className="text-red-500">*</span></FormLabel>
+                  <FormControl>
+                    <Input placeholder="Enter task name" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="status"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Status <span className="text-red-500">*</span></FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    value={field.value || 'active'}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select status" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="area_id"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Area</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      placeholder="e.g. All area"
+                      className="min-h-[80px] resize-y"
+                      {...field}
+                      value={field.value ?? ''}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </>
+        ) : (
+          <>
         {/* Name */}
         <FormField
           control={form.control}
@@ -946,6 +1066,8 @@ export default function TaskForm({ task, onSubmit, onCancel, loading = false }: 
               </FormItem>
             )}
           />
+        )}
+          </>
         )}
 
         {/* Action Buttons */}

@@ -1338,6 +1338,9 @@ export interface Task {
   task_group_id?: number | string | null
   days?: number[]
   times?: string[]
+  is_non_repeat?: boolean
+  status?: string
+  area_id?: string
   created_at?: string
   updated_at?: string
   created_by?: string
@@ -1362,6 +1365,9 @@ export interface CreateTaskData {
   task_group_id?: number
   days?: number[]
   times?: string[]
+  is_non_repeat?: boolean
+  status?: string
+  area_id?: string
 }
 
 export interface UpdateTaskData {
@@ -1379,6 +1385,9 @@ export interface UpdateTaskData {
   task_group_id?: number
   days?: number[]
   times?: string[]
+  is_non_repeat?: boolean
+  status?: string
+  area_id?: string
 }
 
 // Task Log interface
