@@ -22,7 +22,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Edit, RefreshCw, Save, X } from 'lucide-react'
+import { Loader2, Edit, RefreshCw, Save, X, Plus } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function SettingOptionsPage() {
@@ -33,6 +33,13 @@ export default function SettingOptionsPage() {
   const [editValue, setEditValue] = useState('')
   const [editDescription, setEditDescription] = useState('')
   const [saving, setSaving] = useState(false)
+  
+  // State untuk form tambah setting
+  const [addDialogOpen, setAddDialogOpen] = useState(false)
+  const [newKey, setNewKey] = useState('')
+  const [newValue, setNewValue] = useState('')
+  const [newDescription, setNewDescription] = useState('')
+  const [creating, setCreating] = useState(false)
 
   const loadSettings = async () => {
     try {
@@ -108,6 +115,49 @@ export default function SettingOptionsPage() {
     setEditDescription('')
   }
 
+  const handleOpenAddDialog = () => {
+    setNewKey('')
+    setNewValue('')
+    setNewDescription('')
+    setAddDialogOpen(true)
+  }
+
+  const handleCloseAddDialog = () => {
+    setAddDialogOpen(false)
+    setNewKey('')
+    setNewValue('')
+    setNewDescription('')
+  }
+
+  const handleCreate = async () => {
+    if (!newKey.trim() || !newValue.trim()) {
+      toast.error('Key dan Value harus diisi')
+      return
+    }
+
+    try {
+      setCreating(true)
+      const response = await settingsApi.createSetting({
+        key: newKey.trim(),
+        value: newValue.trim(),
+        description: newDescription.trim() || undefined,
+      })
+      
+      if (response.success) {
+        toast.success('Setting berhasil ditambahkan')
+        handleCloseAddDialog()
+        loadSettings()
+      } else {
+        throw new Error(response.error || 'Gagal menambahkan setting')
+      }
+    } catch (error: any) {
+      console.error('Error creating setting:', error)
+      toast.error(error.message || 'Gagal menambahkan setting')
+    } finally {
+      setCreating(false)
+    }
+  }
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('id-ID', {
       year: 'numeric',
@@ -126,10 +176,16 @@ export default function SettingOptionsPage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>Pengaturan Sistem</CardTitle>
-            <Button variant="outline" size="sm" onClick={loadSettings} disabled={loading}>
-              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="default" size="sm" onClick={handleOpenAddDialog} disabled={loading}>
+                <Plus className="h-4 w-4 mr-2" />
+                Tambah Setting
+              </Button>
+              <Button variant="outline" size="sm" onClick={loadSettings} disabled={loading}>
+                <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -139,15 +195,15 @@ export default function SettingOptionsPage() {
               <span className="ml-2 text-muted-foreground">Memuat settings...</span>
             </div>
           ) : (
-            <div className="rounded-md border">
+            <div className="rounded-md border overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Key</TableHead>
-                    <TableHead>Value</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Updated At</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead className="min-w-[150px]">Key</TableHead>
+                    <TableHead className="min-w-[200px]">Value</TableHead>
+                    <TableHead className="min-w-[300px] max-w-[400px]">Description</TableHead>
+                    <TableHead className="min-w-[150px]">Updated At</TableHead>
+                    <TableHead className="text-right min-w-[100px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -160,19 +216,19 @@ export default function SettingOptionsPage() {
                   ) : (
                     settings.map((setting) => (
                       <TableRow key={setting.id}>
-                        <TableCell className="font-medium">{setting.key}</TableCell>
+                        <TableCell className="font-medium whitespace-nowrap">{setting.key}</TableCell>
                         <TableCell>
-                          <span className="font-mono text-sm">{setting.value}</span>
+                          <span className="font-mono text-sm break-words">{setting.value}</span>
                         </TableCell>
-                        <TableCell className="max-w-md">
-                          <span className="text-sm text-muted-foreground">
+                        <TableCell className="max-w-[400px]">
+                          <span className="text-sm text-muted-foreground whitespace-normal break-words block">
                             {setting.description || '-'}
                           </span>
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
+                        <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                           {formatDate(setting.updated_at)}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-right whitespace-nowrap">
                           <Button
                             variant="ghost"
                             size="sm"
@@ -191,6 +247,79 @@ export default function SettingOptionsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Add Dialog */}
+      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Tambah Setting Baru</DialogTitle>
+            <DialogDescription>
+              Tambahkan setting baru ke sistem. Key harus unik dan tidak boleh duplikat.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="new-key">Key <span className="text-red-500">*</span></Label>
+              <Input
+                id="new-key"
+                value={newKey}
+                onChange={(e) => setNewKey(e.target.value)}
+                placeholder="Masukkan key (contoh: app.name)"
+                className="mt-2"
+                disabled={creating}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Key harus unik dan tidak boleh mengandung spasi
+              </p>
+            </div>
+            
+            <div>
+              <Label htmlFor="new-value">Value <span className="text-red-500">*</span></Label>
+              <Input
+                id="new-value"
+                value={newValue}
+                onChange={(e) => setNewValue(e.target.value)}
+                placeholder="Masukkan value"
+                className="mt-2"
+                disabled={creating}
+              />
+            </div>
+            
+            <div>
+              <Label htmlFor="new-description">Description</Label>
+              <Input
+                id="new-description"
+                value={newDescription}
+                onChange={(e) => setNewDescription(e.target.value)}
+                placeholder="Masukkan description (opsional)"
+                className="mt-2"
+                disabled={creating}
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={handleCloseAddDialog} disabled={creating}>
+              <X className="h-4 w-4 mr-2" />
+              Batal
+            </Button>
+            <Button onClick={handleCreate} disabled={creating || !newKey.trim() || !newValue.trim()}>
+              {creating ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Menyimpan...
+                </>
+              ) : (
+                <>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Tambah
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>

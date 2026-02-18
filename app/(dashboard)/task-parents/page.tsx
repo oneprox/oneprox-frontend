@@ -503,27 +503,23 @@ export default function TaskParentsPage() {
         </BreadcrumbList>
       </Breadcrumb>
 
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Task</h1>
-          <p className="text-muted-foreground">
-            Kelola task dan relasi parent-child
-          </p>
-        </div>
-        <Button onClick={() => router.push('/tasks/create')}>
-          <Plus className="mr-2 h-4 w-4" />
-          Buat Task Baru
-        </Button>
-      </div>
-
       {/* Filters */}
       <Card>
-        <CardHeader>
-          <CardTitle>Daftar Tasks</CardTitle>
-          <CardDescription>
-            Hierarki tasks dengan relasi parent-child
-          </CardDescription>
+        <CardHeader className="pb-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">Task</h1>
+              <p className="text-muted-foreground">
+                Kelola task dan relasi parent-child
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button onClick={() => router.push('/tasks/create')}>
+                <Plus className="mr-2 h-4 w-4" />
+                Buat Task Baru
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap items-center gap-4">

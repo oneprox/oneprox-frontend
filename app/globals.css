@@ -425,3 +425,14 @@
 .leaflet-tooltip-pane {
   z-index: 9 !important;
 }
+
+/* Content area padding for fixed header */
+.content-area {
+  padding-top: calc(3.25rem + 1rem + 1rem) !important;
+}
+
+@media (min-width: 640px) {
+  .content-area {
+    padding-top: calc(4.5rem + 1rem + 1.5rem) !important;
+  }
+}

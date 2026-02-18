@@ -263,7 +263,7 @@ export default function TenantsPage() {
   const stats = getStats()
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 overflow-x-hidden w-full max-w-full min-w-0">
       {/* Breadcrumb */}
       <Breadcrumb>
         <BreadcrumbList>
@@ -282,22 +282,6 @@ export default function TenantsPage() {
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
-
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Tenants</h1>
-          <p className="text-muted-foreground">
-            Kelola data tenant dan kontrak sewa
-          </p>
-        </div>
-        {!isTenantUser && can_add && (
-          <Button onClick={() => router.push('/tenants/create')}>
-            <Plus className="mr-2 h-4 w-4" />
-            Tambah Tenant
-          </Button>
-        )}
-      </div>
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 hidden">
@@ -352,11 +336,22 @@ export default function TenantsPage() {
       </div>
 
       {/* Search and Actions */}
-      <Card>
-        <CardHeader>
+      <Card className="flex flex-col overflow-hidden" style={{ maxHeight: 'calc(100vh - 250px)' }}>
+        <CardHeader className="flex-shrink-0 overflow-hidden pb-4">
           <div className="flex items-center justify-between">
-            <CardTitle>Daftar Tenants</CardTitle>
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">Tenants</h1>
+              <p className="text-muted-foreground">
+                Kelola data tenant dan kontrak sewa
+              </p>
+            </div>
             <div className="flex items-center gap-2">
+              {!isTenantUser && can_add && (
+                <Button onClick={() => router.push('/tenants/create')}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Tambah Tenant
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={handleRefresh} disabled={loading}>
                 <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               </Button>
@@ -365,7 +360,7 @@ export default function TenantsPage() {
           
           {/* Filter Bar - Hidden for tenant users */}
           {!isTenantUser && (
-            <div className="flex flex-wrap items-center gap-4 mt-4 p-4 bg-gray-50 rounded-lg border">
+            <div className="flex flex-wrap items-center gap-4 mt-4 p-4 bg-gray-50 rounded-lg border overflow-x-auto">
               <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -459,16 +454,17 @@ export default function TenantsPage() {
             </div>
           )}
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0 flex-1 overflow-hidden flex flex-col min-h-0 w-full">
           {loading ? (
-            <div className="flex items-center justify-center py-8">
+            <div className="flex items-center justify-center py-8 px-6 w-full">
               <div className="flex items-center gap-2">
                 <Loader2 className="h-6 w-6 animate-spin" />
                 <span>Memuat data tenants...</span>
               </div>
             </div>
           ) : (
-            <TenantsTable
+            <div className="p-6 flex-1 overflow-hidden min-h-0 h-full w-full">
+              <TenantsTable
               tenants={filteredTenants}
               onEdit={handleEdit}
               onView={handleView}
@@ -479,7 +475,8 @@ export default function TenantsPage() {
               can_edit={can_edit}
               can_delete={can_delete}
               paymentStatusFilter={paymentStatusFilter}
-            />
+              />
+            </div>
           )}
         </CardContent>
       </Card>

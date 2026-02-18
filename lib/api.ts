@@ -586,6 +586,7 @@ export interface Asset {
   updated_by?: string
   created_at: string
   updated_at: string
+  total_units?: number
 }
 
 export interface CreateAssetData {

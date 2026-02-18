@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Asset, CreateAssetData, UpdateAssetData, ASSET_TYPES, ASSET_TYPE_LABELS } from '@/lib/api'
+import { Asset, CreateAssetData, UpdateAssetData, ASSET_TYPES, ASSET_TYPE_LABELS, Unit, unitsApi, CreateUnitData, UpdateUnitData } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -20,11 +20,40 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Loader2, Upload, Image, FileText, X, MapPin, Search } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Loader2, Upload, Image, FileText, X, MapPin, Search, Plus, Edit, Trash2 } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import LeafletMapComponent from './leaflet-map-component'
+import UnitForm from './unit-form'
+import toast from 'react-hot-toast'
 
 const assetSchema = z.object({
   name: z.string().min(1, 'Nama asset harus diisi'),
@@ -56,6 +85,16 @@ export default function AssetForm({ asset, onSubmit, onCancel, loading = false }
   const [existingPhotos, setExistingPhotos] = useState<string[]>([])
   const [existingSketches, setExistingSketches] = useState<string[]>([])
   const [originalAsset, setOriginalAsset] = useState<Asset | null>(null)
+  
+  // Unit management states
+  const [units, setUnits] = useState<Unit[]>([])
+  const [unitsLoading, setUnitsLoading] = useState(false)
+  const [unitDialogOpen, setUnitDialogOpen] = useState(false)
+  const [editingUnit, setEditingUnit] = useState<Unit | null>(null)
+  const [unitFormLoading, setUnitFormLoading] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [unitToDelete, setUnitToDelete] = useState<Unit | null>(null)
+  const [deleting, setDeleting] = useState(false)
   
   const form = useForm<AssetFormData>({
     resolver: zodResolver(assetSchema) as any,
@@ -177,6 +216,119 @@ export default function AssetForm({ asset, onSubmit, onCancel, loading = false }
       setExistingSketches([])
     }
   }, [asset])
+
+  // Load units when asset is available
+  useEffect(() => {
+    if (asset?.id) {
+      loadUnits()
+    } else {
+      setUnits([])
+    }
+  }, [asset?.id])
+
+  const loadUnits = async () => {
+    if (!asset?.id) return
+    
+    setUnitsLoading(true)
+    try {
+      const response = await unitsApi.getUnits({
+        asset_id: asset.id,
+        is_deleted: false,
+      })
+      
+      if (response.success && response.data) {
+        const responseData = response.data as any
+        const unitsData = Array.isArray(responseData.data) ? responseData.data : (Array.isArray(responseData) ? responseData : [])
+        setUnits(unitsData)
+      } else {
+        toast.error(response.error || 'Gagal memuat data unit')
+      }
+    } catch (error) {
+      console.error('Load units error:', error)
+      toast.error('Terjadi kesalahan saat memuat data unit')
+    } finally {
+      setUnitsLoading(false)
+    }
+  }
+
+  const handleCreateUnit = () => {
+    setEditingUnit(null)
+    setUnitDialogOpen(true)
+  }
+
+  const handleEditUnit = (unit: Unit) => {
+    setEditingUnit(unit)
+    setUnitDialogOpen(true)
+  }
+
+  const handleDeleteUnit = (unit: Unit) => {
+    setUnitToDelete(unit)
+    setDeleteDialogOpen(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!unitToDelete) return
+
+    setDeleting(true)
+    try {
+      const response = await unitsApi.deleteUnit(unitToDelete.id)
+      
+      if (response.success) {
+        toast.success('Unit berhasil dihapus')
+        loadUnits()
+      } else {
+        toast.error(response.error || 'Gagal menghapus unit')
+      }
+    } catch (error) {
+      console.error('Delete unit error:', error)
+      toast.error('Terjadi kesalahan saat menghapus unit')
+    } finally {
+      setDeleting(false)
+      setDeleteDialogOpen(false)
+      setUnitToDelete(null)
+    }
+  }
+
+  const handleUnitSubmit = async (data: CreateUnitData | UpdateUnitData) => {
+    setUnitFormLoading(true)
+    try {
+      if (editingUnit) {
+        // Update unit
+        const response = await unitsApi.updateUnit(editingUnit.id, data as UpdateUnitData)
+        if (response.success) {
+          toast.success('Unit berhasil diperbarui')
+          setUnitDialogOpen(false)
+          setEditingUnit(null)
+          loadUnits()
+        } else {
+          toast.error(response.error || 'Gagal memperbarui unit')
+        }
+      } else {
+        // Create unit
+        if (!asset?.id) {
+          toast.error('Asset ID tidak ditemukan')
+          return
+        }
+        const createData = {
+          ...data,
+          asset_id: asset.id,
+        } as CreateUnitData
+        const response = await unitsApi.createUnit(createData)
+        if (response.success) {
+          toast.success('Unit berhasil dibuat')
+          setUnitDialogOpen(false)
+          loadUnits()
+        } else {
+          toast.error(response.error || 'Gagal membuat unit')
+        }
+      }
+    } catch (error) {
+      console.error('Unit submit error:', error)
+      toast.error('Terjadi kesalahan saat menyimpan unit')
+    } finally {
+      setUnitFormLoading(false)
+    }
+  }
 
   const handlePhotoChange = (files: FileList | null) => {
     if (files && files.length > 0) {
@@ -417,9 +569,27 @@ export default function AssetForm({ asset, onSubmit, onCancel, loading = false }
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-        {/* Informasi Asset */}
-        <div className="space-y-6">
+      <Tabs defaultValue="info" className="gap-4">
+        <TabsList className='active-gradient bg-transparent dark:bg-transparent rounded-none h-[50px]'>
+          <TabsTrigger 
+            value="info" 
+            className='py-2.5 px-4 font-semibold text-sm inline-flex items-center gap-3 dark:bg-transparent text-neutral-600 hover:text-blue-600 dark:text-white dark:hover:text-blue-500 data-[state=active]:bg-gradient border-0 border-t-2 border-neutral-200 dark:border-neutral-500 data-[state=active]:border-blue-600 dark:data-[state=active]:border-blue-600 rounded-[0] data-[state=active]:shadow-none cursor-pointer'
+          >
+            Informasi Asset
+          </TabsTrigger>
+          <TabsTrigger 
+            value="units" 
+            disabled={!asset?.id}
+            className='py-2.5 px-4 font-semibold text-sm inline-flex items-center gap-3 dark:bg-transparent text-neutral-600 hover:text-blue-600 dark:text-white dark:hover:text-blue-500 data-[state=active]:bg-gradient border-0 border-t-2 border-neutral-200 dark:border-neutral-500 data-[state=active]:border-blue-600 dark:data-[state=active]:border-blue-600 rounded-[0] data-[state=active]:shadow-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed'
+          >
+            Unit {asset?.id && `(${units.length})`}
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="info" className="px-6 py-4">
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+            {/* Informasi Asset */}
+            <div className="space-y-6">
           <h3 className="text-lg font-semibold">Informasi Asset</h3>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -758,22 +928,151 @@ export default function AssetForm({ asset, onSubmit, onCancel, loading = false }
           />
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex justify-end gap-3 pt-6">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onCancel}
-            disabled={loading}
-          >
-            Batal
-          </Button>
-          <Button type="submit" disabled={loading}>
-            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {asset ? 'Perbarui Asset' : 'Buat Asset'}
-          </Button>
-        </div>
-      </form>
+            {/* Action Buttons */}
+            <div className="flex justify-end gap-3 pt-6">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onCancel}
+                disabled={loading}
+              >
+                Batal
+              </Button>
+              <Button type="submit" disabled={loading}>
+                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {asset ? 'Perbarui Asset' : 'Buat Asset'}
+              </Button>
+            </div>
+          </form>
+        </TabsContent>
+
+        <TabsContent value="units" className="px-6 py-4">
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-semibold">Daftar Unit</h3>
+              <Button onClick={handleCreateUnit} size="sm">
+                <Plus className="mr-2 h-4 w-4" />
+                Tambah Unit
+              </Button>
+            </div>
+
+            {unitsLoading ? (
+              <div className="flex justify-center items-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin" />
+              </div>
+            ) : (
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[5%]">No</TableHead>
+                      <TableHead className="w-[25%]">Nama Unit</TableHead>
+                      <TableHead className="w-[20%]">Luas Lahan (m²)</TableHead>
+                      <TableHead className="w-[20%]">Luas Bangunan (m²)</TableHead>
+                      <TableHead className="w-[15%]">Status</TableHead>
+                      <TableHead className="w-[15%] text-center">Aksi</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {units.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                          Tidak ada data unit
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      units.map((unit, index) => (
+                        <TableRow key={unit.id}>
+                          <TableCell className="font-medium text-center">{index + 1}</TableCell>
+                          <TableCell className="font-medium">{unit.name || '-'}</TableCell>
+                          <TableCell className="text-center">{unit.size ? `${unit.size} m²` : '-'}</TableCell>
+                          <TableCell className="text-center">{unit.building_area ? `${unit.building_area} m²` : '-'}</TableCell>
+                          <TableCell>
+                            <span
+                              className={`px-2 py-1 rounded text-xs font-medium border ${
+                                unit.status === 'available'
+                                  ? 'bg-green-600/15 text-green-600 border-green-600'
+                                  : unit.status === 'occupied'
+                                  ? 'bg-blue-600/15 text-blue-600 border-blue-600'
+                                  : 'bg-gray-600/15 text-gray-600 border-gray-400'
+                              }`}
+                            >
+                              {unit.status === 'available' ? 'Available' : unit.status === 'occupied' ? 'Occupied' : 'Unknown'}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex justify-center gap-2">
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => handleEditUnit(unit)}
+                                className="h-8 w-8 rounded-full text-green-600 bg-green-600/10 hover:bg-green-600/20"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => handleDeleteUnit(unit)}
+                                className="h-8 w-8 rounded-full text-red-500 bg-red-500/10 hover:bg-red-500/20"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+        </TabsContent>
+      </Tabs>
+
+      {/* Unit Dialog */}
+      <Dialog open={unitDialogOpen} onOpenChange={setUnitDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingUnit ? 'Edit Unit' : 'Tambah Unit Baru'}</DialogTitle>
+            <DialogDescription>
+              {editingUnit ? 'Perbarui informasi unit' : 'Masukkan informasi unit baru'}
+            </DialogDescription>
+          </DialogHeader>
+          <UnitForm
+            unit={editingUnit || undefined}
+            onSubmit={handleUnitSubmit}
+            loading={unitFormLoading}
+            assetId={asset?.id}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Konfirmasi Hapus</AlertDialogTitle>
+            <AlertDialogDescription>
+              Apakah Anda yakin ingin menghapus unit <strong>{unitToDelete?.name}</strong>?
+              Tindakan ini tidak dapat dibatalkan.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>
+              Batal
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              disabled={deleting}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {deleting ? 'Menghapus...' : 'Hapus'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Form>
   )
 }

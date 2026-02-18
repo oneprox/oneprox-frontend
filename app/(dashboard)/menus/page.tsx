@@ -139,20 +139,6 @@ export default function MenusPage() {
         </BreadcrumbList>
       </Breadcrumb>
 
-      {/* Header */}
-      <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Menu Management</h1>
-          <p className="text-muted-foreground">
-            Kelola menu dan navigasi sistem
-          </p>
-        </div>
-        <Button onClick={handleAddNew} className="w-fit">
-          <Plus className="mr-2 h-4 w-4" />
-          Add New Menu
-        </Button>
-      </div>
-
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5 hidden">
         <Card>
@@ -204,10 +190,19 @@ export default function MenusPage() {
 
       {/* Search and Actions */}
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
-            <CardTitle>Daftar Menus</CardTitle>
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">Menu Management</h1>
+              <p className="text-muted-foreground">
+                Kelola menu dan navigasi sistem
+              </p>
+            </div>
             <div className="flex items-center gap-2">
+              <Button onClick={handleAddNew}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add New Menu
+              </Button>
               <Button variant="outline" size="sm" onClick={handleRefresh} disabled={loading}>
                 <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               </Button>

@@ -207,22 +207,6 @@ export default function UsersPage() {
         </BreadcrumbList>
       </Breadcrumb>
 
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Users</h1>
-          <p className="text-muted-foreground">
-            Kelola pengguna dan akses sistem
-          </p>
-        </div>
-        {can_add && (
-          <Button onClick={() => router.push('/users/create')}>
-            <Plus className="mr-2 h-4 w-4" />
-            Tambah User
-          </Button>
-        )}
-      </div>
-
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6 hidden">
         <Card>
@@ -301,10 +285,21 @@ export default function UsersPage() {
 
       {/* Search and Actions */}
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
-            <CardTitle>Daftar Users</CardTitle>
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">Users</h1>
+              <p className="text-muted-foreground">
+                Kelola pengguna dan akses sistem
+              </p>
+            </div>
             <div className="flex items-center gap-2">
+              {can_add && (
+                <Button onClick={() => router.push('/users/create')}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Tambah User
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={handleRefresh} disabled={loading}>
                 <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               </Button>

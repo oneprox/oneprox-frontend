@@ -177,22 +177,16 @@ export default function WorkerPage() {
         </BreadcrumbList>
       </Breadcrumb>
 
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Data Pekerja</h1>
-        <p className="text-muted-foreground">
-          Daftar pekerja dengan role keamanan dan kebersihan
-        </p>
-      </div>
-
       {/* Search and Filter */}
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <UsersRound className="h-5 w-5" />
-              Daftar Pekerja
-            </CardTitle>
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">Data Pekerja</h1>
+              <p className="text-muted-foreground">
+                Daftar pekerja dengan role keamanan dan kebersihan
+              </p>
+            </div>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={loadWorkers} disabled={loading}>
                 <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />

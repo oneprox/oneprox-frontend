@@ -221,6 +221,7 @@ export default function AssetsTable({
               <TableHead>Tipe Asset</TableHead>
               <TableHead>Alamat</TableHead>
               <TableHead>Luas (m²)</TableHead>
+              <TableHead>Jumlah Unit</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Dibuat</TableHead>
               <TableHead>Diubah</TableHead>
@@ -230,7 +231,7 @@ export default function AssetsTable({
           <TableBody>
             {assets.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                   Tidak ada data asset
                 </TableCell>
               </TableRow>
@@ -255,6 +256,7 @@ export default function AssetsTable({
                     {asset.address || '-'}
                   </TableCell>
                   <TableCell>{asset.area ? `${asset.area} m²` : '-'}</TableCell>
+                  <TableCell>{asset.total_units !== undefined ? asset.total_units : '-'}</TableCell>
                   <TableCell>
                       <span
                           className={`px-3 py-1.5 rounded text-sm font-medium border ${(asset.status === 1 || asset.status === 'active')
