@@ -136,6 +136,7 @@ export default function TenantsPage() {
         }
         
         setTenants(tenantsData)
+        // Since filtering is done on backend, filteredTenants should be same as tenants
         setFilteredTenants(tenantsData)
         setPagination(paginationData)
       } else {
@@ -336,8 +337,8 @@ export default function TenantsPage() {
       </div>
 
       {/* Search and Actions */}
-      <Card className="flex flex-col overflow-hidden" style={{ maxHeight: 'calc(100vh - 250px)' }}>
-        <CardHeader className="flex-shrink-0 overflow-hidden pb-4">
+      <Card>
+        <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold tracking-tight">Tenants</h1>
@@ -358,9 +359,9 @@ export default function TenantsPage() {
             </div>
           </div>
           
-          {/* Filter Bar - Hidden for tenant users */}
-          {!isTenantUser && (
-            <div className="flex flex-wrap items-center gap-4 mt-4 p-4 bg-gray-50 rounded-lg border overflow-x-auto">
+          {/* Filter Bar - Horizontal Layout */}
+          {!isTenantUser ? (
+            <div className="flex flex-wrap items-center gap-4 mt-4 p-4 bg-gray-50 rounded-lg border">
               <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -437,12 +438,9 @@ export default function TenantsPage() {
                 Reset
               </Button>
             </div>
-          )}
-          
-          {/* Simple search for tenant users */}
-          {isTenantUser && (
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg border">
-              <div className="relative">
+          ) : (
+            <div className="flex flex-wrap items-center gap-4 mt-4 p-4 bg-gray-50 rounded-lg border">
+              <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder="Cari tenant..."
@@ -454,17 +452,16 @@ export default function TenantsPage() {
             </div>
           )}
         </CardHeader>
-        <CardContent className="p-0 flex-1 overflow-hidden flex flex-col min-h-0 w-full">
+        <CardContent>
           {loading ? (
-            <div className="flex items-center justify-center py-8 px-6 w-full">
+            <div className="flex items-center justify-center py-8">
               <div className="flex items-center gap-2">
                 <Loader2 className="h-6 w-6 animate-spin" />
                 <span>Memuat data tenants...</span>
               </div>
             </div>
           ) : (
-            <div className="p-6 flex-1 overflow-hidden min-h-0 h-full w-full">
-              <TenantsTable
+            <TenantsTable
               tenants={filteredTenants}
               onEdit={handleEdit}
               onView={handleView}
@@ -475,8 +472,7 @@ export default function TenantsPage() {
               can_edit={can_edit}
               can_delete={can_delete}
               paymentStatusFilter={paymentStatusFilter}
-              />
-            </div>
+            />
           )}
         </CardContent>
       </Card>

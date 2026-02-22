@@ -454,6 +454,13 @@ export interface TenantPaymentLog {
   payment_method?: string
   notes?: string
   status?: number // 0 for unpaid, 1 for paid, 2 for expired
+  billing_type?: string // jenis tagihan
+  billing_period?: string // periode tagihan
+  billing_amount?: number // jumlah tagihan
+  outstanding?: number
+  overdue?: number
+  rate?: number // default 0.01
+  last_charge_date?: number // last charge (nominal)
   updatedBy?: {
     id: string
     name: string
@@ -467,6 +474,13 @@ export interface CreateTenantPaymentData {
   amount: number
   payment_method: string
   notes?: string
+  billing_type?: string
+  billing_period?: string
+  billing_amount?: number
+  outstanding?: number
+  overdue?: number
+  rate?: number
+  last_charge_date?: number // last charge (nominal)
 }
 
 // Update Tenant Payment Data interface
@@ -475,6 +489,51 @@ export interface UpdateTenantPaymentData {
   payment_method?: string
   notes?: string
   paid_amount?: number
+  billing_type?: string
+  billing_period?: string
+  billing_amount?: number
+  outstanding?: number
+  overdue?: number
+  rate?: number
+  last_charge_date?: number // last charge (nominal)
+}
+
+// Tenant Legal interface
+export interface TenantLegal {
+  id: number
+  tenant_id: string
+  doc_type: string
+  due_date?: string
+  keterangan?: string
+  document_url?: string
+  created_by?: {
+    id: string
+    name: string
+    email: string
+  }
+  updated_by?: {
+    id: string
+    name: string
+    email: string
+  }
+  created_at: string
+  updated_at?: string
+}
+
+// Create Tenant Legal Data interface
+export interface CreateTenantLegalData {
+  doc_type: string
+  due_date?: string
+  keterangan?: string
+  document_url?: string
+}
+
+// Update Tenant Legal Data interface
+export interface UpdateTenantLegalData {
+  doc_type?: string
+  due_date?: string
+  keterangan?: string
+  document_url?: string
 }
 
 // Roles-specific API functions
@@ -1178,6 +1237,26 @@ export const tenantsApi = {
 
   async updateTenantPayment(tenantId: string, paymentId: number, data: UpdateTenantPaymentData): Promise<ApiResponse<TenantPaymentLog>> {
     return apiClient.put<TenantPaymentLog>(`/api/tenants/${tenantId}/payments/${paymentId}`, data)
+  },
+
+  async deleteTenantPayment(tenantId: string, paymentId: number): Promise<ApiResponse<void>> {
+    return apiClient.delete<void>(`/api/tenants/${tenantId}/payments/${paymentId}`)
+  },
+
+  async getTenantLegals(tenantId: string): Promise<ApiResponse<TenantLegal[]>> {
+    return apiClient.get<TenantLegal[]>(`/api/tenants/${tenantId}/legals`)
+  },
+
+  async createTenantLegal(tenantId: string, data: CreateTenantLegalData): Promise<ApiResponse<TenantLegal>> {
+    return apiClient.post<TenantLegal>(`/api/tenants/${tenantId}/legals`, data)
+  },
+
+  async updateTenantLegal(tenantId: string, legalId: number, data: UpdateTenantLegalData): Promise<ApiResponse<TenantLegal>> {
+    return apiClient.put<TenantLegal>(`/api/tenants/${tenantId}/legals/${legalId}`, data)
+  },
+
+  async deleteTenantLegal(tenantId: string, legalId: number): Promise<ApiResponse<void>> {
+    return apiClient.delete<void>(`/api/tenants/${tenantId}/legals/${legalId}`)
   },
 }
 
