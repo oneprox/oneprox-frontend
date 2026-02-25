@@ -30,7 +30,7 @@ export function ClientRoot({
           <SidebarInset className="overflow-visible">
             <Header />
           </SidebarInset>
-          <div className="bg-neutral-100 dark:bg-[#1e2734] md:p-6 p-4 flex-1 overflow-x-hidden min-w-0 w-full content-area" style={{ paddingTop: 'calc(3.25rem + 1rem + 1rem)' }}>
+          <div className="bg-neutral-100 dark:bg-[#1e2734] md:p-6 p-4 flex-1 overflow-x-hidden min-w-0 w-full content-area" >
             <RouteGuard>
               {children}
             </RouteGuard>

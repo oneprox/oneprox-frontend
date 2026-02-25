@@ -63,7 +63,7 @@ export default function TenantsPage() {
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>('all')
-  const [order, setOrder] = useState<string>('a-z')
+  const [order, setOrder] = useState<string>('newest')
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [isTenantUser, setIsTenantUser] = useState(false)
   

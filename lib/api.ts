@@ -471,12 +471,13 @@ export interface TenantPaymentLog {
 
 // Create Tenant Payment Data interface
 export interface CreateTenantPaymentData {
-  amount: number
-  payment_method: string
+  billing_period: string // mandatory
+  billing_amount: number // mandatory
+  payment_deadline: string // mandatory
+  amount?: number
+  payment_method?: string
   notes?: string
   billing_type?: string
-  billing_period?: string
-  billing_amount?: number
   outstanding?: number
   overdue?: number
   rate?: number
@@ -506,6 +507,8 @@ export interface TenantLegal {
   due_date?: string
   keterangan?: string
   document_url?: string
+  description?: string // Description from settings
+  status?: 'belum_selesai' | 'selesai'
   created_by?: {
     id: string
     name: string
@@ -526,6 +529,7 @@ export interface CreateTenantLegalData {
   due_date?: string
   keterangan?: string
   document_url?: string
+  status?: 'belum_selesai' | 'selesai'
 }
 
 // Update Tenant Legal Data interface
@@ -534,6 +538,7 @@ export interface UpdateTenantLegalData {
   due_date?: string
   keterangan?: string
   document_url?: string
+  status?: 'belum_selesai' | 'selesai'
 }
 
 // Roles-specific API functions
@@ -1084,6 +1089,9 @@ export interface Tenant {
   down_payment?: number
   deposit?: number
   payment_term?: string
+  building_area?: number
+  land_area?: number
+  electricity_power?: number
   status?: string // 'inactive' | 'active' | 'pending' | 'expired' | 'terminated' | 'blacklisted'
   payment_status?: 'paid' | 'scheduled' | 'reminder_needed' | 'overdue'
   created_by?: string
@@ -1117,6 +1125,9 @@ export interface CreateTenantData {
   deposit?: number
   payment_term?: number
   price_per_term?: number
+  building_area?: number
+  land_area?: number
+  electricity_power?: number
 }
 
 export interface UpdateTenantData {
@@ -1133,6 +1144,9 @@ export interface UpdateTenantData {
   down_payment?: number
   deposit?: number
   deposit_reason?: string
+  building_area?: number
+  land_area?: number
+  electricity_power?: number
   status?: string // 'inactive' | 'active' | 'pending' | 'expired' | 'terminated' | 'blacklisted'
 }
 

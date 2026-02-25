@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
-import { Tenant, CreateTenantData, UpdateTenantData, usersApi, unitsApi, tenantsApi, rolesApi, assetsApi, User, Unit, Asset, DURATION_UNITS, DURATION_UNIT_LABELS, TenantPaymentLog, CreateTenantPaymentData, UpdateTenantPaymentData, TenantLegal, CreateTenantLegalData, UpdateTenantLegalData } from '@/lib/api'
+import { Tenant, CreateTenantData, UpdateTenantData, usersApi, unitsApi, tenantsApi, rolesApi, assetsApi, User, Unit, Asset, DURATION_UNITS, DURATION_UNIT_LABELS, TenantPaymentLog, CreateTenantPaymentData, UpdateTenantPaymentData, TenantLegal, CreateTenantLegalData, UpdateTenantLegalData, settingsApi, Setting } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -90,6 +90,9 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
     sub_category: '',
     rent_price: 0,
     payment_term: '',
+    building_area: 0,
+    land_area: 0,
+    electricity_power: 0,
     status: 'active',
   })
   const [userSelectionType, setUserSelectionType] = useState<'existing' | 'new'>('new')
@@ -155,6 +158,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
   const [legalToDelete, setLegalToDelete] = useState<TenantLegal | null>(null)
   const [deletingLegal, setDeletingLegal] = useState(false)
   const [legalDocumentFile, setLegalDocumentFile] = useState<File | null>(null)
+  const [legalDocSettings, setLegalDocSettings] = useState<Setting[]>([])
 
   // Load categories and sub categories from existing tenants
   useEffect(() => {
@@ -198,6 +202,25 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
     }
     
     loadCategories()
+  }, [])
+
+  // Load legal document settings
+  useEffect(() => {
+    const loadLegalDocSettings = async () => {
+      try {
+        const response = await settingsApi.getSettings()
+        if (response.success && response.data) {
+          const settingsData = Array.isArray(response.data) ? response.data : []
+          // Filter settings with value='legal_doc'
+          const legalSettings = settingsData.filter((setting: Setting) => setting.value === 'legal_doc')
+          setLegalDocSettings(legalSettings)
+        }
+      } catch (error) {
+        console.error('Error loading legal doc settings:', error)
+      }
+    }
+    
+    loadLegalDocSettings()
   }, [])
 
   // Load users, units, assets, and roles
@@ -344,6 +367,9 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
           }
           return DURATION_UNITS.MONTH
         })() : '',
+        building_area: tenant.building_area || 0,
+        land_area: tenant.land_area || 0,
+        electricity_power: tenant.electricity_power || 0,
         status: statusValue,
       })
       
@@ -796,6 +822,20 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
         if (paymentTermValue !== undefined) {
           submitData.payment_term = paymentTermValue
         }
+        submitData.building_area = formData.building_area || undefined
+        submitData.land_area = formData.land_area || undefined
+        submitData.electricity_power = formData.electricity_power || undefined
+      } else {
+        // For update, include these fields if they have values
+        if (formData.building_area > 0) {
+          submitData.building_area = formData.building_area
+        }
+        if (formData.land_area > 0) {
+          submitData.land_area = formData.land_area
+        }
+        if (formData.electricity_power > 0) {
+          submitData.electricity_power = formData.electricity_power
+        }
       }
 
       // Validate that URLs are arrays of strings
@@ -859,6 +899,31 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
   // Handle price input change with formatting
   const handlePriceChange = (field: 'rent_price', value: string) => {
     const parsedValue = parsePrice(value)
+    handleInputChange(field, parsedValue)
+  }
+
+  // Format number with thousand separators (for area and power)
+  const formatNumber = (value: number | string): string => {
+    if (value === null || value === undefined || value === '') return ''
+    const numValue = typeof value === 'string' ? parseFloat(value.replace(/\./g, '')) : value
+    if (isNaN(numValue)) return ''
+    if (numValue === 0) return '0'
+    const integerPart = Math.floor(numValue).toString()
+    return integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  }
+
+  // Parse number input: remove separators
+  const parseNumber = (value: string): number => {
+    if (!value || value.trim() === '') return 0
+    const cleaned = value.replace(/\./g, '').replace(/[^\d.]/g, '')
+    if (!cleaned || cleaned === '') return 0
+    const parsed = cleaned.replace(/^0+(?=\d)/, '') || '0'
+    return parseFloat(parsed) || 0
+  }
+
+  // Handle number input change with formatting (for area and power)
+  const handleNumberChange = (field: 'building_area' | 'land_area' | 'electricity_power', value: string) => {
+    const parsedValue = parseNumber(value)
     handleInputChange(field, parsedValue)
   }
 
@@ -1098,7 +1163,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
           disabled={!tenant?.id}
           className='py-2.5 px-4 font-semibold text-sm inline-flex items-center gap-3 dark:bg-transparent text-neutral-600 hover:text-blue-600 dark:text-white dark:hover:text-blue-500 data-[state=active]:bg-gradient border-0 border-t-2 border-neutral-200 dark:border-neutral-500 data-[state=active]:border-blue-600 dark:data-[state=active]:border-blue-600 rounded-[0] data-[state=active]:shadow-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed'
         >
-          Payment History {tenant?.id && `(${paymentLogs.length})`}
+          Penagihan {tenant?.id && `(${paymentLogs.length})`}
         </TabsTrigger>
         <TabsTrigger 
           value="legals" 
@@ -1801,6 +1866,72 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
         </Card>
       )}
 
+      {/* Informasi Bangunan */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Informasi Bangunan</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Luas Bangunan */}
+            <div className="space-y-2">
+              <Label htmlFor="building_area">Luas Bangunan (m²)</Label>
+              <div className="relative">
+                <Input
+                  id="building_area"
+                  type="text"
+                  value={formatNumber(formData.building_area)}
+                  onChange={(e) => handleNumberChange('building_area', e.target.value)}
+                  placeholder="0"
+                  className={errors.building_area ? 'border-red-500' : ''}
+                />
+                <span className="absolute right-3 top-2.5 text-muted-foreground text-sm">m²</span>
+              </div>
+              {errors.building_area && (
+                <p className="text-sm text-red-500">{errors.building_area}</p>
+              )}
+            </div>
+
+            {/* Luas Tanah */}
+            <div className="space-y-2">
+              <Label htmlFor="land_area">Luas Tanah (m²)</Label>
+              <div className="relative">
+                <Input
+                  id="land_area"
+                  type="text"
+                  value={formatNumber(formData.land_area)}
+                  onChange={(e) => handleNumberChange('land_area', e.target.value)}
+                  placeholder="0"
+                  className={errors.land_area ? 'border-red-500' : ''}
+                />
+                <span className="absolute right-3 top-2.5 text-muted-foreground text-sm">m²</span>
+              </div>
+              {errors.land_area && (
+                <p className="text-sm text-red-500">{errors.land_area}</p>
+              )}
+            </div>
+
+            {/* Daya Listrik */}
+            <div className="space-y-2">
+              <Label htmlFor="electricity_power">Daya Listrik (VA)</Label>
+              <div className="relative">
+                <Input
+                  id="electricity_power"
+                  type="text"
+                  value={formatNumber(formData.electricity_power)}
+                  onChange={(e) => handleNumberChange('electricity_power', e.target.value)}
+                  placeholder="0"
+                  className={errors.electricity_power ? 'border-red-500' : ''}
+                />
+                <span className="absolute right-3 top-2.5 text-muted-foreground text-sm">VA</span>
+              </div>
+              {errors.electricity_power && (
+                <p className="text-sm text-red-500">{errors.electricity_power}</p>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {errors.user_id && (
         <p className="text-sm text-red-500">{errors.user_id}</p>
@@ -1959,10 +2090,10 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
       <TabsContent value="payments" className="px-6 py-4">
         <div className="space-y-4">
           <div className="flex justify-between items-center">
-            <h3 className="text-lg font-semibold">Payment History</h3>
+            <h3 className="text-lg font-semibold">Penagihan</h3>
             <Button onClick={handleCreatePayment} size="sm">
               <Plus className="mr-2 h-4 w-4" />
-              Tambah Payment
+              Tambah Penagihan
             </Button>
           </div>
 
@@ -1976,14 +2107,14 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[3%]">No</TableHead>
-                    <TableHead className="w-[8%]">Tanggal</TableHead>
+                    <TableHead className="w-[8%]">Periode Tagihan</TableHead>
                     <TableHead className="w-[8%]">Jatuh Tempo</TableHead>
-                    <TableHead className="w-[8%]">Jumlah</TableHead>
+                    <TableHead className="w-[7%]">Jenis Tagihan</TableHead>
+                    <TableHead className="w-[8%]">Jumlah Tagihan</TableHead>
+                    <TableHead className="w-[8%]">Tanggal Bayar</TableHead>
+                    <TableHead className="w-[8%]">Jumlah Bayar</TableHead>
                     <TableHead className="w-[8%]">Dibayar</TableHead>
                     <TableHead className="w-[7%]">Metode</TableHead>
-                    <TableHead className="w-[7%]">Jenis Tagihan</TableHead>
-                    <TableHead className="w-[8%]">Periode Tagihan</TableHead>
-                    <TableHead className="w-[8%]">Jumlah Tagihan</TableHead>
                     <TableHead className="w-[8%]">Outstanding</TableHead>
                     <TableHead className="w-[8%]">Overdue</TableHead>
                     <TableHead className="w-[5%]">Rate</TableHead>
@@ -2004,9 +2135,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                       <TableRow key={payment.id}>
                         <TableCell className="font-medium text-center">{index + 1}</TableCell>
                         <TableCell>
-                          {payment.payment_date 
-                            ? new Date(payment.payment_date).toLocaleDateString('id-ID')
-                            : '-'}
+                          {payment.billing_period || '-'}
                         </TableCell>
                         <TableCell>
                           {payment.payment_deadline 
@@ -2014,7 +2143,22 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                             : '-'}
                         </TableCell>
                         <TableCell>
-                          Rp {payment.amount?.toLocaleString('id-ID') || '0'}
+                          {payment.billing_type || '-'}
+                        </TableCell>
+                        <TableCell>
+                          {payment.billing_amount 
+                            ? `Rp ${payment.billing_amount.toLocaleString('id-ID')}`
+                            : '-'}
+                        </TableCell>
+                        <TableCell>
+                          {payment.payment_date 
+                            ? new Date(payment.payment_date).toLocaleDateString('id-ID')
+                            : '-'}
+                        </TableCell>
+                        <TableCell>
+                          {payment.amount 
+                            ? `Rp ${payment.amount.toLocaleString('id-ID')}`
+                            : '-'}
                         </TableCell>
                         <TableCell>
                           {payment.paid_amount 
@@ -2026,17 +2170,6 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                            payment.payment_method === 'bank_transfer' ? 'Bank Transfer' :
                            payment.payment_method === 'qris' ? 'QRIS' :
                            payment.payment_method === 'other' ? 'Other' : '-'}
-                        </TableCell>
-                        <TableCell>
-                          {payment.billing_type || '-'}
-                        </TableCell>
-                        <TableCell>
-                          {payment.billing_period || '-'}
-                        </TableCell>
-                        <TableCell>
-                          {payment.billing_amount 
-                            ? `Rp ${payment.billing_amount.toLocaleString('id-ID')}`
-                            : '-'}
                         </TableCell>
                         <TableCell>
                           {payment.outstanding 
@@ -2103,10 +2236,6 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold">Legal Documents</h3>
-            <Button onClick={handleCreateLegal} size="sm">
-              <Plus className="mr-2 h-4 w-4" />
-              Tambah Legal Document
-            </Button>
           </div>
 
           {legalDocumentsLoading ? (
@@ -2119,25 +2248,30 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[5%]">No</TableHead>
-                    <TableHead className="w-[20%]">Jenis Dokumen</TableHead>
-                    <TableHead className="w-[15%]">Due Date</TableHead>
-                    <TableHead className="w-[30%]">Keterangan</TableHead>
-                    <TableHead className="w-[20%]">Document</TableHead>
+                    <TableHead className="w-[18%]">Jenis Dokumen</TableHead>
+                    <TableHead className="w-[12%]">Due Date</TableHead>
+                    <TableHead className="w-[25%]">Keterangan</TableHead>
+                    <TableHead className="w-[15%]">Status</TableHead>
+                    <TableHead className="w-[15%]">Document</TableHead>
                     <TableHead className="w-[10%] text-center">Aksi</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {legalDocuments.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                         Tidak ada data legal document
                       </TableCell>
                     </TableRow>
                   ) : (
-                    legalDocuments.map((legal, index) => (
+                    legalDocuments.map((legal, index) => {
+                      // Use description from backend, fallback to doc_type
+                      const displayDocType = legal.description || legal.doc_type
+                      
+                      return (
                       <TableRow key={legal.id}>
                         <TableCell className="font-medium text-center">{index + 1}</TableCell>
-                        <TableCell className="font-medium">{legal.doc_type}</TableCell>
+                        <TableCell className="font-medium break-words whitespace-normal" style={{ wordBreak: 'break-word', maxWidth: '200px' }}>{displayDocType}</TableCell>
                         <TableCell>
                           {legal.due_date 
                             ? new Date(legal.due_date).toLocaleDateString('id-ID')
@@ -2145,6 +2279,11 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                         </TableCell>
                         <TableCell>
                           {legal.keterangan || '-'}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={legal.status === 'selesai' ? 'default' : 'secondary'}>
+                            {legal.status === 'selesai' ? 'Selesai' : 'Belum Selesai'}
+                          </Badge>
                         </TableCell>
                         <TableCell>
                           {legal.document_url ? (
@@ -2169,18 +2308,11 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                             >
                               <Edit className="w-4 h-4" />
                             </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => handleDeleteLegal(legal)}
-                              className="h-8 w-8 rounded-full text-red-500 bg-red-500/10 hover:bg-red-500/20"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
-                    ))
+                      )
+                    })
                   )}
                 </TableBody>
               </Table>
@@ -2194,9 +2326,9 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
     <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
       <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{editingPayment ? 'Edit Payment' : 'Tambah Payment Baru'}</DialogTitle>
+          <DialogTitle>{editingPayment ? 'Edit Penagihan' : 'Tambah Penagihan Baru'}</DialogTitle>
           <DialogDescription>
-            {editingPayment ? 'Perbarui informasi payment' : 'Masukkan informasi payment baru'}
+            {editingPayment ? 'Perbarui informasi penagihan' : 'Masukkan informasi penagihan baru'}
           </DialogDescription>
         </DialogHeader>
         <PaymentForm
@@ -2390,12 +2522,28 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
   const validateForm = () => {
     const newErrors: Record<string, string> = {}
 
-    if (!formData.amount || parsePrice(formData.amount) <= 0) {
-      newErrors.amount = 'Jumlah pembayaran harus diisi dan lebih dari 0'
+    // Validasi hanya untuk create payment baru (tidak untuk update)
+    if (!payment) {
+      if (!formData.billing_period || formData.billing_period.trim() === '') {
+        newErrors.billing_period = 'Periode tagihan harus diisi'
+      }
+
+      if (!formData.billing_amount || parsePrice(formData.billing_amount) <= 0) {
+        newErrors.billing_amount = 'Jumlah tagihan harus diisi dan lebih dari 0'
+      }
+
+      if (!formData.payment_deadline || formData.payment_deadline.trim() === '') {
+        newErrors.payment_deadline = 'Jatuh tempo harus diisi'
+      }
     }
 
-    if (!formData.payment_method) {
-      newErrors.payment_method = 'Metode pembayaran harus dipilih'
+    // Field opsional untuk create, tapi tetap validasi jika diisi
+    if (formData.amount && parsePrice(formData.amount) <= 0) {
+      newErrors.amount = 'Jumlah pembayaran harus lebih dari 0'
+    }
+
+    if (formData.payment_method && !['cash', 'bank_transfer', 'qris', 'other'].includes(formData.payment_method)) {
+      newErrors.payment_method = 'Metode pembayaran tidak valid'
     }
 
     setErrors(newErrors)
@@ -2444,20 +2592,17 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
       }
       await onSubmit(updateData)
     } else {
-      // Create payment
+      // Create payment - billing_period, billing_amount, dan payment_deadline adalah mandatory
       const createData: CreateTenantPaymentData = {
-        amount: parsePrice(formData.amount),
-        payment_method: formData.payment_method,
+        billing_period: formData.billing_period.trim(),
+        billing_amount: parsePrice(formData.billing_amount),
+        payment_deadline: new Date(formData.payment_deadline).toISOString(),
+        amount: formData.amount ? parsePrice(formData.amount) : undefined,
+        payment_method: formData.payment_method || undefined,
         notes: formData.notes.trim() || undefined,
       }
       if (formData.billing_type) {
         createData.billing_type = formData.billing_type
-      }
-      if (formData.billing_period) {
-        createData.billing_period = formData.billing_period
-      }
-      if (formData.billing_amount) {
-        createData.billing_amount = parsePrice(formData.billing_amount)
       }
       if (formData.outstanding) {
         createData.outstanding = parsePrice(formData.outstanding)
@@ -2479,27 +2624,73 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="amount">
-            Jumlah Pembayaran <span className="text-red-500">*</span>
+          <Label htmlFor="billing_period">
+            Periode Tagihan {!payment && <span className="text-red-500">*</span>}
           </Label>
           <Input
-            id="amount"
+            id="billing_period"
             type="text"
-            value={formData.amount}
-            onChange={(e) => handleInputChange('amount', e.target.value)}
-            placeholder="Masukkan jumlah pembayaran"
-            className={errors.amount ? 'border-red-500' : ''}
-            disabled={!!payment}
+            value={formData.billing_period}
+            onChange={(e) => handleInputChange('billing_period', e.target.value)}
+            placeholder="Contoh: Januari 2024"
+            className={errors.billing_period ? 'border-red-500' : ''}
           />
-          {errors.amount && (
-            <p className="text-sm text-red-500">{errors.amount}</p>
+          {errors.billing_period && (
+            <p className="text-sm text-red-500">{errors.billing_period}</p>
           )}
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="payment_method">
-            Metode Pembayaran <span className="text-red-500">*</span>
+          <Label htmlFor="billing_amount">
+            Jumlah Tagihan {!payment && <span className="text-red-500">*</span>}
           </Label>
+          <div className="relative">
+            <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
+            <Input
+              id="billing_amount"
+              type="text"
+              value={formatPrice(parsePrice(formData.billing_amount))}
+              onChange={(e) => handleInputChange('billing_amount', e.target.value)}
+              placeholder="0"
+              className={`pl-10 ${errors.billing_amount ? 'border-red-500' : ''}`}
+            />
+          </div>
+          {errors.billing_amount && (
+            <p className="text-sm text-red-500">{errors.billing_amount}</p>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="payment_deadline">
+            Jatuh Tempo {!payment && <span className="text-red-500">*</span>}
+          </Label>
+          <Input
+            id="payment_deadline"
+            type="date"
+            value={formData.payment_deadline}
+            onChange={(e) => handleInputChange('payment_deadline', e.target.value)}
+            className={errors.payment_deadline ? 'border-red-500' : ''}
+          />
+          {errors.payment_deadline && (
+            <p className="text-sm text-red-500">{errors.payment_deadline}</p>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="billing_type">Jenis Tagihan</Label>
+          <Input
+            id="billing_type"
+            type="text"
+            value={formData.billing_type}
+            onChange={(e) => handleInputChange('billing_type', e.target.value)}
+            placeholder="Masukkan jenis tagihan"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="payment_method">Metode Pembayaran</Label>
           <Select
             value={formData.payment_method}
             onValueChange={(value) => handleInputChange('payment_method', value)}
@@ -2520,78 +2711,36 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
         </div>
       </div>
 
-      {payment && (
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="payment_date">Tanggal Pembayaran</Label>
-            <Input
-              id="payment_date"
-              type="date"
-              value={formData.payment_date}
-              onChange={(e) => handleInputChange('payment_date', e.target.value)}
-            />
-          </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="payment_date">Tanggal Pembayaran</Label>
+          <Input
+            id="payment_date"
+            type="date"
+            value={formData.payment_date}
+            onChange={(e) => handleInputChange('payment_date', e.target.value)}
+          />
+        </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="paid_amount">Jumlah Dibayar</Label>
+        <div className="space-y-2">
+          <Label htmlFor="paid_amount">Jumlah Dibayar</Label>
+          <div className="relative">
+            <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
             <Input
               id="paid_amount"
               type="text"
-              value={formData.paid_amount}
+              value={formatPrice(parsePrice(formData.paid_amount))}
               onChange={(e) => handleInputChange('paid_amount', e.target.value)}
-              placeholder="Masukkan jumlah yang dibayar"
+              placeholder="0"
+              className="pl-10"
             />
           </div>
         </div>
-      )}
-
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="payment_deadline">Jatuh Tempo</Label>
-          <Input
-            id="payment_deadline"
-            type="date"
-            value={formData.payment_deadline}
-            onChange={(e) => handleInputChange('payment_deadline', e.target.value)}
-            disabled={!!payment}
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="billing_type">Jenis Tagihan</Label>
-          <Input
-            id="billing_type"
-            type="text"
-            value={formData.billing_type}
-            onChange={(e) => handleInputChange('billing_type', e.target.value)}
-            placeholder="Masukkan jenis tagihan"
-          />
-        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="billing_period">Periode Tagihan</Label>
-          <Input
-            id="billing_period"
-            type="text"
-            value={formData.billing_period}
-            onChange={(e) => handleInputChange('billing_period', e.target.value)}
-            placeholder="Contoh: Januari 2024"
-          />
-        </div>
+      
 
-        <div className="space-y-2">
-          <Label htmlFor="billing_amount">Jumlah Tagihan</Label>
-          <Input
-            id="billing_amount"
-            type="text"
-            value={formData.billing_amount}
-            onChange={(e) => handleInputChange('billing_amount', e.target.value)}
-            placeholder="Masukkan jumlah tagihan"
-          />
-        </div>
-      </div>
+      
 
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
@@ -2682,6 +2831,7 @@ function LegalForm({ legal, onSubmit, loading = false, onCancel, documentFile, o
     doc_type: '',
     due_date: '',
     keterangan: '',
+    status: 'belum_selesai' as 'belum_selesai' | 'selesai',
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
 
@@ -2691,12 +2841,14 @@ function LegalForm({ legal, onSubmit, loading = false, onCancel, documentFile, o
         doc_type: legal.doc_type || '',
         due_date: legal.due_date ? new Date(legal.due_date).toISOString().split('T')[0] : '',
         keterangan: legal.keterangan || '',
+        status: legal.status || 'belum_selesai',
       })
     } else {
       setFormData({
         doc_type: '',
         due_date: '',
         keterangan: '',
+        status: 'belum_selesai',
       })
     }
   }, [legal])
@@ -2752,6 +2904,7 @@ function LegalForm({ legal, onSubmit, loading = false, onCancel, documentFile, o
       doc_type: formData.doc_type.trim(),
       due_date: formData.due_date || undefined,
       keterangan: formData.keterangan.trim() || undefined,
+      status: formData.status,
     }
 
     await onSubmit(submitData)
@@ -2795,6 +2948,22 @@ function LegalForm({ legal, onSubmit, loading = false, onCancel, documentFile, o
           placeholder="Masukkan keterangan (opsional)"
           rows={3}
         />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="status">Status</Label>
+        <Select
+          value={formData.status}
+          onValueChange={(value) => handleInputChange('status', value)}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Pilih status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="belum_selesai">Belum Selesai</SelectItem>
+            <SelectItem value="selesai">Selesai</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="space-y-2">

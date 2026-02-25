@@ -15,7 +15,11 @@ interface TenantWithPayment extends Tenant {
   unpaidPayment?: TenantPaymentLog | null
 }
 
-export default function TenantKontrakTable() {
+interface TenantKontrakTableProps {
+  selectedAssetId?: string
+}
+
+export default function TenantKontrakTable({ selectedAssetId = 'all' }: TenantKontrakTableProps) {
   const [tenants, setTenants] = useState<TenantWithPayment[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null)
@@ -23,7 +27,7 @@ export default function TenantKontrakTable() {
 
   useEffect(() => {
     loadTenants()
-  }, [])
+  }, [selectedAssetId])
 
   const loadTenants = async () => {
     try {
@@ -49,6 +53,26 @@ export default function TenantKontrakTable() {
         const tenantStatus = tenant.status?.toLowerCase() || ''
         if (tenantStatus !== 'active') {
           continue
+        }
+        
+        // Filter by selected asset if needed
+        if (selectedAssetId !== 'all') {
+          // Check if tenant has any unit in the selected asset
+          let hasUnitInAsset = false
+          if (tenant.units && tenant.units.length > 0) {
+            hasUnitInAsset = tenant.units.some((u: any) => {
+              const unitAssetId = u.asset?.id || u.asset_id
+              return unitAssetId === selectedAssetId
+            })
+          } else if (tenant.unit_ids && tenant.unit_ids.length > 0) {
+            // If units array is not populated, we need to check units separately
+            // For now, skip this tenant if we can't verify
+            continue
+          }
+          
+          if (!hasUnitInAsset) {
+            continue
+          }
         }
         
         // Payment status diambil langsung dari kolom payment_status di tabel tenant
