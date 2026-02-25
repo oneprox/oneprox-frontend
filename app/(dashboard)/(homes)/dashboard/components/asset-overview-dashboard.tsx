@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { assetsApi, tenantsApi, unitsApi, Tenant, Asset, Unit, TenantLegal, TenantPaymentLog } from '@/lib/api'
+import { assetsApi, dashboardApi, Asset } from '@/lib/api'
 import { Leaf, Home, FileText, DollarSign } from "lucide-react"
 import LoadingSkeleton from "@/components/loading-skeleton"
 
@@ -26,9 +26,9 @@ interface AssetUtilizationData {
 }
 
 interface FinancialPerformanceData {
-  year: string
-  income: number
-  savings: number
+  quarter: string // Q1, Q2, Q3, Q4
+  realisasi: number
+  target: number
 }
 
 interface LegalTableData {
@@ -41,6 +41,7 @@ interface LegalTableData {
   progress: number
   dokumen: string
   status: string
+  tipe: 'legal' | 'payment' // Menandai apakah ini legal document atau penagihan
 }
 
 interface AssetOverviewDashboardProps {
@@ -107,239 +108,38 @@ export default function AssetOverviewDashboard({
     try {
       setLoading(true)
       
-      // Load all tenants
-      const tenantsResponse = await tenantsApi.getTenants({ limit: 10000 })
-      if (!tenantsResponse.success || !tenantsResponse.data) {
-        return
-      }
-
-      // Backend returns: { data: [...], message: "...", status: 200 }
-      // ApiClient returns: { success: true, data: [...] }
-      const tenantsList: Tenant[] = Array.isArray(tenantsResponse.data) 
-        ? tenantsResponse.data 
-        : []
-
-      // Load all units
-      const unitsResponse = await unitsApi.getUnits({ limit: 10000 })
-      const unitsList: Unit[] = Array.isArray(unitsResponse.data) 
-        ? unitsResponse.data 
-        : []
-
-      // Filter by selected asset
-      let filteredAssets = assets
-      if (selectedAssetId !== 'all') {
-        filteredAssets = assets.filter(a => a.id === selectedAssetId)
-      }
-
-      // Calculate overview data
-      let totalLandArea = 0
-      let totalBuildingArea = 0
-      let occupiedUnits = 0
-      let totalUnits = 0
-      let totalRevenue = 0
-
-      filteredAssets.forEach(asset => {
-        const assetArea = typeof asset.area === 'string' ? parseFloat(asset.area) : (typeof asset.area === 'number' ? asset.area : 0)
-        totalLandArea += assetArea
-        
-        // Get units for this asset
-        // Check both asset_id and unit.asset.id (unit may have asset object from backend)
-        const assetUnits = unitsList.filter(u => {
-          return u.asset_id === asset.id || u.asset?.id === asset.id
-        })
-        totalUnits += assetUnits.length
-        
-        // Get tenants for this asset (through units)
-        // Units are already included in tenant response from backend
-        const assetUnitIds = assetUnits.map(u => u.id)
-        const assetTenants = tenantsList.filter(t => {
-          if (!t.units || !Array.isArray(t.units)) return false
-          // Check if tenant has any unit in this asset
-          return t.units.some((tu: any) => {
-            const unitId = tu.id
-            // Also check if unit's asset matches
-            const unitAssetId = tu.asset?.id || tu.asset_id
-            return assetUnitIds.includes(unitId) || unitAssetId === asset.id
-          })
-        })
-        
-        occupiedUnits += assetTenants.length
-        
-        // Calculate building area (using building_area or size)
-        assetUnits.forEach(unit => {
-          const unitArea = unit.building_area || unit.size || 0
-          totalBuildingArea += typeof unitArea === 'string' ? parseFloat(unitArea) : (typeof unitArea === 'number' ? unitArea : 0)
-        })
-
-        // Calculate revenue
-        assetTenants.forEach(tenant => {
-          const rentPrice = typeof tenant.rent_price === 'string' ? parseFloat(tenant.rent_price) : (typeof tenant.rent_price === 'number' ? tenant.rent_price : 0)
-          totalRevenue += rentPrice
-        })
-      })
-
-      const occupancy = totalUnits > 0 ? (occupiedUnits / totalUnits) * 100 : 0
-      const averageRate = totalBuildingArea > 0 ? totalRevenue / totalBuildingArea : 0
-
-      setOverviewData({
-        totalLandArea,
-        totalBuildingArea,
-        occupancy,
-        averageRate
-      })
-
-      // Calculate utilization data from tenant categories
-      const utilizationMap = new Map<string, number>()
+      // Call backend API untuk mendapatkan semua data yang sudah dikalkulasi
+      const response = await dashboardApi.getAssetOverview(selectedAssetId !== 'all' ? selectedAssetId : undefined)
       
-      // Get all tenants for filtered assets
-      const allFilteredTenants = filteredAssets.flatMap(asset => {
-        const assetUnits = unitsList.filter(u => {
-          return u.asset_id === asset.id || u.asset?.id === asset.id
-        })
-        const assetUnitIds = assetUnits.map(u => u.id)
-        return tenantsList.filter(t => {
-          if (!t.units || !Array.isArray(t.units)) return false
-          return t.units.some((tu: any) => {
-            const unitId = tu.id
-            const unitAssetId = tu.asset?.id || tu.asset_id
-            return assetUnitIds.includes(unitId) || unitAssetId === asset.id
-          })
-        })
-      })
-
-      // Group by category and calculate total rent price
-      allFilteredTenants.forEach(tenant => {
-        const categoryName = tenant.category?.name || 'Other Expenses'
-        const rentPrice = typeof tenant.rent_price === 'string' 
-          ? parseFloat(tenant.rent_price) 
-          : (typeof tenant.rent_price === 'number' ? tenant.rent_price : 0)
-        
-        const currentValue = utilizationMap.get(categoryName) || 0
-        utilizationMap.set(categoryName, currentValue + rentPrice)
-      })
-
-      // Convert to array format
-      const utilizationArray: AssetUtilizationData[] = Array.from(utilizationMap.entries())
-        .map(([category, value]) => ({ category, value }))
-        .sort((a, b) => b.value - a.value) // Sort by value descending
-
-      // If no data, set empty array
-      setUtilizationData(utilizationArray.length > 0 ? utilizationArray : [])
-
-      // Calculate financial performance data from payment logs
-      const financialMap = new Map<string, { income: number; savings: number }>()
-      
-      // Get payment logs for all filtered tenants in parallel
-      const paymentPromises = allFilteredTenants.map(async (tenant) => {
-        try {
-          const paymentResponse = await tenantsApi.getTenantPaymentLogs(tenant.id, { 
-            limit: 1000,
-            status: 1 // Only paid payments
-          })
-          
-          if (paymentResponse.success && paymentResponse.data) {
-            const paymentData = paymentResponse.data as any
-            const payments: TenantPaymentLog[] = Array.isArray(paymentData.data) 
-              ? paymentData.data 
-              : (Array.isArray(paymentData) ? paymentData : [])
-            
-            return payments
-          }
-          return []
-        } catch (err) {
-          console.error(`Error loading payments for tenant ${tenant.id}:`, err)
-          return []
+      if (response.success && response.data) {
+       
+        const responseData = response.data as any
+        const data = responseData.data;
+        console.log('Dashboard Data:', data)
+        // Set overview data
+        if (data.overview) {
+          setOverviewData(data.overview)
         }
-      })
-      
-      const allPaymentsArrays = await Promise.all(paymentPromises)
-      const allPayments = allPaymentsArrays.flat()
-      
-      // Process all payments
-      allPayments.forEach((payment: TenantPaymentLog) => {
-        if (payment.payment_date && payment.paid_amount) {
-          const paymentDate = new Date(payment.payment_date)
-          const year = paymentDate.getFullYear().toString()
-          
-          const paidAmount = typeof payment.paid_amount === 'string' 
-            ? parseFloat(payment.paid_amount) 
-            : (typeof payment.paid_amount === 'number' ? payment.paid_amount : 0)
-          
-          const current = financialMap.get(year) || { income: 0, savings: 0 }
-          current.income += paidAmount
-          // Calculate savings as 20% of income (adjustable)
-          current.savings = current.income * 0.2
-          financialMap.set(year, current)
+        
+        // Set utilization data
+        if (data.utilization) {
+          setUtilizationData(data.utilization)
         }
-      })
-
-      // Convert to array format and sort by year
-      const financialArray: FinancialPerformanceData[] = Array.from(financialMap.entries())
-        .map(([year, data]) => ({ year, income: data.income, savings: data.savings }))
-        .sort((a, b) => parseInt(a.year) - parseInt(b.year))
-
-      // If no data, set empty array
-      setFinancialData(financialArray.length > 0 ? financialArray : [])
-
-      // Load legal data
-      await loadLegalData(tenantsList, filteredAssets, unitsList, selectedAssetId)
-
+        
+        // Set financial data
+        if (data.financial) {
+          setFinancialData(data.financial)
+        }
+        
+        // Set legal data
+        if (data.legal) {
+          setLegalData(data.legal)
+        }
+      }
     } catch (err) {
       console.error('Error loading dashboard data:', err)
     } finally {
       setLoading(false)
-    }
-  }
-
-  const loadLegalData = async (tenants: Tenant[], assets: Asset[], units: Unit[], assetIdFilter: string) => {
-    try {
-      const legalTableData: LegalTableData[] = []
-      
-      // Get legal documents for each tenant
-      for (const tenant of tenants) {
-        try {
-          const legalResponse = await tenantsApi.getTenantLegals(tenant.id)
-          if (legalResponse.success && legalResponse.data) {
-            const legals = Array.isArray(legalResponse.data) ? legalResponse.data : []
-            
-            // Get tenant units - units are already included in tenant response from backend
-            const tenantUnits = tenant.units && Array.isArray(tenant.units) ? tenant.units : []
-
-            legals.forEach((legal: TenantLegal) => {
-              // Get asset from unit (unit already has asset from backend, or use asset_id as fallback)
-              const tenantUnit = tenantUnits[0]
-              const asset = tenantUnit?.asset || (tenantUnit?.asset_id ? assets.find(a => a.id === tenantUnit.asset_id) : null)
-              
-              // Skip if no asset found
-              if (!asset) return
-              
-              if (assetIdFilter === 'all' || (asset && asset.id === assetIdFilter)) {
-                legalTableData.push({
-                  id: legal.id,
-                  nama: tenant.name || '-',
-                  aset: asset?.name || '-',
-                  unit: tenantUnit?.name || '-',
-                  jatuhTempo: legal.due_date ? new Date(legal.due_date).toLocaleDateString('id-ID', { 
-                    day: 'numeric', 
-                    month: 'long', 
-                    year: 'numeric' 
-                  }) : '-',
-                  kewajibanMitra: legal.description || legal.doc_type || '-',
-                  progress: legal.status === 'selesai' ? 100 : 10,
-                  dokumen: legal.keterangan || legal.doc_type || '-',
-                  status: legal.status === 'selesai' ? 'Done' : 'On Process'
-                })
-              }
-            })
-          }
-        } catch (err) {
-          console.error(`Error loading legal for tenant ${tenant.id}:`, err)
-        }
-      }
-
-      setLegalData(legalTableData)
-    } catch (err) {
-      console.error('Error loading legal data:', err)
     }
   }
 
@@ -357,7 +157,7 @@ export default function AssetOverviewDashboard({
     dataLabels: {
       enabled: true,
       formatter: function (val: number) {
-        return 'Rp ' + val.toLocaleString('id-ID')
+        return val.toLocaleString('id-ID') + ' tenant'
       }
     },
     plotOptions: {
@@ -371,7 +171,7 @@ export default function AssetOverviewDashboard({
               label: 'Total',
               formatter: function () {
                 const total = utilizationData.reduce((sum, d) => sum + d.value, 0)
-                return 'Rp ' + total.toLocaleString('id-ID')
+                return total.toLocaleString('id-ID') + ' tenant'
               }
             }
           }
@@ -401,7 +201,7 @@ export default function AssetOverviewDashboard({
       enabled: false
     },
     xaxis: {
-      categories: financialData.map(d => d.year)
+      categories: financialData.map(d => d.quarter)
     },
     yaxis: {
       labels: {
@@ -424,12 +224,12 @@ export default function AssetOverviewDashboard({
 
   const financialChartSeries = [
     {
-      name: 'Income',
-      data: financialData.map(d => d.income)
+      name: 'Realisasi',
+      data: financialData.map(d => d.realisasi)
     },
     {
-      name: 'Savings',
-      data: financialData.map(d => d.savings)
+      name: 'Target',
+      data: financialData.map(d => d.target)
     }
   ]
 
@@ -529,7 +329,7 @@ export default function AssetOverviewDashboard({
         {/* Asset Utilization Chart */}
         <Card>
           <CardHeader>
-            <CardTitle>PEMANFAATAN ASET (m²)</CardTitle>
+            <CardTitle>PEMANFAATAN ASET</CardTitle>
           </CardHeader>
           <CardContent>
             {utilizationData.length > 0 ? (
@@ -550,29 +350,23 @@ export default function AssetOverviewDashboard({
         {/* Financial Performance Chart */}
         <Card>
           <CardHeader>
-            <CardTitle>KINERJA KEUANGAN 2026</CardTitle>
+            <CardTitle>KINERJA KEUANGAN {new Date().getFullYear()}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="mb-4">
               <div className="flex items-center gap-4 mb-2">
                 <div className="flex items-center gap-2">
                   <div className="w-4 h-4 bg-purple-500 rounded"></div>
-                  <span className="text-sm">Income</span>
+                  <span className="text-sm">Realisasi</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="w-4 h-4 bg-blue-500 rounded"></div>
-                  <span className="text-sm">Savings</span>
+                  <span className="text-sm">Target</span>
                 </div>
               </div>
               <div className="text-sm text-gray-600">
-                <p>TARGET: 8.930.000.000</p>
-                <p className="mt-2">REALISASI:</p>
-                <ul className="list-disc list-inside ml-2">
-                  <li>Triwulan 1</li>
-                  <li>Triwulan 2</li>
-                  <li>Triwulan 3</li>
-                  <li>Triwulan 4</li>
-                </ul>
+                <p>TARGET TOTAL: Rp {financialData.reduce((sum, d) => sum + d.target, 0).toLocaleString('id-ID')}</p>
+                <p className="mt-2">REALISASI TOTAL: Rp {financialData.reduce((sum, d) => sum + d.realisasi, 0).toLocaleString('id-ID')}</p>
               </div>
             </div>
             {financialData.length > 0 ? (
@@ -608,20 +402,21 @@ export default function AssetOverviewDashboard({
                   <TableHead>JATUH TEMPO</TableHead>
                   <TableHead>KEWAJIBAN MITRA</TableHead>
                   <TableHead>PROGRESS</TableHead>
-                  <TableHead>DOKUMEN</TableHead>
+                  <TableHead>DOKUMEN/PERIODE</TableHead>
                   <TableHead>STATUS</TableHead>
+                  <TableHead>TIPE</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {legalData.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                      Tidak ada data legal
+                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                      Tidak ada data legal atau penagihan
                     </TableCell>
                   </TableRow>
                 ) : (
                   legalData.map((legal, index) => (
-                    <TableRow key={legal.id}>
+                    <TableRow key={`${legal.tipe}-${legal.id}`}>
                       <TableCell className="text-center">{index + 1}</TableCell>
                       <TableCell>{legal.nama}</TableCell>
                       <TableCell>{legal.aset}</TableCell>
@@ -631,8 +426,13 @@ export default function AssetOverviewDashboard({
                       <TableCell>{legal.progress}%</TableCell>
                       <TableCell className="max-w-xs truncate">{legal.dokumen}</TableCell>
                       <TableCell>
-                        <Badge variant={legal.status === 'Done' ? 'default' : 'secondary'}>
+                        <Badge variant={legal.status === 'Done' ? 'default' : (legal.status === 'Belum Dibayar' ? 'destructive' : 'secondary')}>
                           {legal.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={legal.tipe === 'legal' ? 'outline' : 'secondary'}>
+                          {legal.tipe === 'legal' ? 'Legal Document' : 'Penagihan'}
                         </Badge>
                       </TableCell>
                     </TableRow>

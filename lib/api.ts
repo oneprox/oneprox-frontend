@@ -1953,6 +1953,59 @@ export interface RevenueGrowth {
   revenue: number[]
 }
 
+// Asset Overview interfaces
+export interface AssetOverviewData {
+  totalLandArea: number
+  totalBuildingArea: number
+  occupancy: number
+  averageRate: number
+}
+
+export interface AssetUtilizationData {
+  category: string
+  value: number
+}
+
+export interface FinancialPerformanceData {
+  quarter: string
+  realisasi: number
+  target: number
+}
+
+export interface LegalTableData {
+  id: number
+  nama: string
+  aset: string
+  unit: string
+  jatuhTempo: string
+  kewajibanMitra: string
+  progress: number
+  dokumen: string
+  status: string
+  tipe: 'legal' | 'payment'
+}
+
+export interface AssetOverviewResponse {
+  overview: AssetOverviewData
+  utilization: AssetUtilizationData[]
+  financial: FinancialPerformanceData[]
+  legal: LegalTableData[]
+}
+
+export interface FinancialTableData {
+  id: number
+  nama: string
+  aset: string
+  unit: string
+  jatuhTempo: string
+  deskripsi: string
+  nomorInvoice: string
+  nilaiInvoice: number
+  tanggalInvoice: string
+  status: string
+  aging: number
+}
+
 // Dashboard API functions
 export const dashboardApi = {
   async getDashboardData(): Promise<ApiResponse<DashboardData>> {
@@ -1966,6 +2019,14 @@ export const dashboardApi = {
   },
   async getRevenueGrowth(): Promise<ApiResponse<RevenueGrowth>> {
     return apiClient.get<RevenueGrowth>('/api/dashboard/revenue-growth')
+  },
+  async getAssetOverview(assetId?: string): Promise<ApiResponse<AssetOverviewResponse>> {
+    const queryParams = assetId ? `?assetId=${assetId}` : ''
+    return apiClient.get<AssetOverviewResponse>(`/api/dashboard/asset-overview${queryParams}`)
+  },
+  async getFinancialTable(assetId?: string): Promise<ApiResponse<FinancialTableData[]>> {
+    const queryParams = assetId ? `?assetId=${assetId}` : ''
+    return apiClient.get<FinancialTableData[]>(`/api/dashboard/financial-table${queryParams}`)
   },
 }
 
