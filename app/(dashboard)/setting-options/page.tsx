@@ -6,6 +6,7 @@ import DashboardBreadcrumb from '@/components/layout/dashboard-breadcrumb'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Table,
   TableBody,
@@ -288,12 +289,14 @@ export default function SettingOptionsPage() {
             
             <div>
               <Label htmlFor="new-description">Description</Label>
-              <Input
+              <Textarea
                 id="new-description"
                 value={newDescription}
                 onChange={(e) => setNewDescription(e.target.value)}
                 placeholder="Masukkan description (opsional)"
-                className="mt-2"
+                className="mt-2 resize-none"
+                cols={30}
+                rows={5}
                 disabled={creating}
               />
             </div>
@@ -345,12 +348,14 @@ export default function SettingOptionsPage() {
             
             <div>
               <Label htmlFor="edit-description">Description</Label>
-              <Input
+              <Textarea
                 id="edit-description"
                 value={editDescription}
                 onChange={(e) => setEditDescription(e.target.value)}
                 placeholder="Masukkan description (opsional)"
-                className="mt-2"
+                className="mt-2 resize-none"
+                cols={30}
+                rows={5}
               />
             </div>
           </div>
