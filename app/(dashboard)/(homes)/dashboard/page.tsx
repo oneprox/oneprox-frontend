@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import AssetOverviewDashboard from "./components/asset-overview-dashboard"
-import FinancialTable from "./components/financial-table"
 import DailyWorkStatus from "./components/daily-work-status"
 import NonRoutineWork from "./components/non-routine-work"
 import ReportsObstaclesNotes from "./components/reports-obstacles-notes"
@@ -23,11 +22,8 @@ export default function DashboardPage() {
         onAssetChange={setSelectedAssetId}
       />
 
-      {/* Financial, Daily Work Status, Non-Routine Work, and Reports Sections */}
+      {/* Daily Work Status, Non-Routine Work, and Reports Sections */}
       <div className="space-y-6 mt-6">
-        {/* Financial Table */}
-        <FinancialTable selectedAssetId={selectedAssetId} />
-
         {/* Daily Work Status */}
         <DailyWorkStatus selectedAssetId={selectedAssetId} />
 

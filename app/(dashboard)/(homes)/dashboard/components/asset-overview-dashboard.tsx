@@ -1,12 +1,14 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+import FinancialTable from './financial-table'
 import dynamic from 'next/dynamic'
 import { ApexOptions } from 'apexcharts'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { assetsApi, dashboardApi, Asset } from '@/lib/api'
 import { Leaf, Home, FileText, DollarSign } from "lucide-react"
 import LoadingSkeleton from "@/components/loading-skeleton"
@@ -33,6 +35,9 @@ interface FinancialPerformanceData {
 
 interface LegalTableData {
   id: number
+  tenantId?: string
+  dueDateIso?: string
+  dokumenUrl?: string | null
   nama: string
   aset: string
   unit: string
@@ -41,7 +46,41 @@ interface LegalTableData {
   progress: number
   dokumen: string
   status: string
-  tipe: 'legal' | 'payment' // Menandai apakah ini legal document atau penagihan
+  tipe: 'legal' | 'payment'
+}
+
+function isOpenObligationStatus(status: string): boolean {
+  const s = (status || '').trim().toLowerCase()
+  if (!s) return false
+  return /^(selesai|done|lunas|completed)$/.test(s) || s.includes('sudah dibayar')
+}
+
+/** Merah: lewat tempo · Kuning: ≤30 hari · Biru: &gt;30 hari */
+function dueDateDotClass(dueDateIso: string | undefined): string {
+  if (!dueDateIso) return 'bg-slate-300'
+  const due = new Date(dueDateIso)
+  if (Number.isNaN(due.getTime())) return 'bg-slate-300'
+  const startToday = new Date()
+  startToday.setHours(0, 0, 0, 0)
+  const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate())
+  const daysUntil = Math.round((dueDay.getTime() - startToday.getTime()) / 86_400_000)
+  if (daysUntil < 0) return 'bg-red-500'
+  if (daysUntil <= 30) return 'bg-amber-400'
+  return 'bg-blue-500'
+}
+
+function legalRowDisplayStatus(row: LegalTableData): 'Overdue' | 'On Process' {
+  if (row.status === 'Overdue') return 'Overdue'
+  if (row.dueDateIso) {
+    const due = new Date(row.dueDateIso)
+    if (!Number.isNaN(due.getTime())) {
+      const startToday = new Date()
+      startToday.setHours(0, 0, 0, 0)
+      const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate())
+      if (dueDay < startToday) return 'Overdue'
+    }
+  }
+  return 'On Process'
 }
 
 interface AssetOverviewDashboardProps {
@@ -107,31 +146,22 @@ export default function AssetOverviewDashboard({
   const loadDashboardData = async () => {
     try {
       setLoading(true)
-      
-      // Call backend API untuk mendapatkan semua data yang sudah dikalkulasi
-      const response = await dashboardApi.getAssetOverview(selectedAssetId !== 'all' ? selectedAssetId : undefined)
-      
+      const assetParam = selectedAssetId !== 'all' ? selectedAssetId : undefined
+      const response = await dashboardApi.getAssetOverview(assetParam)
+
       if (response.success && response.data) {
-       
         const responseData = response.data as any
-        const data = responseData.data;
+        const data = responseData.data
         console.log('Dashboard Data:', data)
-        // Set overview data
         if (data.overview) {
           setOverviewData(data.overview)
         }
-        
-        // Set utilization data
         if (data.utilization) {
           setUtilizationData(data.utilization)
         }
-        
-        // Set financial data
         if (data.financial) {
           setFinancialData(data.financial)
         }
-        
-        // Set legal data
         if (data.legal) {
           setLegalData(data.legal)
         }
@@ -366,6 +396,20 @@ export default function AssetOverviewDashboard({
   const totalFinancialRealisasi = financialData.reduce((s, d) => s + d.realisasi, 0)
   const totalFinancialTarget = financialData.reduce((s, d) => s + d.target, 0)
 
+  const legalitasRows = useMemo(() => {
+    return legalData
+      .filter((row) => {
+        if (isOpenObligationStatus(row.status)) return false
+        const hasDue = !!(row.dueDateIso?.trim() || (row.jatuhTempo && row.jatuhTempo !== '-'))
+        return hasDue
+      })
+      .sort((a, b) => {
+        const ta = a.dueDateIso ? new Date(a.dueDateIso).getTime() : 0
+        const tb = b.dueDateIso ? new Date(b.dueDateIso).getTime() : 0
+        return ta - tb
+      })
+  }, [legalData])
+
   if (loading && assets.length === 0) {
     return <LoadingSkeleton height="h-96" text="Memuat data dashboard..." />
   }
@@ -596,64 +640,151 @@ export default function AssetOverviewDashboard({
         </Card>
       </div>
 
-      {/* Legal Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>LEGAL</CardTitle>
+      {/* Status Legalitas Aset */}
+      <Card className="border border-gray-200 shadow-sm">
+        <CardHeader className="space-y-1 pb-4">
+          <CardTitle className="text-lg font-bold tracking-tight text-slate-900">
+            Status Legalitas Aset
+          </CardTitle>
+          <CardDescription className="text-sm text-slate-500">
+            Detailed legal and compliance tracking for active partners.
+          </CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
+        <CardContent className="space-y-6">
+          <div className="overflow-x-auto rounded-lg border border-slate-100">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[50px]">NO</TableHead>
-                  <TableHead>NAMA</TableHead>
-                  <TableHead>ASET</TableHead>
-                  <TableHead>UNIT</TableHead>
-                  <TableHead>JATUH TEMPO</TableHead>
-                  <TableHead>KEWAJIBAN MITRA</TableHead>
-                  <TableHead>PROGRESS</TableHead>
-                  <TableHead>DOKUMEN/PERIODE</TableHead>
-                  <TableHead>STATUS</TableHead>
-                  <TableHead>TIPE</TableHead>
+                <TableRow className="border-b border-slate-100 hover:bg-transparent">
+                  <TableHead className="w-12 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    No
+                  </TableHead>
+                  <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    Status
+                  </TableHead>
+                  <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    Nama
+                  </TableHead>
+                  <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    Aset
+                  </TableHead>
+                  <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    Unit
+                  </TableHead>
+                  <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    Jatuh tempo
+                  </TableHead>
+                  <TableHead className="min-w-[180px] text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    Kewajiban mitra
+                  </TableHead>
+                  <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    Progress
+                  </TableHead>
+                  <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    Dokumen
+                  </TableHead>
+                  <TableHead className="w-[140px] whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    Action
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {legalData.length === 0 ? (
+                {legalitasRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
-                      Tidak ada data legal atau penagihan
+                    <TableCell colSpan={10} className="py-10 text-center text-sm text-muted-foreground">
+                      Tidak ada item dengan jatuh tempo yang masih berjalan.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  legalData.map((legal, index) => (
-                    <TableRow key={`${legal.tipe}-${legal.id}`}>
-                      <TableCell className="text-center">{index + 1}</TableCell>
-                      <TableCell>{legal.nama}</TableCell>
-                      <TableCell>{legal.aset}</TableCell>
-                      <TableCell>{legal.unit}</TableCell>
-                      <TableCell>{legal.jatuhTempo}</TableCell>
-                      <TableCell className="max-w-xs truncate">{legal.kewajibanMitra}</TableCell>
-                      <TableCell>{legal.progress}%</TableCell>
-                      <TableCell className="max-w-xs truncate">{legal.dokumen}</TableCell>
-                      <TableCell>
-                        <Badge variant={legal.status === 'Done' ? 'default' : (legal.status === 'Belum Dibayar' ? 'destructive' : 'secondary')}>
-                          {legal.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={legal.tipe === 'legal' ? 'outline' : 'secondary'}>
-                          {legal.tipe === 'legal' ? 'Legal Document' : 'Penagihan'}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  legalitasRows.map((row, index) => {
+                    const displayStatus = legalRowDisplayStatus(row)
+                    const dotClass = dueDateDotClass(row.dueDateIso)
+                    return (
+                      <TableRow
+                        key={`${row.tipe}-${row.id}`}
+                        className="border-b border-slate-100 last:border-0"
+                      >
+                        <TableCell className="text-center text-sm text-slate-600">{index + 1}</TableCell>
+                        <TableCell>
+                          {displayStatus === 'Overdue' ? (
+                            <span className="inline-flex rounded-full border border-red-100 bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700">
+                              Overdue
+                            </span>
+                          ) : (
+                            <span className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+                              On Process
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="max-w-[200px] font-bold text-slate-900">{row.nama}</TableCell>
+                        <TableCell className="text-sm text-slate-700">{row.aset}</TableCell>
+                        <TableCell className="text-sm text-slate-700">{row.unit}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2 whitespace-nowrap text-sm text-slate-800">
+                            <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${dotClass}`} aria-hidden />
+                            {row.jatuhTempo}
+                          </div>
+                        </TableCell>
+                        <TableCell className="max-w-xs text-sm text-slate-700">{row.kewajibanMitra}</TableCell>
+                        <TableCell className="font-bold tabular-nums text-slate-900">{row.progress}%</TableCell>
+                        <TableCell className="max-w-[140px]">
+                          {row.dokumenUrl ? (
+                            <a
+                              href={row.dokumenUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm font-medium text-blue-600 hover:underline"
+                            >
+                              {row.dokumen}
+                            </a>
+                          ) : (
+                            <span className="text-sm font-medium text-blue-600">{row.dokumen}</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {row.tenantId ? (
+                            <Button
+                              asChild
+                              size="sm"
+                              className="h-8 rounded-md bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700"
+                            >
+                              <Link href={`/tenants/edit/${row.tenantId}`}>Update Data</Link>
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              disabled
+                              className="h-8 rounded-md px-3 text-xs font-semibold"
+                            >
+                              Update Data
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })
                 )}
               </TableBody>
             </Table>
           </div>
+          <div className="flex flex-col gap-2 text-xs text-slate-600 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-6 sm:gap-y-2">
+            <span className="flex items-center gap-2">
+              <span className="h-2 w-2 shrink-0 rounded-full bg-blue-500" aria-hidden />
+              <span className="font-medium uppercase tracking-wide text-slate-500">3 bulan sebelum jatuh tempo</span>
+            </span>
+            <span className="flex items-center gap-2">
+              <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400" aria-hidden />
+              <span className="font-medium uppercase tracking-wide text-slate-500">1 bulan sebelum jatuh tempo</span>
+            </span>
+            <span className="flex items-center gap-2">
+              <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" aria-hidden />
+              <span className="font-medium uppercase tracking-wide text-slate-500">Telah jatuh tempo</span>
+            </span>
+          </div>
         </CardContent>
       </Card>
+
+      {/* Financial Table */}
+      <FinancialTable selectedAssetId={selectedAssetId} />
     </div>
   )
 }

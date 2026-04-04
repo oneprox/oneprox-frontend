@@ -1974,6 +1974,11 @@ export interface FinancialPerformanceData {
 
 export interface LegalTableData {
   id: number
+  /** Untuk tombol aksi / deep link */
+  tenantId?: string
+  /** ISO date untuk warna titik jatuh tempo & sort */
+  dueDateIso?: string
+  dokumenUrl?: string | null
   nama: string
   aset: string
   unit: string
@@ -1994,6 +1999,8 @@ export interface AssetOverviewResponse {
 
 export interface FinancialTableData {
   id: number
+  tenantId?: string
+  dueDateIso?: string | null
   nama: string
   aset: string
   unit: string
