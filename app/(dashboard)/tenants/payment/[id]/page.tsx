@@ -122,8 +122,16 @@ export default function UpdateTenantPaymentPage() {
 
     setLoading(true)
     try {
+      const amount = parsePrice(formData.amount)
+      const now = new Date()
+      const billingPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+      const paymentDeadline = now.toISOString().slice(0, 10)
+
       const paymentData: CreateTenantPaymentData = {
-        amount: parsePrice(formData.amount),
+        billing_period: billingPeriod,
+        billing_amount: amount,
+        payment_deadline: paymentDeadline,
+        amount,
         payment_method: formData.payment_method,
         notes: formData.notes.trim(),
       }

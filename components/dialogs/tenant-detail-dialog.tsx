@@ -114,7 +114,15 @@ export default function TenantDetailDialog({
   const [updatingPayment, setUpdatingPayment] = useState(false)
   const [allPaidPayments, setAllPaidPayments] = useState<TenantPaymentLog[]>([])
   const [createPaymentDialogOpen, setCreatePaymentDialogOpen] = useState(false)
+
+  const now = new Date()
+  const defaultBillingPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const defaultPaymentDeadline = now.toISOString().slice(0, 10)
+
   const [createPaymentData, setCreatePaymentData] = useState<CreateTenantPaymentData & { payment_date?: string }>({
+    billing_period: defaultBillingPeriod,
+    billing_amount: 0,
+    payment_deadline: defaultPaymentDeadline,
     amount: 0,
     payment_method: '',
     notes: '',
@@ -442,6 +450,9 @@ export default function TenantDetailDialog({
 
   const handleCreatePayment = () => {
     setCreatePaymentData({
+      billing_period: defaultBillingPeriod,
+      billing_amount: 0,
+      payment_deadline: defaultPaymentDeadline,
       amount: 0,
       payment_method: '',
       notes: '',
@@ -471,6 +482,9 @@ export default function TenantDetailDialog({
     setCreatingPayment(true)
     try {
       const response = await tenantsApi.createTenantPayment(tenant.id, {
+        billing_period: createPaymentData.billing_period || defaultBillingPeriod,
+        billing_amount: createPaymentData.billing_amount ?? createPaymentData.amount,
+        payment_deadline: createPaymentData.payment_deadline || defaultPaymentDeadline,
         amount: createPaymentData.amount,
         payment_method: createPaymentData.payment_method,
         notes: createPaymentData.notes.trim(),
@@ -481,6 +495,9 @@ export default function TenantDetailDialog({
         toast.success('Pembayaran berhasil ditambahkan')
         setCreatePaymentDialogOpen(false)
         setCreatePaymentData({
+          billing_period: defaultBillingPeriod,
+          billing_amount: 0,
+          payment_deadline: defaultPaymentDeadline,
           amount: 0,
           payment_method: '',
           notes: '',

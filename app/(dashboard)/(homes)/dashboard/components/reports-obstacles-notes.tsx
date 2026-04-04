@@ -75,8 +75,9 @@ export default function ReportsObstaclesNotes({ selectedAssetId = 'all' }: Repor
           if (report.tenant.units && Array.isArray(report.tenant.units) && report.tenant.units.length > 0) {
             const unit = report.tenant.units[0]
             if (unit.asset) {
-              lokasi = unit.asset.name || lokasi
-              reportAsset = assetsList.find(a => a.id === unit.asset.id) || null
+              lokasi = unit.asset?.name || lokasi
+              const unitAssetId = unit.asset?.id
+              reportAsset = unitAssetId ? (assetsList.find(a => a.id === unitAssetId) || null) : null
             } else if (unit.name) {
               lokasi = unit.name
             }
