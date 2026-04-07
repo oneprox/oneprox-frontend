@@ -14,7 +14,11 @@ interface AssetWithUnits extends Asset {
   photoUrl?: string
 }
 
-export default function AssetCarousel() {
+interface AssetCarouselProps {
+  selectedAssetId?: string
+}
+
+export default function AssetCarousel({ selectedAssetId = 'all' }: AssetCarouselProps) {
   const router = useRouter()
   const [assets, setAssets] = useState<AssetWithUnits[]>([])
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -22,7 +26,7 @@ export default function AssetCarousel() {
 
   useEffect(() => {
     loadAssetsData()
-  }, [])
+  }, [selectedAssetId])
 
   // Auto-play carousel every 5 seconds
   useEffect(() => {
@@ -124,8 +128,14 @@ export default function AssetCarousel() {
         })
       )
 
+      // Filter assets by selectedAssetId if needed
+      let filteredAssetsWithPhotos = assetsWithPhotos
+      if (selectedAssetId !== 'all') {
+        filteredAssetsWithPhotos = assetsWithPhotos.filter(asset => asset.id === selectedAssetId)
+      }
+      
       // Process assets with unit counts
-      const assetsWithUnits: AssetWithUnits[] = assetsWithPhotos.map(asset => {
+      const assetsWithUnits: AssetWithUnits[] = filteredAssetsWithPhotos.map(asset => {
         if (!asset || !asset.id) {
           return {
             ...asset,

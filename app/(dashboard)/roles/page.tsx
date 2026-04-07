@@ -102,20 +102,6 @@ export default function RolesPage() {
         </BreadcrumbList>
       </Breadcrumb>
 
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Roles</h1>
-          <p className="text-muted-foreground">
-            Kelola role dan level akses pengguna
-          </p>
-        </div>
-        <Button onClick={() => router.push('/roles/create')}>
-          <Plus className="mr-2 h-4 w-4" />
-          Tambah Role
-        </Button>
-      </div>
-
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6 hidden">
         <Card>
@@ -194,10 +180,19 @@ export default function RolesPage() {
 
       {/* Search and Actions */}
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
-            <CardTitle>Daftar Roles</CardTitle>
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">Roles</h1>
+              <p className="text-muted-foreground">
+                Kelola role dan level akses pengguna
+              </p>
+            </div>
             <div className="flex items-center gap-2">
+              <Button onClick={() => router.push('/roles/create')}>
+                <Plus className="mr-2 h-4 w-4" />
+                Tambah Role
+              </Button>
               <div className="relative">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input

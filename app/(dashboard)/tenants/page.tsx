@@ -63,7 +63,7 @@ export default function TenantsPage() {
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>('all')
-  const [order, setOrder] = useState<string>('a-z')
+  const [order, setOrder] = useState<string>('newest')
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [isTenantUser, setIsTenantUser] = useState(false)
   
@@ -136,6 +136,7 @@ export default function TenantsPage() {
         }
         
         setTenants(tenantsData)
+        // Since filtering is done on backend, filteredTenants should be same as tenants
         setFilteredTenants(tenantsData)
         setPagination(paginationData)
       } else {
@@ -263,7 +264,7 @@ export default function TenantsPage() {
   const stats = getStats()
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 overflow-x-hidden w-full max-w-full min-w-0">
       {/* Breadcrumb */}
       <Breadcrumb>
         <BreadcrumbList>
@@ -282,22 +283,6 @@ export default function TenantsPage() {
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
-
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Tenants</h1>
-          <p className="text-muted-foreground">
-            Kelola data tenant dan kontrak sewa
-          </p>
-        </div>
-        {!isTenantUser && can_add && (
-          <Button onClick={() => router.push('/tenants/create')}>
-            <Plus className="mr-2 h-4 w-4" />
-            Tambah Tenant
-          </Button>
-        )}
-      </div>
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 hidden">
@@ -353,18 +338,29 @@ export default function TenantsPage() {
 
       {/* Search and Actions */}
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
-            <CardTitle>Daftar Tenants</CardTitle>
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">Tenants</h1>
+              <p className="text-muted-foreground">
+                Kelola data tenant dan kontrak sewa
+              </p>
+            </div>
             <div className="flex items-center gap-2">
+              {!isTenantUser && can_add && (
+                <Button onClick={() => router.push('/tenants/create')}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Tambah Tenant
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={handleRefresh} disabled={loading}>
                 <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               </Button>
             </div>
           </div>
           
-          {/* Filter Bar - Hidden for tenant users */}
-          {!isTenantUser && (
+          {/* Filter Bar - Horizontal Layout */}
+          {!isTenantUser ? (
             <div className="flex flex-wrap items-center gap-4 mt-4 p-4 bg-gray-50 rounded-lg border">
               <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -442,12 +438,9 @@ export default function TenantsPage() {
                 Reset
               </Button>
             </div>
-          )}
-          
-          {/* Simple search for tenant users */}
-          {isTenantUser && (
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg border">
-              <div className="relative">
+          ) : (
+            <div className="flex flex-wrap items-center gap-4 mt-4 p-4 bg-gray-50 rounded-lg border">
+              <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder="Cari tenant..."

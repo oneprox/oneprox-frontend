@@ -454,6 +454,13 @@ export interface TenantPaymentLog {
   payment_method?: string
   notes?: string
   status?: number // 0 for unpaid, 1 for paid, 2 for expired
+  billing_type?: string // jenis tagihan
+  billing_period?: string // periode tagihan
+  billing_amount?: number // jumlah tagihan
+  outstanding?: number
+  overdue?: number
+  rate?: number // default 0.01
+  last_charge_date?: number // last charge (nominal)
   updatedBy?: {
     id: string
     name: string
@@ -464,9 +471,17 @@ export interface TenantPaymentLog {
 
 // Create Tenant Payment Data interface
 export interface CreateTenantPaymentData {
-  amount: number
-  payment_method: string
+  billing_period: string // mandatory
+  billing_amount: number // mandatory
+  payment_deadline: string // mandatory
+  amount?: number
+  payment_method?: string
   notes?: string
+  billing_type?: string
+  outstanding?: number
+  overdue?: number
+  rate?: number
+  last_charge_date?: number // last charge (nominal)
 }
 
 // Update Tenant Payment Data interface
@@ -475,6 +490,55 @@ export interface UpdateTenantPaymentData {
   payment_method?: string
   notes?: string
   paid_amount?: number
+  billing_type?: string
+  billing_period?: string
+  billing_amount?: number
+  outstanding?: number
+  overdue?: number
+  rate?: number
+  last_charge_date?: number // last charge (nominal)
+}
+
+// Tenant Legal interface
+export interface TenantLegal {
+  id: number
+  tenant_id: string
+  doc_type: string
+  due_date?: string
+  keterangan?: string
+  document_url?: string
+  description?: string // Description from settings
+  status?: 'belum_selesai' | 'selesai'
+  created_by?: {
+    id: string
+    name: string
+    email: string
+  }
+  updated_by?: {
+    id: string
+    name: string
+    email: string
+  }
+  created_at: string
+  updated_at?: string
+}
+
+// Create Tenant Legal Data interface
+export interface CreateTenantLegalData {
+  doc_type: string
+  due_date?: string
+  keterangan?: string
+  document_url?: string
+  status?: 'belum_selesai' | 'selesai'
+}
+
+// Update Tenant Legal Data interface
+export interface UpdateTenantLegalData {
+  doc_type?: string
+  due_date?: string
+  keterangan?: string
+  document_url?: string
+  status?: 'belum_selesai' | 'selesai'
 }
 
 // Roles-specific API functions
@@ -586,6 +650,7 @@ export interface Asset {
   updated_by?: string
   created_at: string
   updated_at: string
+  total_units?: number
 }
 
 export interface CreateAssetData {
@@ -917,6 +982,7 @@ export interface Unit {
   asset_id: string
   name: string
   size: number
+  building_area?: number
   rent_price: number
   lamp: number
   electric_socket: number
@@ -937,6 +1003,7 @@ export interface CreateUnitData {
   name: string
   asset_id: string
   size: number
+  building_area?: number
   rent_price: number
   lamp?: number
   electric_socket?: number
@@ -949,6 +1016,7 @@ export interface CreateUnitData {
 export interface UpdateUnitData {
   name?: string
   size?: number
+  building_area?: number
   rent_price?: number
   lamp?: number
   electric_socket?: number
@@ -1021,6 +1089,9 @@ export interface Tenant {
   down_payment?: number
   deposit?: number
   payment_term?: string
+  building_area?: number
+  land_area?: number
+  electricity_power?: number
   status?: string // 'inactive' | 'active' | 'pending' | 'expired' | 'terminated' | 'blacklisted'
   payment_status?: 'paid' | 'scheduled' | 'reminder_needed' | 'overdue'
   created_by?: string
@@ -1054,6 +1125,9 @@ export interface CreateTenantData {
   deposit?: number
   payment_term?: number
   price_per_term?: number
+  building_area?: number
+  land_area?: number
+  electricity_power?: number
 }
 
 export interface UpdateTenantData {
@@ -1070,6 +1144,9 @@ export interface UpdateTenantData {
   down_payment?: number
   deposit?: number
   deposit_reason?: string
+  building_area?: number
+  land_area?: number
+  electricity_power?: number
   status?: string // 'inactive' | 'active' | 'pending' | 'expired' | 'terminated' | 'blacklisted'
 }
 
@@ -1174,6 +1251,26 @@ export const tenantsApi = {
 
   async updateTenantPayment(tenantId: string, paymentId: number, data: UpdateTenantPaymentData): Promise<ApiResponse<TenantPaymentLog>> {
     return apiClient.put<TenantPaymentLog>(`/api/tenants/${tenantId}/payments/${paymentId}`, data)
+  },
+
+  async deleteTenantPayment(tenantId: string, paymentId: number): Promise<ApiResponse<void>> {
+    return apiClient.delete<void>(`/api/tenants/${tenantId}/payments/${paymentId}`)
+  },
+
+  async getTenantLegals(tenantId: string): Promise<ApiResponse<TenantLegal[]>> {
+    return apiClient.get<TenantLegal[]>(`/api/tenants/${tenantId}/legals`)
+  },
+
+  async createTenantLegal(tenantId: string, data: CreateTenantLegalData): Promise<ApiResponse<TenantLegal>> {
+    return apiClient.post<TenantLegal>(`/api/tenants/${tenantId}/legals`, data)
+  },
+
+  async updateTenantLegal(tenantId: string, legalId: number, data: UpdateTenantLegalData): Promise<ApiResponse<TenantLegal>> {
+    return apiClient.put<TenantLegal>(`/api/tenants/${tenantId}/legals/${legalId}`, data)
+  },
+
+  async deleteTenantLegal(tenantId: string, legalId: number): Promise<ApiResponse<void>> {
+    return apiClient.delete<void>(`/api/tenants/${tenantId}/legals/${legalId}`)
   },
 }
 
@@ -1856,6 +1953,66 @@ export interface RevenueGrowth {
   revenue: number[]
 }
 
+// Asset Overview interfaces
+export interface AssetOverviewData {
+  totalLandArea: number
+  totalBuildingArea: number
+  occupancy: number
+  averageRate: number
+}
+
+export interface AssetUtilizationData {
+  category: string
+  value: number
+}
+
+export interface FinancialPerformanceData {
+  quarter: string
+  realisasi: number
+  target: number
+}
+
+export interface LegalTableData {
+  id: number
+  /** Untuk tombol aksi / deep link */
+  tenantId?: string
+  /** ISO date untuk warna titik jatuh tempo & sort */
+  dueDateIso?: string
+  dokumenUrl?: string | null
+  nama: string
+  aset: string
+  unit: string
+  jatuhTempo: string
+  kewajibanMitra: string
+  progress: number
+  dokumen: string
+  status: string
+  tipe: 'legal' | 'payment'
+}
+
+export interface AssetOverviewResponse {
+  overview: AssetOverviewData
+  utilization: AssetUtilizationData[]
+  financial: FinancialPerformanceData[]
+  legal: LegalTableData[]
+}
+
+export interface FinancialTableData {
+  id: number
+  tenantId?: string
+  dueDateIso?: string | null
+  nama: string
+  aset: string
+  unit: string
+  jatuhTempo: string
+  deskripsi: string
+  nomorInvoice: string
+  nilaiInvoice: number
+  tanggalInvoice: string
+  status: string
+  aging: number
+}
+
 // Dashboard API functions
 export const dashboardApi = {
   async getDashboardData(): Promise<ApiResponse<DashboardData>> {
@@ -1869,6 +2026,14 @@ export const dashboardApi = {
   },
   async getRevenueGrowth(): Promise<ApiResponse<RevenueGrowth>> {
     return apiClient.get<RevenueGrowth>('/api/dashboard/revenue-growth')
+  },
+  async getAssetOverview(assetId?: string): Promise<ApiResponse<AssetOverviewResponse>> {
+    const queryParams = assetId ? `?assetId=${assetId}` : ''
+    return apiClient.get<AssetOverviewResponse>(`/api/dashboard/asset-overview${queryParams}`)
+  },
+  async getFinancialTable(assetId?: string): Promise<ApiResponse<FinancialTableData[]>> {
+    const queryParams = assetId ? `?assetId=${assetId}` : ''
+    return apiClient.get<FinancialTableData[]>(`/api/dashboard/financial-table${queryParams}`)
   },
 }
 

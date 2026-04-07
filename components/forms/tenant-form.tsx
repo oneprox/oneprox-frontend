@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { Tenant, CreateTenantData, UpdateTenantData, usersApi, unitsApi, tenantsApi, rolesApi, User, Unit, DURATION_UNITS, DURATION_UNIT_LABELS } from '@/lib/api'
+import React, { useState, useEffect, useRef } from 'react'
+import { Tenant, CreateTenantData, UpdateTenantData, usersApi, unitsApi, tenantsApi, rolesApi, assetsApi, User, Unit, Asset, DURATION_UNITS, DURATION_UNIT_LABELS, TenantPaymentLog, CreateTenantPaymentData, UpdateTenantPaymentData, TenantLegal, CreateTenantLegalData, UpdateTenantLegalData, settingsApi, Setting } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -16,7 +16,36 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { Loader2, Plus, X, File, Search, UserPlus, Users, Eye, EyeOff, Calendar } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Textarea } from '@/components/ui/textarea'
+import { Loader2, Plus, X, File, Search, UserPlus, Users, Eye, EyeOff, Calendar, Edit, Trash2, DollarSign } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 interface TenantFormProps {
@@ -54,15 +83,16 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
     user_id: '',
     contract_begin_at: '',
     contract_end_at: '',
-    rent_duration: '',
-    rent_duration_unit: DURATION_UNITS.MONTH,
-    unit_id: '',
-    category: 0,
+    unit_ids: [] as string[],
+    asset_ids: [] as string[],
+    building_type: 'unit' as 'unit' | 'asset',
+    category: '',
+    sub_category: '',
     rent_price: 0,
-    down_payment: 0,
-    deposit: 0,
-    deposit_reason: '',
     payment_term: '',
+    building_area: 0,
+    land_area: 0,
+    electricity_power: 0,
     status: 'active',
   })
   const [userSelectionType, setUserSelectionType] = useState<'existing' | 'new'>('new')
@@ -79,10 +109,20 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
   const [userSearchTerm, setUserSearchTerm] = useState('')
   const [users, setUsers] = useState<User[]>([])
   const [units, setUnits] = useState<Unit[]>([])
+  const [assets, setAssets] = useState<Asset[]>([])
   const [roles, setRoles] = useState<any[]>([])
   const [usersLoading, setUsersLoading] = useState(true)
   const [unitsLoading, setUnitsLoading] = useState(true)
+  const [assetsLoading, setAssetsLoading] = useState(false)
   const [rolesLoading, setRolesLoading] = useState(true)
+  
+  // Autocomplete states
+  const [categorySuggestions, setCategorySuggestions] = useState<string[]>([])
+  const [subCategorySuggestions, setSubCategorySuggestions] = useState<string[]>([])
+  const [showCategorySuggestions, setShowCategorySuggestions] = useState(false)
+  const [showSubCategorySuggestions, setShowSubCategorySuggestions] = useState(false)
+  const categoryInputRef = useRef<HTMLInputElement>(null)
+  const subCategoryInputRef = useRef<HTMLInputElement>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [passwordValidation, setPasswordValidation] = useState({
     hasUppercase: false,
@@ -96,16 +136,103 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
   const [uploading, setUploading] = useState(false)
   const [existingIdentificationUrls, setExistingIdentificationUrls] = useState<string[]>([])
   const [existingContractUrls, setExistingContractUrls] = useState<string[]>([])
-  const [originalDeposit, setOriginalDeposit] = useState<number>(0)
+  
+  // Payment logs states
+  const [paymentLogs, setPaymentLogs] = useState<TenantPaymentLog[]>([])
+  const [paymentLogsLoading, setPaymentLogsLoading] = useState(false)
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false)
+  const [editingPayment, setEditingPayment] = useState<TenantPaymentLog | null>(null)
+  const [paymentFormLoading, setPaymentFormLoading] = useState(false)
+  const [deletePaymentDialogOpen, setDeletePaymentDialogOpen] = useState(false)
+  const [paymentToDelete, setPaymentToDelete] = useState<TenantPaymentLog | null>(null)
+  const [deletingPayment, setDeletingPayment] = useState(false)
+  const [activeTab, setActiveTab] = useState('info')
 
-  // Load users, units, and roles
+  // Legal documents states
+  const [legalDocuments, setLegalDocuments] = useState<TenantLegal[]>([])
+  const [legalDocumentsLoading, setLegalDocumentsLoading] = useState(false)
+  const [legalDialogOpen, setLegalDialogOpen] = useState(false)
+  const [editingLegal, setEditingLegal] = useState<TenantLegal | null>(null)
+  const [legalFormLoading, setLegalFormLoading] = useState(false)
+  const [deleteLegalDialogOpen, setDeleteLegalDialogOpen] = useState(false)
+  const [legalToDelete, setLegalToDelete] = useState<TenantLegal | null>(null)
+  const [deletingLegal, setDeletingLegal] = useState(false)
+  const [legalDocumentFile, setLegalDocumentFile] = useState<File | null>(null)
+  const [legalDocSettings, setLegalDocSettings] = useState<Setting[]>([])
+
+  // Load categories and sub categories from existing tenants
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        const response = await tenantsApi.getTenants({ limit: 1000 })
+        if (response.success && response.data) {
+          const responseData = response.data as any
+          const tenantsData = Array.isArray(responseData.data) ? responseData.data : []
+          
+          // Extract unique categories
+          const categories = new Set<string>()
+          const subCategories = new Set<string>()
+          
+          tenantsData.forEach((tenant: any) => {
+            // Extract category name from tenant.category object
+            const category = tenant.category
+            if (category) {
+              if (typeof category === 'object' && category !== null && 'name' in category) {
+                const categoryName = category.name
+                if (categoryName && typeof categoryName === 'string' && categoryName.trim()) {
+                  categories.add(categoryName)
+                }
+              } else if (typeof category === 'string' && category.trim()) {
+                categories.add(category.trim())
+              }
+            }
+            // Extract sub_category if exists
+            const subCategory = tenant.sub_category
+            if (subCategory && typeof subCategory === 'string' && subCategory.trim()) {
+              subCategories.add(subCategory.trim())
+            }
+          })
+          
+          setCategorySuggestions(Array.from(categories).sort())
+          setSubCategorySuggestions(Array.from(subCategories).sort())
+        }
+      } catch (error) {
+        console.error('Error loading categories:', error)
+      }
+    }
+    
+    loadCategories()
+  }, [])
+
+  // Load legal document settings
+  useEffect(() => {
+    const loadLegalDocSettings = async () => {
+      try {
+        const response = await settingsApi.getSettings()
+        if (response.success && response.data) {
+          const settingsData = Array.isArray(response.data) ? response.data : []
+          // Filter settings with value='legal_doc'
+          const legalSettings = settingsData.filter((setting: Setting) => setting.value === 'legal_doc')
+          setLegalDocSettings(legalSettings)
+        }
+      } catch (error) {
+        console.error('Error loading legal doc settings:', error)
+      }
+    }
+    
+    loadLegalDocSettings()
+  }, [])
+
+  // Load users, units, assets, and roles
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [usersResponse, unitsResponse, rolesResponse] = await Promise.all([
+        const [usersResponse, unitsResponse, assetsResponse, rolesResponse] = await Promise.all([
           usersApi.getUsers({ limit: 100 }),
           // When editing, load all units to show selected ones; when creating, only load available units
           tenant ? unitsApi.getUnits() : unitsApi.getUnits({ status: 0 }),
+          // Load available assets
+          assetsApi.getAssets({ status: 1, limit: 1000 }),
           rolesApi.getRoles()
         ])
         
@@ -125,6 +252,15 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
         } else {
           toast.error('Gagal memuat data units')
           setUnits([])
+        }
+        
+        if (assetsResponse.success && assetsResponse.data) {
+          const assetsResponseData = assetsResponse.data as any
+          const assetsData = Array.isArray(assetsResponseData.data) ? assetsResponseData.data : []
+          setAssets(assetsData)
+        } else {
+          toast.error('Gagal memuat data assets')
+          setAssets([])
         }
         
         if (rolesResponse.success && rolesResponse.data) {
@@ -148,6 +284,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
       } finally {
         setUsersLoading(false)
         setUnitsLoading(false)
+        setAssetsLoading(false)
         setRolesLoading(false)
       }
     }
@@ -158,123 +295,42 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
   // Initialize form data when tenant prop changes
   useEffect(() => {
     if (tenant) {
-      // Extract unit ID from units array if it exists, otherwise use unit_ids (take first one if array)
-      let unitId = ''
+      // Extract unit IDs from units array or unit_ids
+      let unitIds: string[] = []
       if (tenant.units && Array.isArray(tenant.units) && tenant.units.length > 0) {
-        const firstUnit = tenant.units.find(unit => unit != null)
-        unitId = firstUnit?.id || ''
+        unitIds = tenant.units.map(unit => unit.id).filter(id => id != null)
       } else if (tenant.unit_ids) {
-        // If unit_ids is array, take first one; if string, use directly
-        unitId = Array.isArray(tenant.unit_ids) ? (tenant.unit_ids[0] || '') : tenant.unit_ids
-      }
-      // Extract category value from tenant.category object or category_id
-      let categoryValue: number = 0
-      
-      // Debug: Log the tenant object to see what we're working with
-      console.log('Tenant data for category extraction:', {
-        category_id: (tenant as any).category_id,
-        category: tenant.category,
-        categories: tenant.categories,
-        fullTenant: tenant
-      })
-      
-      // First check category_id (direct field) - this is the most reliable
-      if ((tenant as any).category_id !== undefined && (tenant as any).category_id !== null) {
-        const catId = (tenant as any).category_id
-        categoryValue = typeof catId === 'number' ? catId : parseInt(String(catId), 10)
-        if (!isNaN(categoryValue) && categoryValue > 0) {
-          console.log('Category found in category_id:', categoryValue)
-        } else {
-          categoryValue = 0
-        }
+        // If unit_ids is array, use it; if string, convert to array
+        unitIds = Array.isArray(tenant.unit_ids) ? tenant.unit_ids : [tenant.unit_ids]
       }
       
-      // Then check tenant.category object
-      if (categoryValue === 0 && tenant.category !== undefined && tenant.category !== null) {
-        if (typeof tenant.category === 'object') {
-          // Check if it has an 'id' property
-          if ('id' in tenant.category) {
-            const categoryId = (tenant.category as { id: number | string }).id
-            categoryValue = typeof categoryId === 'number' ? categoryId : parseInt(String(categoryId), 10)
-            if (!isNaN(categoryValue) && categoryValue > 0) {
-              console.log('Category found in category.id:', categoryValue)
-            } else {
-              categoryValue = 0
-            }
-          }
-          // Check if it has a 'name' property (we might need to map name to id)
-          else if ('name' in tenant.category) {
-            // Try to find the category by name
-            const categoryName = (tenant.category as { name: string }).name
-            const foundCategory = CATEGORY_OPTIONS.find(opt => 
-              opt.label.toLowerCase() === categoryName.toLowerCase()
-            )
-            if (foundCategory) {
-              categoryValue = foundCategory.value
-              console.log('Category found by name mapping:', categoryName, '->', categoryValue)
-            }
-          }
-        } else if (typeof tenant.category === 'number') {
-          categoryValue = tenant.category
-          console.log('Category found as number:', categoryValue)
-        } else if (typeof tenant.category === 'string') {
-          categoryValue = parseInt(String(tenant.category), 10)
-          if (!isNaN(categoryValue) && categoryValue > 0) {
-            console.log('Category found as string:', categoryValue)
-          } else {
-            categoryValue = 0
-          }
-        }
+      // Extract category name from tenant.category object
+      let categoryName = ''
+      if (tenant.category && typeof tenant.category === 'object' && 'name' in tenant.category) {
+        categoryName = tenant.category.name
+      } else if (typeof tenant.category === 'string') {
+        categoryName = tenant.category
       }
       
-      // Also check tenant.categories for backward compatibility
-      if (categoryValue === 0 && tenant.categories !== undefined && tenant.categories !== null) {
-        if (Array.isArray(tenant.categories) && tenant.categories.length > 0) {
-          const firstCategory = tenant.categories[0]
-          if (typeof firstCategory === 'object' && firstCategory !== null) {
-            if ('id' in firstCategory) {
-              const categoryId = (firstCategory as { id: number | string }).id
-              categoryValue = typeof categoryId === 'number' ? categoryId : parseInt(String(categoryId), 10)
-              if (!isNaN(categoryValue) && categoryValue > 0) {
-                console.log('Category found in categories[0].id:', categoryValue)
-              } else {
-                categoryValue = 0
-              }
-            }
-          } else {
-            categoryValue = typeof firstCategory === 'number' ? firstCategory : parseInt(String(firstCategory), 10)
-            if (!isNaN(categoryValue) && categoryValue > 0) {
-              console.log('Category found in categories[0]:', categoryValue)
-            } else {
-              categoryValue = 0
-            }
-          }
-        } else if (!Array.isArray(tenant.categories)) {
-          categoryValue = typeof tenant.categories === 'number' ? tenant.categories : parseInt(String(tenant.categories), 10)
-          if (!isNaN(categoryValue) && categoryValue > 0) {
-            console.log('Category found in categories (non-array):', categoryValue)
-          } else {
-            categoryValue = 0
-          }
-        }
+      // Extract sub category
+      const subCategoryName = (tenant as any).sub_category || ''
+      
+      // Extract building type and asset_ids
+      let buildingType: 'unit' | 'asset' = 'unit'
+      let assetIds: string[] = []
+      // If tenant has units, it's unit type, otherwise check if it has assets
+      if (tenant.units && tenant.units.length > 0) {
+        buildingType = 'unit'
+      } else if ((tenant as any).asset_id) {
+        buildingType = 'asset'
+        const assetId = (tenant as any).asset_id
+        assetIds = Array.isArray(assetId) ? assetId : [assetId]
+      } else if ((tenant as any).asset_ids) {
+        buildingType = 'asset'
+        assetIds = Array.isArray((tenant as any).asset_ids) ? (tenant as any).asset_ids : [(tenant as any).asset_ids]
       }
       
-      console.log('Final extracted category value:', categoryValue)
       
-      
-      // Convert rent_duration_unit: backend returns string ('year' or 'month')
-      let rentDurationUnit = DURATION_UNITS.MONTH // default
-      if (tenant.rent_duration_unit !== undefined && tenant.rent_duration_unit !== null) {
-        if (typeof tenant.rent_duration_unit === 'number') {
-          // If number: 1 = month, 0 = year
-          rentDurationUnit = tenant.rent_duration_unit === 1 ? DURATION_UNITS.MONTH : DURATION_UNITS.YEAR
-        } else if (typeof tenant.rent_duration_unit === 'string') {
-          // If string: normalize to lowercase and match
-          const unitStr = tenant.rent_duration_unit.toLowerCase()
-          rentDurationUnit = (unitStr === 'year' || unitStr === DURATION_UNITS.YEAR) ? DURATION_UNITS.YEAR : DURATION_UNITS.MONTH
-        }
-      }
-
       // Convert status: backend returns string ('inactive', 'active', 'pending', etc.)
       let statusValue = 'active' // default
       if (tenant.status !== undefined && tenant.status !== null) {
@@ -284,109 +340,39 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
         statusValue = validStatus ? validStatus.value : 'active'
       }
 
-      // Ensure rent_duration is set correctly
-      const rentDuration = tenant.rent_duration !== undefined && tenant.rent_duration !== null 
-        ? String(tenant.rent_duration) 
-        : ''
-
       setFormData({
         name: tenant.name || '',
         user_id: tenant.user_id || '',
         contract_begin_at: tenant.contract_begin_at ? new Date(tenant.contract_begin_at).toISOString().split('T')[0] : '',
         contract_end_at: tenant.contract_end_at ? new Date(tenant.contract_end_at).toISOString().split('T')[0] : '',
-        rent_duration: rentDuration,
-        rent_duration_unit: rentDurationUnit,
-        unit_id: unitId,
-        category: categoryValue,
+        unit_ids: unitIds,
+        asset_ids: assetIds,
+        building_type: buildingType,
+        category: categoryName,
+        sub_category: subCategoryName,
         rent_price: tenant.rent_price || 0,
-        down_payment: tenant.down_payment || 0,
-        deposit: tenant.deposit || 0,
-        deposit_reason: '',
-        payment_term: (() => {
+        payment_term: tenant.payment_term ? (() => {
           // Convert payment_term from number (0 or 1) to string ('year' or 'month')
           // Database: 0 = year, 1 = month
           // Frontend: 'year' = DURATION_UNITS.YEAR, 'month' = DURATION_UNITS.MONTH
-          // Important: 0 is a valid value (year), so check type first, not truthiness
-          console.log("Converting payment_term:", {
-            raw: tenant.payment_term,
-            type: typeof tenant.payment_term,
-            isNull: tenant.payment_term === null,
-            isUndefined: tenant.payment_term === undefined,
-            rentDurationUnit
-          })
-          
-          if (tenant.payment_term === null || tenant.payment_term === undefined) {
-            // If null/undefined, use default
-            const defaultValue = rentDurationUnit === DURATION_UNITS.YEAR ? DURATION_UNITS.MONTH : DURATION_UNITS.MONTH
-            console.log("payment_term is null/undefined, using default:", defaultValue)
-            return defaultValue
-          }
-          
-          // Handle number: 0 = year, 1 = month
           if (typeof tenant.payment_term === 'number') {
-            // Explicitly check for 0 (year) first, then 1 (month), then default
-            if (tenant.payment_term === 0) {
-              console.log("payment_term is number 0, converted to:", DURATION_UNITS.YEAR)
-              return DURATION_UNITS.YEAR
-            } else if (tenant.payment_term === 1) {
-              console.log("payment_term is number 1, converted to:", DURATION_UNITS.MONTH)
-              return DURATION_UNITS.MONTH
-            } else {
-              console.log("payment_term is number but not 0 or 1:", tenant.payment_term, "defaulting to MONTH")
-              return DURATION_UNITS.MONTH
-            }
-          }
-          
-          // Handle string: "0" = year, "1" = month, or "year"/"month"
-          if (typeof tenant.payment_term === 'string') {
+            return tenant.payment_term === 0 ? DURATION_UNITS.YEAR : DURATION_UNITS.MONTH
+          } else if (typeof tenant.payment_term === 'string') {
             const termStr = tenant.payment_term.trim().toLowerCase()
-            console.log("payment_term is string, trimmed/lowercase:", termStr)
-            
-            // Check if it's numeric string first (most common case from API)
-            if (termStr === '0' || termStr === '0.0' || termStr === '0.00') {
-              console.log("payment_term is string '0', converted to:", DURATION_UNITS.YEAR)
+            if (termStr === '0' || termStr === 'year' || termStr === DURATION_UNITS.YEAR) {
               return DURATION_UNITS.YEAR
-            }
-            if (termStr === '1' || termStr === '1.0' || termStr === '1.00') {
-              console.log("payment_term is string '1', converted to:", DURATION_UNITS.MONTH)
+            } else if (termStr === '1' || termStr === 'month' || termStr === DURATION_UNITS.MONTH) {
               return DURATION_UNITS.MONTH
             }
-            
-            // Try parsing as number if it looks numeric
-            const parsedNum = parseFloat(termStr)
-            if (!isNaN(parsedNum)) {
-              if (parsedNum === 0) {
-                console.log("payment_term parsed as number 0, converted to:", DURATION_UNITS.YEAR)
-                return DURATION_UNITS.YEAR
-              } else if (parsedNum === 1) {
-                console.log("payment_term parsed as number 1, converted to:", DURATION_UNITS.MONTH)
-                return DURATION_UNITS.MONTH
-              }
-            }
-            
-            // Check if it's already in string format
-            if (termStr === 'year' || termStr === DURATION_UNITS.YEAR) {
-              console.log("payment_term is string 'year', converted to:", DURATION_UNITS.YEAR)
-              return DURATION_UNITS.YEAR
-            }
-            if (termStr === 'month' || termStr === DURATION_UNITS.MONTH) {
-              console.log("payment_term is string 'month', converted to:", DURATION_UNITS.MONTH)
-              return DURATION_UNITS.MONTH
-            }
-            console.log("payment_term is unknown string format:", tenant.payment_term, "termStr:", termStr, "parsedNum:", parsedNum)
           }
-          
-          // Default: if rent_duration_unit is YEAR, default payment_term to MONTH (monthly payment for yearly contract)
-          // Otherwise default to MONTH
-          const defaultValue = rentDurationUnit === DURATION_UNITS.YEAR ? DURATION_UNITS.MONTH : DURATION_UNITS.MONTH
-          console.log("payment_term using default:", defaultValue)
-          return defaultValue
-        })(),
+          return DURATION_UNITS.MONTH
+        })() : '',
+        building_area: tenant.building_area || 0,
+        land_area: tenant.land_area || 0,
+        electricity_power: tenant.electricity_power || 0,
         status: statusValue,
       })
       
-      // Store original deposit value to detect changes
-      setOriginalDeposit(tenant.deposit || 0)
       
       // Set existing file URLs for preview
       setExistingIdentificationUrls(tenant.tenant_identifications || [])
@@ -396,6 +382,235 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
       setUserSelectionType('existing')
     }
   }, [tenant])
+
+  // Load payment logs when tenant is available
+  useEffect(() => {
+    if (tenant?.id) {
+      loadPaymentLogs()
+      loadLegalDocuments()
+      loadLegalDocuments()
+    } else {
+      setPaymentLogs([])
+      setLegalDocuments([])
+    }
+  }, [tenant?.id])
+
+  const loadLegalDocuments = async () => {
+    if (!tenant?.id) return
+    
+    setLegalDocumentsLoading(true)
+    try {
+      const response = await tenantsApi.getTenantLegals(tenant.id)
+      
+      if (response.success && response.data) {
+        const responseData = response.data as any
+        const legalsData = Array.isArray(responseData.data) ? responseData.data : (Array.isArray(responseData) ? responseData : [])
+        setLegalDocuments(legalsData)
+      } else {
+        toast.error(response.error || 'Gagal memuat data legal documents')
+      }
+    } catch (error) {
+      console.error('Load legal documents error:', error)
+      toast.error('Terjadi kesalahan saat memuat data legal documents')
+    } finally {
+      setLegalDocumentsLoading(false)
+    }
+  }
+
+  const handleCreateLegal = () => {
+    setEditingLegal(null)
+    setLegalDocumentFile(null)
+    setLegalDialogOpen(true)
+  }
+
+  const handleEditLegal = (legal: TenantLegal) => {
+    setEditingLegal(legal)
+    setLegalDocumentFile(null)
+    setLegalDialogOpen(true)
+  }
+
+  const handleDeleteLegal = (legal: TenantLegal) => {
+    setLegalToDelete(legal)
+    setDeleteLegalDialogOpen(true)
+  }
+
+  const handleDeleteLegalConfirm = async () => {
+    if (!legalToDelete || !tenant?.id) return
+
+    setDeletingLegal(true)
+    try {
+      const response = await tenantsApi.deleteTenantLegal(tenant.id, legalToDelete.id)
+      
+      if (response.success) {
+        toast.success('Legal document berhasil dihapus')
+        loadLegalDocuments()
+      } else {
+        toast.error(response.error || 'Gagal menghapus legal document')
+      }
+    } catch (error) {
+      console.error('Delete legal error:', error)
+      toast.error('Terjadi kesalahan saat menghapus legal document')
+    } finally {
+      setDeletingLegal(false)
+      setDeleteLegalDialogOpen(false)
+      setLegalToDelete(null)
+    }
+  }
+
+  const handleLegalSubmit = async (data: CreateTenantLegalData | UpdateTenantLegalData) => {
+    if (!tenant?.id) return
+
+    setLegalFormLoading(true)
+    try {
+      // Upload document if file is selected
+      let documentUrl = editingLegal?.document_url || undefined
+      
+      if (legalDocumentFile) {
+        // Use uploadTenantFile with type 'contract' for legal documents
+        const uploadResponse = await tenantsApi.uploadTenantFile(legalDocumentFile, 'contract')
+        if (uploadResponse.success && uploadResponse.data) {
+          documentUrl = uploadResponse.data.url
+        } else {
+          toast.error('Gagal mengupload dokumen')
+          setLegalFormLoading(false)
+          return
+        }
+      }
+
+      const submitData = { ...data, document_url: documentUrl }
+
+      if (editingLegal) {
+        // Update legal
+        const response = await tenantsApi.updateTenantLegal(tenant.id, editingLegal.id, submitData as UpdateTenantLegalData)
+        if (response.success) {
+          toast.success('Legal document berhasil diperbarui')
+          setLegalDialogOpen(false)
+          setEditingLegal(null)
+          setLegalDocumentFile(null)
+          loadLegalDocuments()
+        } else {
+          toast.error(response.error || 'Gagal memperbarui legal document')
+        }
+      } else {
+        // Create legal
+        const response = await tenantsApi.createTenantLegal(tenant.id, submitData as CreateTenantLegalData)
+        if (response.success) {
+          toast.success('Legal document berhasil dibuat')
+          setLegalDialogOpen(false)
+          setLegalDocumentFile(null)
+          loadLegalDocuments()
+        } else {
+          toast.error(response.error || 'Gagal membuat legal document')
+        }
+      }
+    } catch (error) {
+      console.error('Legal submit error:', error)
+      toast.error('Terjadi kesalahan saat menyimpan legal document')
+    } finally {
+      setLegalFormLoading(false)
+    }
+  }
+
+  const loadPaymentLogs = async () => {
+    if (!tenant?.id) return
+    
+    setPaymentLogsLoading(true)
+    try {
+      const response = await tenantsApi.getTenantPaymentLogs(tenant.id)
+      
+      if (response.success && response.data) {
+        const responseData = response.data as any
+        const logsData = Array.isArray(responseData.data) ? responseData.data : (Array.isArray(responseData) ? responseData : [])
+        setPaymentLogs(logsData)
+      } else {
+        toast.error(response.error || 'Gagal memuat data payment logs')
+      }
+    } catch (error) {
+      console.error('Load payment logs error:', error)
+      toast.error('Terjadi kesalahan saat memuat data payment logs')
+    } finally {
+      setPaymentLogsLoading(false)
+    }
+  }
+
+  const handleCreatePayment = () => {
+    setEditingPayment(null)
+    setPaymentDialogOpen(true)
+  }
+
+  const handleEditPayment = (payment: TenantPaymentLog) => {
+    setEditingPayment(payment)
+    setPaymentDialogOpen(true)
+  }
+
+  const handleDeletePayment = (payment: TenantPaymentLog) => {
+    setPaymentToDelete(payment)
+    setDeletePaymentDialogOpen(true)
+  }
+
+  const handleDeletePaymentConfirm = async () => {
+    if (!paymentToDelete || !tenant?.id) return
+
+    setDeletingPayment(true)
+    try {
+      const response = await tenantsApi.deleteTenantPayment(tenant.id, paymentToDelete.id)
+      
+      if (response.success) {
+        toast.success('Payment log berhasil dihapus')
+        loadPaymentLogs()
+      loadLegalDocuments()
+      } else {
+        toast.error(response.error || 'Gagal menghapus payment log')
+      }
+    } catch (error) {
+      console.error('Delete payment error:', error)
+      toast.error('Terjadi kesalahan saat menghapus payment log')
+    } finally {
+      setDeletingPayment(false)
+      setDeletePaymentDialogOpen(false)
+      setPaymentToDelete(null)
+    }
+  }
+
+  const handlePaymentSubmit = async (data: CreateTenantPaymentData | UpdateTenantPaymentData) => {
+    if (!tenant?.id) {
+      toast.error('Tenant ID tidak ditemukan')
+      return
+    }
+
+    setPaymentFormLoading(true)
+    try {
+      if (editingPayment) {
+        // Update payment
+        const response = await tenantsApi.updateTenantPayment(tenant.id, editingPayment.id, data as UpdateTenantPaymentData)
+        if (response.success) {
+          toast.success('Payment log berhasil diperbarui')
+          setPaymentDialogOpen(false)
+          setEditingPayment(null)
+          loadPaymentLogs()
+      loadLegalDocuments()
+        } else {
+          toast.error(response.error || 'Gagal memperbarui payment log')
+        }
+      } else {
+        // Create payment
+        const response = await tenantsApi.createTenantPayment(tenant.id, data as CreateTenantPaymentData)
+        if (response.success) {
+          toast.success('Payment log berhasil dibuat')
+          setPaymentDialogOpen(false)
+          loadPaymentLogs()
+      loadLegalDocuments()
+        } else {
+          toast.error(response.error || 'Gagal membuat payment log')
+        }
+      }
+    } catch (error) {
+      console.error('Payment submit error:', error)
+      toast.error('Terjadi kesalahan saat menyimpan payment log')
+    } finally {
+      setPaymentFormLoading(false)
+    }
+  }
 
   const validatePassword = (password: string) => {
     const hasUppercase = /[A-Z]/.test(password)
@@ -445,8 +660,8 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
       newErrors.contract_begin_at = 'Tanggal mulai kontrak harus diisi'
     }
 
-    if (!formData.rent_duration || isNaN(parseInt(formData.rent_duration)) || parseInt(formData.rent_duration) <= 0) {
-      newErrors.rent_duration = 'Durasi sewa harus diisi dan lebih dari 0'
+    if (!formData.contract_end_at) {
+      newErrors.contract_end_at = 'Tanggal berakhir kontrak harus diisi'
     }
 
     if (identificationFiles.length === 0 && existingIdentificationUrls.length === 0) {
@@ -457,29 +672,15 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
       newErrors.contractFiles = 'Minimal satu dokumen kontrak harus diupload'
     }
 
-    if (!formData.unit_id || formData.unit_id.trim() === '') {
-      newErrors.unit_id = 'Unit harus dipilih'
-    }
 
-    if (!formData.category || formData.category === 0) {
-      newErrors.category = 'Kategori harus dipilih'
+    if (!formData.category || formData.category.trim() === '') {
+      newErrors.category = 'Kategori harus diisi'
     }
 
     if (!formData.rent_price || formData.rent_price <= 0) {
       newErrors.rent_price = 'Harga sewa harus diisi dan lebih dari 0'
     }
 
-    // Validate payment_term (when rent_duration_unit is year)
-    if (formData.rent_duration_unit === DURATION_UNITS.YEAR && !formData.payment_term) {
-      newErrors.payment_term = 'Periode pembayaran harus dipilih'
-    }
-
-    // Validate deposit reason when updating deposit (only when editing)
-    if (tenant && formData.deposit !== originalDeposit) {
-      if (!formData.deposit_reason || !formData.deposit_reason.trim()) {
-        newErrors.deposit_reason = 'Alasan perubahan deposit harus diisi'
-      }
-    }
 
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
@@ -595,26 +796,9 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
         }
       }
 
-      // Convert rent_duration_unit from string to number: 1 for month, 0 for year
-      let rentDurationUnitValue: number
-      if (formData.rent_duration_unit === DURATION_UNITS.MONTH) {
-        rentDurationUnitValue = 1
-      } else if (formData.rent_duration_unit === DURATION_UNITS.YEAR) {
-        rentDurationUnitValue = 0
-      } else {
-        rentDurationUnitValue = 1 // default to month
-      }
-
       const submitData: any = {
         name: formData.name.trim(),
         ...(formData.status ? { status: formData.status } : {}),
-        // When updating, always include deposit (even if 0) to allow emptying the value
-        // When creating, only include if > 0
-        ...(tenant 
-          ? { deposit: formData.deposit } 
-          : (formData.deposit > 0 ? { deposit: formData.deposit } : {})
-        ),
-        ...(tenant && formData.deposit !== originalDeposit && formData.deposit_reason ? { deposit_reason: formData.deposit_reason.trim() } : {}),
         tenant_identifications: identificationUrls,
         contract_documents: contractUrls,
       }
@@ -624,16 +808,33 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
         submitData.user_id = effectiveUserId
         submitData.contract_begin_at = formData.contract_begin_at
         submitData.contract_end_at = formData.contract_end_at
-        submitData.rent_duration = parseInt(formData.rent_duration) || 0
-        submitData.rent_duration_unit = rentDurationUnitValue
-        submitData.unit_ids = [formData.unit_id] // Backend expects array, so wrap single unit_id in array
-        submitData.category_id = formData.category
-        submitData.rent_price = formData.rent_price
-        if (formData.down_payment > 0) {
-          submitData.down_payment = formData.down_payment
+        submitData.building_type = formData.building_type
+        if (formData.building_type === 'unit') {
+          submitData.unit_ids = formData.unit_ids
+        } else if (formData.building_type === 'asset') {
+          submitData.asset_ids = formData.asset_ids
         }
+        submitData.category = formData.category.trim()
+        if (formData.sub_category && formData.sub_category.trim()) {
+          submitData.sub_category = formData.sub_category.trim()
+        }
+        submitData.rent_price = formData.rent_price
         if (paymentTermValue !== undefined) {
           submitData.payment_term = paymentTermValue
+        }
+        submitData.building_area = formData.building_area || undefined
+        submitData.land_area = formData.land_area || undefined
+        submitData.electricity_power = formData.electricity_power || undefined
+      } else {
+        // For update, include these fields if they have values
+        if (formData.building_area > 0) {
+          submitData.building_area = formData.building_area
+        }
+        if (formData.land_area > 0) {
+          submitData.land_area = formData.land_area
+        }
+        if (formData.electricity_power > 0) {
+          submitData.electricity_power = formData.electricity_power
         }
       }
 
@@ -696,8 +897,33 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
   }
 
   // Handle price input change with formatting
-  const handlePriceChange = (field: 'rent_price' | 'down_payment' | 'deposit', value: string) => {
+  const handlePriceChange = (field: 'rent_price', value: string) => {
     const parsedValue = parsePrice(value)
+    handleInputChange(field, parsedValue)
+  }
+
+  // Format number with thousand separators (for area and power)
+  const formatNumber = (value: number | string): string => {
+    if (value === null || value === undefined || value === '') return ''
+    const numValue = typeof value === 'string' ? parseFloat(value.replace(/\./g, '')) : value
+    if (isNaN(numValue)) return ''
+    if (numValue === 0) return '0'
+    const integerPart = Math.floor(numValue).toString()
+    return integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  }
+
+  // Parse number input: remove separators
+  const parseNumber = (value: string): number => {
+    if (!value || value.trim() === '') return 0
+    const cleaned = value.replace(/\./g, '').replace(/[^\d.]/g, '')
+    if (!cleaned || cleaned === '') return 0
+    const parsed = cleaned.replace(/^0+(?=\d)/, '') || '0'
+    return parseFloat(parsed) || 0
+  }
+
+  // Handle number input change with formatting (for area and power)
+  const handleNumberChange = (field: 'building_area' | 'land_area' | 'electricity_power', value: string) => {
+    const parsedValue = parseNumber(value)
     handleInputChange(field, parsedValue)
   }
 
@@ -800,48 +1026,64 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
   }
 
 
-  const selectUnit = (unitId: string) => {
-    // Single selection: if clicking the same unit, deselect it; otherwise select the new one
-    const newUnitId = formData.unit_id === unitId ? '' : unitId
-    handleInputChange('unit_id', newUnitId)
+  const toggleUnit = (unitId: string) => {
+    const currentIds = formData.unit_ids || []
+    const newIds = currentIds.includes(unitId)
+      ? currentIds.filter(id => id !== unitId)
+      : [...currentIds, unitId]
+    handleInputChange('unit_ids', newIds)
   }
 
-  const selectCategory = (categoryId: number) => {
-    handleInputChange('category', categoryId)
+  const toggleAsset = (assetId: string) => {
+    const currentIds = formData.asset_ids || []
+    const newIds = currentIds.includes(assetId)
+      ? currentIds.filter(id => id !== assetId)
+      : [...currentIds, assetId]
+    handleInputChange('asset_ids', newIds)
+  }
+
+  // Filter suggestions based on input
+  const getFilteredCategorySuggestions = (input: string) => {
+    if (!input.trim()) return categorySuggestions
+    return categorySuggestions.filter((cat: string) => 
+      cat.toLowerCase().includes(input.toLowerCase())
+    )
+  }
+
+  const getFilteredSubCategorySuggestions = (input: string) => {
+    if (!input.trim()) return subCategorySuggestions
+    return subCategorySuggestions.filter((subCat: string) => 
+      subCat.toLowerCase().includes(input.toLowerCase())
+    )
+  }
+
+  const handleCategoryInputChange = (value: string) => {
+    handleInputChange('category', value)
+    setShowCategorySuggestions(true)
+  }
+
+  const handleSubCategoryInputChange = (value: string) => {
+    handleInputChange('sub_category', value)
+    setShowSubCategorySuggestions(true)
+  }
+
+  const selectCategorySuggestion = (category: string) => {
+    handleInputChange('category', category)
+    setShowCategorySuggestions(false)
+    if (categoryInputRef.current) {
+      categoryInputRef.current.blur()
+    }
+  }
+
+  const selectSubCategorySuggestion = (subCategory: string) => {
+    handleInputChange('sub_category', subCategory)
+    setShowSubCategorySuggestions(false)
+    if (subCategoryInputRef.current) {
+      subCategoryInputRef.current.blur()
+    }
   }
 
 
-  // Calculate contract end date based on start date and duration
-  useEffect(() => {
-    if (formData.contract_begin_at && formData.rent_duration && formData.rent_duration_unit) {
-      const startDate = new Date(formData.contract_begin_at)
-      const duration = parseInt(formData.rent_duration)
-      const unit = formData.rent_duration_unit
-      
-      let endDate = new Date(startDate)
-      
-      if (unit === DURATION_UNITS.YEAR) {
-        endDate.setFullYear(endDate.getFullYear() + duration)
-      } else {
-        endDate.setMonth(endDate.getMonth() + duration)
-      }
-      
-      // Subtract one day to get the actual end date
-      endDate.setDate(endDate.getDate() - 1)
-      
-      setFormData(prev => ({ 
-        ...prev, 
-        contract_end_at: endDate.toISOString().split('T')[0] 
-      }))
-    }
-  }, [formData.contract_begin_at, formData.rent_duration, formData.rent_duration_unit])
-
-  // Auto-set payment_term to "month" when rent_duration_unit is "month"
-  useEffect(() => {
-    if (formData.rent_duration_unit === DURATION_UNITS.MONTH) {
-      setFormData(prev => ({ ...prev, payment_term: DURATION_UNITS.MONTH }))
-    }
-  }, [formData.rent_duration_unit])
 
   const createNewUser = async () => {
     try {
@@ -907,7 +1149,33 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
     }) : []
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <>
+    <Tabs value={activeTab} onValueChange={setActiveTab} className="gap-4">
+      <TabsList className='active-gradient bg-transparent dark:bg-transparent rounded-none h-[50px]'>
+        <TabsTrigger 
+          value="info" 
+          className='py-2.5 px-4 font-semibold text-sm inline-flex items-center gap-3 dark:bg-transparent text-neutral-600 hover:text-blue-600 dark:text-white dark:hover:text-blue-500 data-[state=active]:bg-gradient border-0 border-t-2 border-neutral-200 dark:border-neutral-500 data-[state=active]:border-blue-600 dark:data-[state=active]:border-blue-600 rounded-[0] data-[state=active]:shadow-none cursor-pointer'
+        >
+          Informasi Tenant
+        </TabsTrigger>
+        <TabsTrigger 
+          value="payments" 
+          disabled={!tenant?.id}
+          className='py-2.5 px-4 font-semibold text-sm inline-flex items-center gap-3 dark:bg-transparent text-neutral-600 hover:text-blue-600 dark:text-white dark:hover:text-blue-500 data-[state=active]:bg-gradient border-0 border-t-2 border-neutral-200 dark:border-neutral-500 data-[state=active]:border-blue-600 dark:data-[state=active]:border-blue-600 rounded-[0] data-[state=active]:shadow-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed'
+        >
+          Penagihan {tenant?.id && `(${paymentLogs.length})`}
+        </TabsTrigger>
+        <TabsTrigger 
+          value="legals" 
+          disabled={!tenant?.id}
+          className='py-2.5 px-4 font-semibold text-sm inline-flex items-center gap-3 dark:bg-transparent text-neutral-600 hover:text-blue-600 dark:text-white dark:hover:text-blue-500 data-[state=active]:bg-gradient border-0 border-t-2 border-neutral-200 dark:border-neutral-500 data-[state=active]:border-blue-600 dark:data-[state=active]:border-blue-600 rounded-[0] data-[state=active]:shadow-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed'
+        >
+          Legal Documents {tenant?.id && `(${legalDocuments.length})`}
+        </TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="info" className="px-6 py-4">
+        <form onSubmit={handleSubmit} className="space-y-6">
       {/* Informasi Dasar */}
       <Card>
         <CardHeader>
@@ -1160,62 +1428,6 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
               </div>
             )}
 
-            <hr />
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Tipe Kategori Tenant */}
-              <div className="space-y-2">
-                <Label htmlFor="category">Tipe Kategori Tenant *</Label>
-                <Select
-                  key={`category-select-${formData.category}`}
-                  value={formData.category > 0 ? String(formData.category) : undefined}
-                  onValueChange={(value) => {
-                    console.log('Category selected:', value)
-                    selectCategory(parseInt(value))
-                  }}
-                >
-                  <SelectTrigger className={errors.category ? 'border-red-500' : ''}>
-                    <SelectValue placeholder="Pilih Kategori">
-                      {formData.category > 0 
-                        ? CATEGORY_OPTIONS.find(opt => opt.value === formData.category)?.label 
-                        : 'Pilih Kategori'}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CATEGORY_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={String(option.value)}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {errors.category && (
-                  <p className="text-sm text-red-500">{errors.category}</p>
-                )}
-              </div>
-
-              {/* Status Tenant */}
-              <div className="space-y-2">
-                <Label htmlFor="status">Status Tenant *</Label>
-                <Select
-                  value={formData.status}
-                  onValueChange={(value) => handleInputChange('status', value)}
-                >
-                  <SelectTrigger className={errors.status ? 'border-red-500' : ''}>
-                    <SelectValue placeholder="Pilih Status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {STATUS_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {errors.status && (
-                  <p className="text-sm text-red-500">{errors.status}</p>
-                )}
-              </div>
-            </div>
           </CardContent>
         </Card>
 
@@ -1225,72 +1437,256 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
           <CardTitle>Informasi Kontrak Sewa</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {tenant ? (
+          {/* Kategori, Sub Kategori, dan Status */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Kategori Tenant */}
             <div className="space-y-2">
-              <Label>Unit Sewa</Label>
-              <div className="p-3 bg-gray-50 border rounded-md">
-                {tenant.units && tenant.units.length > 0 ? (
-                  tenant.units.map((unit, index) => (
-                    <div key={unit.id || index} className="mb-2 last:mb-0">
-                      <p className="font-medium">{unit.name || 'N/A'}</p>
-                      <p className="text-sm text-muted-foreground">
-                        <span className="font-medium">Asset:</span> {unit.asset?.name || '-'}
-                      </p>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-muted-foreground">Tidak ada unit</p>
+              <Label htmlFor="category">Kategori *</Label>
+              <div className="relative">
+                <Input
+                  ref={categoryInputRef}
+                  id="category"
+                  value={formData.category}
+                  onChange={(e) => handleCategoryInputChange(e.target.value)}
+                  onFocus={() => setShowCategorySuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowCategorySuggestions(false), 200)}
+                  placeholder="Masukkan kategori"
+                  className={errors.category ? 'border-red-500' : ''}
+                />
+                {showCategorySuggestions && getFilteredCategorySuggestions(formData.category).length > 0 && (
+                  <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-y-auto">
+                    {getFilteredCategorySuggestions(formData.category).map((suggestion, index) => (
+                      <div
+                        key={index}
+                        className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          selectCategorySuggestion(suggestion)
+                        }}
+                      >
+                        {suggestion}
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
-              <p className="text-xs text-muted-foreground">Unit tidak dapat diubah saat edit tenant</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <Label>Pilih Unit Sewa *</Label>
-              {errors.unit_id && (
-                <p className="text-sm text-red-500">{errors.unit_id}</p>
+              {errors.category && (
+                <p className="text-sm text-red-500">{errors.category}</p>
               )}
-              <RadioGroup
-                value={formData.unit_id}
-                onValueChange={(value) => handleInputChange('unit_id', value)}
-                className="grid grid-cols-1 md:grid-cols-2 gap-4"
-              >
-                {Array.isArray(units) && units.length > 0 ? (
-                  units.map((unit) => (
-                    <div key={unit.id}>
-                      <RadioGroupItem value={unit.id} id={unit.id} className="peer sr-only" />
-                      <Label
-                        htmlFor={unit.id}
-                        className={`flex flex-col p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                          formData.unit_id === unit.id
-                            ? 'border-primary bg-primary/5'
-                            : 'border-gray-200 hover:border-primary/50'
-                        }`}
+            </div>
+
+            {/* Sub Kategori Tenant */}
+            <div className="space-y-2">
+              <Label htmlFor="sub_category">Sub Kategori</Label>
+              <div className="relative">
+                <Input
+                  ref={subCategoryInputRef}
+                  id="sub_category"
+                  value={formData.sub_category}
+                  onChange={(e) => handleSubCategoryInputChange(e.target.value)}
+                  onFocus={() => setShowSubCategorySuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowSubCategorySuggestions(false), 200)}
+                  placeholder="Masukkan sub kategori"
+                />
+                {showSubCategorySuggestions && getFilteredSubCategorySuggestions(formData.sub_category).length > 0 && (
+                  <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-y-auto">
+                    {getFilteredSubCategorySuggestions(formData.sub_category).map((suggestion, index) => (
+                      <div
+                        key={index}
+                        className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          selectSubCategorySuggestion(suggestion)
+                        }}
                       >
-                        <div className="space-y-1">
-                          <p className="font-semibold text-lg">{unit.name}</p>
+                        {suggestion}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Status Tenant */}
+            <div className="space-y-2">
+              <Label htmlFor="status">Status Tenant *</Label>
+              <Select
+                value={formData.status}
+                onValueChange={(value) => handleInputChange('status', value)}
+              >
+                <SelectTrigger className={errors.status ? 'border-red-500' : ''}>
+                  <SelectValue placeholder="Pilih Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUS_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.status && (
+                <p className="text-sm text-red-500">{errors.status}</p>
+              )}
+            </div>
+          </div>
+
+          {tenant ? (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Tipe Bangunan</Label>
+                <div className="p-3 bg-gray-50 border rounded-md">
+                  <p className="font-medium">
+                    {formData.building_type === 'unit' ? 'Unit' : 'Asset'}
+                  </p>
+                </div>
+              </div>
+              {formData.building_type === 'unit' && (
+                <div className="space-y-2">
+                  <Label>Unit Sewa</Label>
+                  <div className="p-3 bg-gray-50 border rounded-md">
+                    {tenant.units && tenant.units.length > 0 ? (
+                      tenant.units.map((unit, index) => (
+                        <div key={unit.id || index} className="mb-2 last:mb-0">
+                          <p className="font-medium">{unit.name || 'N/A'}</p>
                           <p className="text-sm text-muted-foreground">
                             <span className="font-medium">Asset:</span> {unit.asset?.name || '-'}
                           </p>
-                          <p className="text-sm text-muted-foreground">
-                            <span className="font-medium">Luas Area:</span> {unit.size} m²
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            <span className="font-medium">Daya Listrik:</span> {unit.electrical_power || 0} {unit.electrical_unit || 'Watt'}
-                          </p>
                         </div>
-                      </Label>
-                    </div>
-                  ))
-                ) : (
-                  <div className="col-span-2 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                    <p className="text-sm text-blue-800">
-                      Jika tidak tersedia pilihan unit sewa, Anda perlu menambahkannya terlebih dahulu
-                    </p>
+                      ))
+                    ) : (
+                      <p className="text-muted-foreground">Tidak ada unit</p>
+                    )}
                   </div>
-                )}
-              </RadioGroup>
+                </div>
+              )}
+              {formData.building_type === 'asset' && formData.asset_ids && formData.asset_ids.length > 0 && (
+                <div className="space-y-2">
+                  <Label>Asset</Label>
+                  <div className="p-3 bg-gray-50 border rounded-md space-y-2">
+                    {formData.asset_ids.map((assetId) => {
+                      const asset = assets.find(a => a.id === assetId)
+                      return asset ? (
+                        <p key={assetId} className="font-medium">{asset.name}</p>
+                      ) : null
+                    })}
+                  </div>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">Tipe bangunan dan pilihan tidak dapat diubah saat edit tenant</p>
             </div>
+          ) : (
+            <>
+              {/* Tipe Bangunan */}
+              <div className="space-y-2">
+                <Label htmlFor="building_type">Tipe Bangunan *</Label>
+                <Select
+                  value={formData.building_type}
+                  onValueChange={(value) => {
+                    handleInputChange('building_type', value)
+                    // Reset selection when switching type
+                    handleInputChange('unit_ids', [])
+                    handleInputChange('asset_ids', [])
+                  }}
+                >
+                  <SelectTrigger className={errors.building_type ? 'border-red-500' : ''}>
+                    <SelectValue placeholder="Pilih Tipe Bangunan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unit">Unit</SelectItem>
+                    <SelectItem value="asset">Asset</SelectItem>
+                  </SelectContent>
+                </Select>
+                {errors.building_type && (
+                  <p className="text-sm text-red-500">{errors.building_type}</p>
+                )}
+              </div>
+
+              {/* Pilih Unit atau Asset berdasarkan building_type - Multi Select dengan Checkbox */}
+              {formData.building_type === 'unit' && (
+                <div className="space-y-2">
+                  <Label>Pilih Unit Sewa *</Label>
+                  {errors.unit_ids && (
+                    <p className="text-sm text-red-500">{errors.unit_ids}</p>
+                  )}
+                  <div className="border rounded-md p-4 max-h-60 overflow-y-auto space-y-3">
+                    {Array.isArray(units) && units.length > 0 ? (
+                      units.map((unit) => (
+                        <div key={unit.id} className="flex items-start space-x-3">
+                          <Checkbox
+                            id={`unit-${unit.id}`}
+                            checked={formData.unit_ids.includes(unit.id)}
+                            onCheckedChange={() => toggleUnit(unit.id)}
+                            className="mt-1"
+                          />
+                          <Label
+                            htmlFor={`unit-${unit.id}`}
+                            className="flex-1 cursor-pointer space-y-1"
+                          >
+                            <p className="font-medium">{unit.name}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {unit.asset?.name && `Asset: ${unit.asset.name}`}
+                              {unit.size && ` • ${unit.size} m²`}
+                            </p>
+                          </Label>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-muted-foreground text-center py-4">
+                        Tidak ada unit tersedia
+                      </p>
+                    )}
+                  </div>
+                  {formData.unit_ids.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {formData.unit_ids.length} unit dipilih
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {formData.building_type === 'asset' && (
+                <div className="space-y-2">
+                  <Label>Pilih Asset *</Label>
+                  {errors.asset_ids && (
+                    <p className="text-sm text-red-500">{errors.asset_ids}</p>
+                  )}
+                  <div className="border rounded-md p-4 max-h-60 overflow-y-auto space-y-3">
+                    {Array.isArray(assets) && assets.length > 0 ? (
+                      assets.map((asset) => (
+                        <div key={asset.id} className="flex items-start space-x-3">
+                          <Checkbox
+                            id={`asset-${asset.id}`}
+                            checked={formData.asset_ids.includes(asset.id)}
+                            onCheckedChange={() => toggleAsset(asset.id)}
+                            className="mt-1"
+                          />
+                          <Label
+                            htmlFor={`asset-${asset.id}`}
+                            className="flex-1 cursor-pointer space-y-1"
+                          >
+                            <p className="font-medium">{asset.name}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {asset.address && `Alamat: ${asset.address}`}
+                              {asset.area && ` • ${asset.area} m²`}
+                            </p>
+                          </Label>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-muted-foreground text-center py-4">
+                        Tidak ada asset tersedia
+                      </p>
+                    )}
+                  </div>
+                  {formData.asset_ids.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {formData.asset_ids.length} asset dipilih
+                    </p>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
@@ -1333,67 +1729,22 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
               )}
             </div>
 
-            {/* Durasi Sewa */}
-            <div className="space-y-2">
-              <Label htmlFor="rent_duration">Durasi Sewa {tenant ? '' : '*'}</Label>
-              {tenant ? (
-                <div className="p-3 bg-gray-50 border rounded-md">
-                  <p className="font-medium">
-                    {formData.rent_duration} {DURATION_UNIT_LABELS[formData.rent_duration_unit] || formData.rent_duration_unit}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">Durasi kontrak tidak dapat diubah saat edit tenant</p>
-                </div>
-              ) : (
-                <div className="flex gap-2">
-                  <Input
-                    id="rent_duration"
-                    type="number"
-                    min="1"
-                    value={formData.rent_duration}
-                    onChange={(e) => handleInputChange('rent_duration', e.target.value)}
-                    placeholder="0"
-                    className={`flex-1 ${errors.rent_duration ? 'border-red-500' : ''}`}
-                  />
-                  <Select
-                    value={formData.rent_duration_unit}
-                    onValueChange={(value) => handleInputChange('rent_duration_unit', value)}
-                  >
-                    <SelectTrigger className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(DURATION_UNIT_LABELS).map(([value, label]) => (
-                        <SelectItem key={value} value={value}>
-                          {label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-              {errors.rent_duration && (
-                <p className="text-sm text-red-500">{errors.rent_duration}</p>
-              )}
-            </div>
-
             {/* Tanggal Berakhir Kontrak */}
             <div className="space-y-2">
-              <Label htmlFor="contract_end_at">Tanggal Berakhir Kontrak</Label>
-              <Input
-                id="contract_end_at"
-                type="text"
-                value={formData.contract_end_at ? new Date(formData.contract_end_at).toLocaleDateString('id-ID', {
-                  day: '2-digit',
-                  month: '2-digit',
-                  year: 'numeric'
-                }) : ''}
-                readOnly
-                className="bg-gray-50"
-                placeholder="DD/MM/YYYY"
-              />
-              <p className="text-xs text-muted-foreground">
-                Tanggal berakhir akan dihitung otomatis berdasarkan tanggal mulai dan durasi sewa
-              </p>
+              <Label htmlFor="contract_end_at">Tanggal Berakhir Kontrak *</Label>
+              <div className="relative">
+                <Calendar className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  id="contract_end_at"
+                  type="date"
+                  value={formData.contract_end_at}
+                  onChange={(e) => handleInputChange('contract_end_at', e.target.value)}
+                  className={`pl-8 ${errors.contract_end_at ? 'border-red-500' : ''}`}
+                />
+              </div>
+              {errors.contract_end_at && (
+                <p className="text-sm text-red-500">{errors.contract_end_at}</p>
+              )}
             </div>
           </div>
         </CardContent>
@@ -1435,110 +1786,12 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                 <p className="text-sm text-red-500">{errors.rent_price}</p>
               )}
             </div>
-
-            {/* Uang Muka */}
-            <div className="space-y-2">
-              <Label htmlFor="down_payment">Uang Muka</Label>
-              {tenant ? (
-                <div className="p-3 bg-gray-50 border rounded-md">
-                  <p className="font-medium">
-                    Rp {formatPrice(formData.down_payment)}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">Uang muka tidak dapat diubah saat edit tenant</p>
-                </div>
-              ) : (
-                <div className="relative">
-                  <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
-                  <Input
-                    id="down_payment"
-                    type="text"
-                    value={formatPrice(formData.down_payment)}
-                    onChange={(e) => handlePriceChange('down_payment', e.target.value)}
-                    placeholder="0"
-                    className="pl-10"
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Deposit */}
-            <div className="space-y-2">
-              <Label htmlFor="deposit">Deposit</Label>
-              <div className="relative">
-                <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
-                <Input
-                  id="deposit"
-                  type="text"
-                  value={formatPrice(formData.deposit)}
-                  onChange={(e) => handlePriceChange('deposit', e.target.value)}
-                  placeholder="0"
-                  className="pl-10"
-                />
-              </div>
-            </div>
-
-            {/* Periode Pembayaran */}
-            {formData.rent_duration_unit === DURATION_UNITS.YEAR && (
-              <div className="space-y-2">
-                <Label htmlFor="payment_term">
-                  Periode Pembayaran {tenant ? '' : <span className="text-red-500">*</span>}
-                </Label>
-                {tenant ? (
-                  <div className="p-3 bg-gray-50 border rounded-md">
-                    <p className="font-medium">
-                      {(() => {
-                        // Ensure we have the correct value
-                        console.log("tenant.payment_term", tenant.payment_term)
-                        return Number(tenant.payment_term) === 0 ? 'Tahunan' : 'Bulanan'
-                      })()}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">Periode pembayaran tidak dapat diubah saat edit tenant</p>
-                  </div>
-                ) : (
-                  <Select
-                    value={formData.payment_term}
-                    onValueChange={(value) => handleInputChange('payment_term', value)}
-                  >
-                    <SelectTrigger className={errors.payment_term ? 'border-red-500' : ''}>
-                      <SelectValue placeholder="Pilih Bulanan/Tahunan" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={DURATION_UNITS.MONTH}>Bulanan</SelectItem>
-                      <SelectItem value={DURATION_UNITS.YEAR}>Tahunan</SelectItem>
-                    </SelectContent>
-                  </Select>
-                )}
-                {errors.payment_term && (
-                  <p className="text-sm text-red-500">{errors.payment_term}</p>
-                )}
-              </div>
-            )}
           </div>
-
-          {/* Deposit Reason - Only show when editing and deposit is being updated */}
-          {tenant && formData.deposit !== originalDeposit && (
-            <div className="space-y-2">
-              <Label htmlFor="deposit_reason">
-                Alasan Perubahan Deposit <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="deposit_reason"
-                type="text"
-                value={formData.deposit_reason}
-                onChange={(e) => handleInputChange('deposit_reason', e.target.value)}
-                placeholder="Masukkan alasan perubahan deposit"
-                className={errors.deposit_reason ? 'border-red-500' : ''}
-              />
-              {errors.deposit_reason && (
-                <p className="text-sm text-red-500">{errors.deposit_reason}</p>
-              )}
-            </div>
-          )}
         </CardContent>
       </Card>
 
       {/* Harga Bayar Sewa */}
-      {formData.rent_price > 0 && formData.rent_duration && formData.payment_term && String(formData.payment_term).trim() !== '' && (
+      {formData.rent_price > 0 && formData.payment_term && String(formData.payment_term).trim() !== '' && (
         <Card>
           <CardHeader>
             <CardTitle>Harga Bayar Sewa</CardTitle>
@@ -1549,25 +1802,11 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                 {(() => {
                   // Use tenant values when editing (more reliable), fall back to formData when creating
                   const rentPrice = tenant?.rent_price || formData.rent_price || 0
-                  const downPayment = tenant?.down_payment || formData.down_payment || 0
-                  const duration = tenant?.rent_duration ? parseInt(String(tenant.rent_duration)) : (parseInt(formData.rent_duration) || 0)
                   
-                  // For duration unit and payment term, use tenant values if available, otherwise formData
-                  let durationUnit: string
+                  // For payment term, use tenant values if available, otherwise formData
                   let paymentTerm: string | undefined
                   
                   if (tenant) {
-                    // When editing: use tenant values and convert if needed
-                    // Normalize rent_duration_unit from tenant
-                    if (typeof tenant.rent_duration_unit === 'number') {
-                      durationUnit = tenant.rent_duration_unit === 0 ? DURATION_UNITS.YEAR : DURATION_UNITS.MONTH
-                    } else if (typeof tenant.rent_duration_unit === 'string') {
-                      const unitStr = tenant.rent_duration_unit.toLowerCase().trim()
-                      durationUnit = (unitStr === 'year' || unitStr === DURATION_UNITS.YEAR) ? DURATION_UNITS.YEAR : DURATION_UNITS.MONTH
-                    } else {
-                      durationUnit = formData.rent_duration_unit
-                    }
-                    
                     // Normalize payment_term from tenant
                     if (tenant.payment_term !== null && tenant.payment_term !== undefined) {
                       if (typeof tenant.payment_term === 'number') {
@@ -1589,110 +1828,32 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                     }
                   } else {
                     // When creating: use formData values
-                    durationUnit = formData.rent_duration_unit
                     paymentTerm = formData.payment_term
                   }
                   
-                  // Store constants in variables to prevent optimization issues in production builds
-                  const YEAR_CONST = DURATION_UNITS.YEAR
-                  const MONTH_CONST = DURATION_UNITS.MONTH
-                  
-                  console.log("Harga Bayar Sewa calculation:", {
-                    isEditing: !!tenant,
-                    rentPrice,
-                    downPayment,
-                    duration,
-                    durationUnit,
-                    paymentTerm,
-                    durationUnitType: typeof durationUnit,
-                    paymentTermType: typeof paymentTerm,
-                    tenantRentDurationUnit: tenant?.rent_duration_unit,
-                    tenantPaymentTerm: tenant?.payment_term,
-                    DURATION_UNITS_YEAR: YEAR_CONST,
-                    DURATION_UNITS_MONTH: MONTH_CONST,
-                    durationUnitEqualsYear: durationUnit === YEAR_CONST,
-                    durationUnitEqualsMonth: durationUnit === MONTH_CONST,
-                    paymentTermEqualsYear: paymentTerm === YEAR_CONST,
-                    paymentTermEqualsMonth: paymentTerm === MONTH_CONST
-                  })
-                  
-                  if (duration > 0 && paymentTerm) {
-                    let numberOfPayments = 0
+                  if (paymentTerm && rentPrice > 0) {
+                    // Calculate price per payment term
+                    const normalizedPaymentTerm = paymentTerm.toLowerCase().trim()
+                    const isPaymentYear = normalizedPaymentTerm === DURATION_UNITS.YEAR || normalizedPaymentTerm === 'year'
+                    const isPaymentMonth = normalizedPaymentTerm === DURATION_UNITS.MONTH || normalizedPaymentTerm === 'month'
                     
-                    // Normalize to strings for reliable comparison (important for production builds)
-                    // Use direct string literals to avoid any constant optimization issues
-                    const normalizedPaymentTerm = String(paymentTerm).toLowerCase().trim()
-                    const normalizedDurationUnit = String(durationUnit).toLowerCase().trim()
-                    const YEAR_STR = 'year'
-                    const MONTH_STR = 'month'
-                    
-                    // Explicitly check each condition with direct string comparisons
-                    // Use both strict equality and includes() as fallback for production builds
-                    const isPaymentYear = normalizedPaymentTerm === YEAR_STR || normalizedPaymentTerm.includes('year')
-                    const isPaymentMonth = normalizedPaymentTerm === MONTH_STR || normalizedPaymentTerm.includes('month')
-                    const isDurationYear = normalizedDurationUnit === YEAR_STR || normalizedDurationUnit.includes('year')
-                    const isDurationMonth = normalizedDurationUnit === MONTH_STR || normalizedDurationUnit.includes('month')
-                    const isSameUnit = normalizedPaymentTerm === normalizedDurationUnit || 
-                                      (normalizedPaymentTerm.includes('year') && normalizedDurationUnit.includes('year')) ||
-                                      (normalizedPaymentTerm.includes('month') && normalizedDurationUnit.includes('month'))
-                    
-                    console.log("Harga Bayar Sewa: normalized values and checks:", {
-                      normalizedPaymentTerm,
-                      normalizedDurationUnit,
-                      normalizedPaymentTermLength: normalizedPaymentTerm.length,
-                      normalizedDurationUnitLength: normalizedDurationUnit.length,
-                      YEAR_STR,
-                      MONTH_STR,
-                      isPaymentYear,
-                      isPaymentMonth,
-                      isDurationYear,
-                      isDurationMonth,
-                      isSameUnit,
-                      rawPaymentTerm: paymentTerm,
-                      rawDurationUnit: durationUnit,
-                      rawPaymentTermType: typeof paymentTerm,
-                      rawDurationUnitType: typeof durationUnit
-                    })
-                    
-                    // Check payment_term first - use explicit boolean checks
-                    if (isSameUnit) {
-                      // If payment_term is same as rent_duration_unit, number of payments is duration
-                      numberOfPayments = duration
-                      console.log("Harga Bayar Sewa: BRANCH 1 - same units, numberOfPayments = duration =", duration)
-                    } else if (isPaymentMonth && isDurationYear) {
-                      // If payment_term is month and rent_duration_unit is year, number of payments is duration * 12
-                      numberOfPayments = duration * 12
-                      console.log("Harga Bayar Sewa: BRANCH 2 - month payment with year duration, numberOfPayments =", numberOfPayments, "calculation:", duration, "* 12 =", duration * 12)
-                    } else {
-                      console.log("Harga Bayar Sewa: BRANCH 3 - no matching condition", {
-                        normalizedPaymentTerm,
-                        normalizedDurationUnit,
-                        isPaymentYear,
-                        isPaymentMonth,
-                        isDurationYear,
-                        isDurationMonth,
-                        isSameUnit,
-                        conditionCheck: `isPaymentMonth (${isPaymentMonth}) && isDurationYear (${isDurationYear}) = ${isPaymentMonth && isDurationYear}`
-                      })
-                    }
-                    
-                    console.log("Harga Bayar Sewa: numberOfPayments =", numberOfPayments)
-                    
-                    // Harga bayar is (rentPrice - downPayment) / number of payments
-                    const pricePerTerm = numberOfPayments > 0 ? (rentPrice - downPayment) / numberOfPayments : 0
-                    
-                    console.log("Harga Bayar Sewa: pricePerTerm =", pricePerTerm, "(rentPrice - downPayment) / numberOfPayments =", `(${rentPrice} - ${downPayment}) / ${numberOfPayments}`)
-                    
-                    if (numberOfPayments > 0 && pricePerTerm > 0) {
+                    // For now, just return rent price divided by payment term
+                    // This is a simplified calculation - adjust based on your business logic
+                    if (isPaymentYear) {
                       return new Intl.NumberFormat('id-ID', {
                         style: 'currency',
                         currency: 'IDR',
                         minimumFractionDigits: 0,
                         maximumFractionDigits: 0,
-                      }).format(pricePerTerm)
+                      }).format(rentPrice)
+                    } else if (isPaymentMonth) {
+                      return new Intl.NumberFormat('id-ID', {
+                        style: 'currency',
+                        currency: 'IDR',
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 0,
+                      }).format(rentPrice)
                     }
-                  } else {
-                    console.log("Harga Bayar Sewa: early return - duration:", duration, "paymentTerm:", paymentTerm)
                   }
                   return 'Rp0'
                 })()}
@@ -1705,6 +1866,72 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
         </Card>
       )}
 
+      {/* Informasi Bangunan */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Informasi Bangunan</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Luas Bangunan */}
+            <div className="space-y-2">
+              <Label htmlFor="building_area">Luas Bangunan (m²)</Label>
+              <div className="relative">
+                <Input
+                  id="building_area"
+                  type="text"
+                  value={formatNumber(formData.building_area)}
+                  onChange={(e) => handleNumberChange('building_area', e.target.value)}
+                  placeholder="0"
+                  className={errors.building_area ? 'border-red-500' : ''}
+                />
+                <span className="absolute right-3 top-2.5 text-muted-foreground text-sm">m²</span>
+              </div>
+              {errors.building_area && (
+                <p className="text-sm text-red-500">{errors.building_area}</p>
+              )}
+            </div>
+
+            {/* Luas Tanah */}
+            <div className="space-y-2">
+              <Label htmlFor="land_area">Luas Tanah (m²)</Label>
+              <div className="relative">
+                <Input
+                  id="land_area"
+                  type="text"
+                  value={formatNumber(formData.land_area)}
+                  onChange={(e) => handleNumberChange('land_area', e.target.value)}
+                  placeholder="0"
+                  className={errors.land_area ? 'border-red-500' : ''}
+                />
+                <span className="absolute right-3 top-2.5 text-muted-foreground text-sm">m²</span>
+              </div>
+              {errors.land_area && (
+                <p className="text-sm text-red-500">{errors.land_area}</p>
+              )}
+            </div>
+
+            {/* Daya Listrik */}
+            <div className="space-y-2">
+              <Label htmlFor="electricity_power">Daya Listrik (VA)</Label>
+              <div className="relative">
+                <Input
+                  id="electricity_power"
+                  type="text"
+                  value={formatNumber(formData.electricity_power)}
+                  onChange={(e) => handleNumberChange('electricity_power', e.target.value)}
+                  placeholder="0"
+                  className={errors.electricity_power ? 'border-red-500' : ''}
+                />
+                <span className="absolute right-3 top-2.5 text-muted-foreground text-sm">VA</span>
+              </div>
+              {errors.electricity_power && (
+                <p className="text-sm text-red-500">{errors.electricity_power}</p>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {errors.user_id && (
         <p className="text-sm text-red-500">{errors.user_id}</p>
@@ -1857,6 +2084,917 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
           {uploading ? 'Mengupload file...' : tenant ? 'Perbarui Tenant' : 'Buat Tenant'}
         </Button>
       </div>
+        </form>
+      </TabsContent>
+
+      <TabsContent value="payments" className="px-6 py-4">
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-semibold">Penagihan</h3>
+            <Button onClick={handleCreatePayment} size="sm">
+              <Plus className="mr-2 h-4 w-4" />
+              Tambah Penagihan
+            </Button>
+          </div>
+
+          {paymentLogsLoading ? (
+            <div className="flex justify-center items-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+          ) : (
+            <div className="rounded-md border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[3%]">No</TableHead>
+                    <TableHead className="w-[8%]">Periode Tagihan</TableHead>
+                    <TableHead className="w-[8%]">Jatuh Tempo</TableHead>
+                    <TableHead className="w-[7%]">Jenis Tagihan</TableHead>
+                    <TableHead className="w-[8%]">Jumlah Tagihan</TableHead>
+                    <TableHead className="w-[8%]">Tanggal Bayar</TableHead>
+                    <TableHead className="w-[8%]">Jumlah Bayar</TableHead>
+                    <TableHead className="w-[8%]">Dibayar</TableHead>
+                    <TableHead className="w-[7%]">Metode</TableHead>
+                    <TableHead className="w-[8%]">Outstanding</TableHead>
+                    <TableHead className="w-[8%]">Overdue</TableHead>
+                    <TableHead className="w-[5%]">Rate</TableHead>
+                    <TableHead className="w-[8%]">Last Charge</TableHead>
+                    <TableHead className="w-[6%]">Status</TableHead>
+                    <TableHead className="w-[8%] text-center">Aksi</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {paymentLogs.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={15} className="text-center py-8 text-muted-foreground">
+                        Tidak ada data payment
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    paymentLogs.map((payment, index) => (
+                      <TableRow key={payment.id}>
+                        <TableCell className="font-medium text-center">{index + 1}</TableCell>
+                        <TableCell>
+                          {payment.billing_period || '-'}
+                        </TableCell>
+                        <TableCell>
+                          {payment.payment_deadline 
+                            ? new Date(payment.payment_deadline).toLocaleDateString('id-ID')
+                            : '-'}
+                        </TableCell>
+                        <TableCell>
+                          {payment.billing_type || '-'}
+                        </TableCell>
+                        <TableCell>
+                          {payment.billing_amount 
+                            ? `Rp ${payment.billing_amount.toLocaleString('id-ID')}`
+                            : '-'}
+                        </TableCell>
+                        <TableCell>
+                          {payment.payment_date 
+                            ? new Date(payment.payment_date).toLocaleDateString('id-ID')
+                            : '-'}
+                        </TableCell>
+                        <TableCell>
+                          {payment.amount 
+                            ? `Rp ${payment.amount.toLocaleString('id-ID')}`
+                            : '-'}
+                        </TableCell>
+                        <TableCell>
+                          {payment.paid_amount 
+                            ? `Rp ${payment.paid_amount.toLocaleString('id-ID')}`
+                            : '-'}
+                        </TableCell>
+                        <TableCell>
+                          {payment.payment_method === 'cash' ? 'Cash' :
+                           payment.payment_method === 'bank_transfer' ? 'Bank Transfer' :
+                           payment.payment_method === 'qris' ? 'QRIS' :
+                           payment.payment_method === 'other' ? 'Other' : '-'}
+                        </TableCell>
+                        <TableCell>
+                          {payment.outstanding 
+                            ? `Rp ${payment.outstanding.toLocaleString('id-ID')}`
+                            : '-'}
+                        </TableCell>
+                        <TableCell>
+                          {payment.overdue 
+                            ? `Rp ${payment.overdue.toLocaleString('id-ID')}`
+                            : '-'}
+                        </TableCell>
+                        <TableCell>
+                          {payment.rate ? (payment.rate * 100).toFixed(2) + '%' : '0.01%'}
+                        </TableCell>
+                        <TableCell>
+                          {payment.last_charge_date 
+                            ? `Rp ${payment.last_charge_date.toLocaleString('id-ID')}`
+                            : '-'}
+                        </TableCell>
+                        <TableCell>
+                          <span
+                            className={`px-2 py-1 rounded text-xs font-medium border ${
+                              payment.status === 1
+                                ? 'bg-green-600/15 text-green-600 border-green-600'
+                                : payment.status === 2
+                                ? 'bg-red-600/15 text-red-600 border-red-600'
+                                : 'bg-yellow-600/15 text-yellow-600 border-yellow-600'
+                            }`}
+                          >
+                            {payment.status === 1 ? 'Paid' : payment.status === 2 ? 'Expired' : 'Unpaid'}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex justify-center gap-2">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => handleEditPayment(payment)}
+                              className="h-8 w-8 rounded-full text-green-600 bg-green-600/10 hover:bg-green-600/20"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => handleDeletePayment(payment)}
+                              className="h-8 w-8 rounded-full text-red-500 bg-red-500/10 hover:bg-red-500/20"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
+      </TabsContent>
+
+      <TabsContent value="legals" className="px-6 py-4">
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-semibold">Legal Documents</h3>
+          </div>
+
+          {legalDocumentsLoading ? (
+            <div className="flex justify-center items-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+          ) : (
+            <div className="rounded-md border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[5%]">No</TableHead>
+                    <TableHead className="w-[18%]">Jenis Dokumen</TableHead>
+                    <TableHead className="w-[12%]">Due Date</TableHead>
+                    <TableHead className="w-[25%]">Keterangan</TableHead>
+                    <TableHead className="w-[15%]">Status</TableHead>
+                    <TableHead className="w-[15%]">Document</TableHead>
+                    <TableHead className="w-[10%] text-center">Aksi</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {legalDocuments.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                        Tidak ada data legal document
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    legalDocuments.map((legal, index) => {
+                      // Use description from backend, fallback to doc_type
+                      const displayDocType = legal.description || legal.doc_type
+                      
+                      return (
+                      <TableRow key={legal.id}>
+                        <TableCell className="font-medium text-center">{index + 1}</TableCell>
+                        <TableCell className="font-medium break-words whitespace-normal" style={{ wordBreak: 'break-word', maxWidth: '200px' }}>{displayDocType}</TableCell>
+                        <TableCell>
+                          {legal.due_date 
+                            ? new Date(legal.due_date).toLocaleDateString('id-ID')
+                            : '-'}
+                        </TableCell>
+                        <TableCell>
+                          {legal.keterangan || '-'}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={legal.status === 'selesai' ? 'default' : 'secondary'}>
+                            {legal.status === 'selesai' ? 'Selesai' : 'Belum Selesai'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {legal.document_url ? (
+                            <a 
+                              href={legal.document_url} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:underline flex items-center gap-2"
+                            >
+                              <File className="w-4 h-4" />
+                              Lihat Dokumen
+                            </a>
+                          ) : '-'}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex justify-center gap-2">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => handleEditLegal(legal)}
+                              className="h-8 w-8 rounded-full text-green-600 bg-green-600/10 hover:bg-green-600/20"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                      )
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
+      </TabsContent>
+    </Tabs>
+
+    {/* Payment Dialog */}
+    <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{editingPayment ? 'Edit Penagihan' : 'Tambah Penagihan Baru'}</DialogTitle>
+          <DialogDescription>
+            {editingPayment ? 'Perbarui informasi penagihan' : 'Masukkan informasi penagihan baru'}
+          </DialogDescription>
+        </DialogHeader>
+        <PaymentForm
+          payment={editingPayment || undefined}
+          onSubmit={handlePaymentSubmit}
+          loading={paymentFormLoading}
+          onCancel={() => {
+            setPaymentDialogOpen(false)
+            setEditingPayment(null)
+          }}
+        />
+      </DialogContent>
+    </Dialog>
+
+    {/* Delete Payment Dialog */}
+    <AlertDialog open={deletePaymentDialogOpen} onOpenChange={setDeletePaymentDialogOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Hapus Payment Log</AlertDialogTitle>
+          <AlertDialogDescription>
+            Apakah Anda yakin ingin menghapus payment log ini? Tindakan ini tidak dapat dibatalkan.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={deletingPayment}>Batal</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={handleDeletePaymentConfirm}
+            disabled={deletingPayment}
+            className="bg-red-600 hover:bg-red-700"
+          >
+            {deletingPayment ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Menghapus...
+              </>
+            ) : (
+              'Hapus'
+            )}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    {/* Legal Document Dialog */}
+    <Dialog open={legalDialogOpen} onOpenChange={setLegalDialogOpen}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{editingLegal ? 'Edit Legal Document' : 'Tambah Legal Document Baru'}</DialogTitle>
+          <DialogDescription>
+            {editingLegal ? 'Perbarui informasi legal document' : 'Masukkan informasi legal document baru'}
+          </DialogDescription>
+        </DialogHeader>
+        <LegalForm
+          legal={editingLegal || undefined}
+          onSubmit={handleLegalSubmit}
+          loading={legalFormLoading}
+          onCancel={() => {
+            setLegalDialogOpen(false)
+            setEditingLegal(null)
+            setLegalDocumentFile(null)
+          }}
+          documentFile={legalDocumentFile}
+          onDocumentFileChange={setLegalDocumentFile}
+        />
+      </DialogContent>
+    </Dialog>
+
+    {/* Delete Legal Dialog */}
+    <AlertDialog open={deleteLegalDialogOpen} onOpenChange={setDeleteLegalDialogOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Hapus Legal Document</AlertDialogTitle>
+          <AlertDialogDescription>
+            Apakah Anda yakin ingin menghapus legal document ini? Tindakan ini tidak dapat dibatalkan.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={deletingLegal}>Batal</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={handleDeleteLegalConfirm}
+            disabled={deletingLegal}
+            className="bg-red-600 hover:bg-red-700"
+          >
+            {deletingLegal ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Menghapus...
+              </>
+            ) : (
+              'Hapus'
+            )}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
+  )
+}
+
+// Payment Form Component
+interface PaymentFormProps {
+  payment?: TenantPaymentLog
+  onSubmit: (data: CreateTenantPaymentData | UpdateTenantPaymentData) => Promise<void>
+  loading?: boolean
+  onCancel: () => void
+}
+
+function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFormProps) {
+  const [formData, setFormData] = useState({
+    amount: '',
+    payment_method: '',
+    payment_date: '',
+    paid_amount: '',
+    payment_deadline: '',
+    notes: '',
+    billing_type: '',
+    billing_period: '',
+    billing_amount: '',
+    outstanding: '',
+    overdue: '',
+    rate: '0.01',
+    last_charge_date: '',
+  })
+  const [errors, setErrors] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    if (payment) {
+      setFormData({
+        amount: payment.amount?.toString() || '',
+        payment_method: payment.payment_method || '',
+        payment_date: payment.payment_date ? new Date(payment.payment_date).toISOString().split('T')[0] : '',
+        paid_amount: payment.paid_amount?.toString() || '',
+        payment_deadline: payment.payment_deadline ? new Date(payment.payment_deadline).toISOString().split('T')[0] : '',
+        notes: payment.notes || '',
+        billing_type: payment.billing_type || '',
+        billing_period: payment.billing_period || '',
+        billing_amount: payment.billing_amount?.toString() || '',
+        outstanding: payment.outstanding?.toString() || '',
+        overdue: payment.overdue?.toString() || '',
+        rate: payment.rate?.toString() || '0.01',
+        last_charge_date: payment.last_charge_date ? new Date(payment.last_charge_date).toISOString().split('T')[0] : '',
+      })
+    } else {
+      setFormData({
+        amount: '',
+        payment_method: '',
+        payment_date: '',
+        paid_amount: '',
+        payment_deadline: '',
+        notes: '',
+        billing_type: '',
+        billing_period: '',
+        billing_amount: '',
+        outstanding: '',
+        overdue: '',
+        rate: '0.01',
+        last_charge_date: '',
+      })
+    }
+  }, [payment])
+
+  const formatPrice = (value: number | string): string => {
+    if (value === null || value === undefined || value === '') return ''
+    const numValue = typeof value === 'string' ? parseFloat(value.replace(/\./g, '')) : value
+    if (isNaN(numValue) || numValue === 0) return ''
+    const integerPart = Math.floor(numValue).toString()
+    return integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  }
+
+  const parsePrice = (value: string): number => {
+    if (!value || value.trim() === '') return 0
+    const cleaned = value.replace(/\./g, '').replace(/[^\d]/g, '')
+    if (!cleaned || cleaned === '') return 0
+    const parsed = cleaned.replace(/^0+(?=\d)/, '') || '0'
+    return parseFloat(parsed) || 0
+  }
+
+  const handleInputChange = (field: string, value: string) => {
+    if (field === 'amount' || field === 'paid_amount' || field === 'billing_amount' || field === 'outstanding' || field === 'overdue') {
+      const parsedValue = parsePrice(value)
+      setFormData(prev => ({ ...prev, [field]: formatPrice(parsedValue) }))
+    } else {
+      setFormData(prev => ({ ...prev, [field]: value }))
+    }
+    // Clear error when user starts typing
+    if (errors[field]) {
+      setErrors(prev => ({ ...prev, [field]: '' }))
+    }
+  }
+
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {}
+
+    // Validasi hanya untuk create payment baru (tidak untuk update)
+    if (!payment) {
+      if (!formData.billing_period || formData.billing_period.trim() === '') {
+        newErrors.billing_period = 'Periode tagihan harus diisi'
+      }
+
+      if (!formData.billing_amount || parsePrice(formData.billing_amount) <= 0) {
+        newErrors.billing_amount = 'Jumlah tagihan harus diisi dan lebih dari 0'
+      }
+
+      if (!formData.payment_deadline || formData.payment_deadline.trim() === '') {
+        newErrors.payment_deadline = 'Jatuh tempo harus diisi'
+      }
+    }
+
+    // Field opsional untuk create, tapi tetap validasi jika diisi
+    if (formData.amount && parsePrice(formData.amount) <= 0) {
+      newErrors.amount = 'Jumlah pembayaran harus lebih dari 0'
+    }
+
+    if (formData.payment_method && !['cash', 'bank_transfer', 'qris', 'other'].includes(formData.payment_method)) {
+      newErrors.payment_method = 'Metode pembayaran tidak valid'
+    }
+
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (!validateForm()) {
+      return
+    }
+
+    if (payment) {
+      // Update payment
+      const updateData: UpdateTenantPaymentData = {
+        payment_method: formData.payment_method,
+        notes: formData.notes.trim() || undefined,
+      }
+      if (formData.payment_date) {
+        updateData.payment_date = new Date(formData.payment_date).toISOString()
+      }
+      if (formData.paid_amount) {
+        updateData.paid_amount = parsePrice(formData.paid_amount)
+      }
+      if (formData.billing_type) {
+        updateData.billing_type = formData.billing_type
+      }
+      if (formData.billing_period) {
+        updateData.billing_period = formData.billing_period
+      }
+      if (formData.billing_amount) {
+        updateData.billing_amount = parsePrice(formData.billing_amount)
+      }
+      if (formData.outstanding) {
+        updateData.outstanding = parsePrice(formData.outstanding)
+      }
+      if (formData.overdue) {
+        updateData.overdue = parsePrice(formData.overdue)
+      }
+      if (formData.rate) {
+        updateData.rate = parseFloat(formData.rate) || 0.01
+      }
+      if (formData.last_charge_date) {
+        updateData.last_charge_date = parsePrice(formData.last_charge_date)
+      }
+      await onSubmit(updateData)
+    } else {
+      // Create payment - billing_period, billing_amount, dan payment_deadline adalah mandatory
+      const createData: CreateTenantPaymentData = {
+        billing_period: formData.billing_period.trim(),
+        billing_amount: parsePrice(formData.billing_amount),
+        payment_deadline: new Date(formData.payment_deadline).toISOString(),
+        amount: formData.amount ? parsePrice(formData.amount) : undefined,
+        payment_method: formData.payment_method || undefined,
+        notes: formData.notes.trim() || undefined,
+      }
+      if (formData.billing_type) {
+        createData.billing_type = formData.billing_type
+      }
+      if (formData.outstanding) {
+        createData.outstanding = parsePrice(formData.outstanding)
+      }
+      if (formData.overdue) {
+        createData.overdue = parsePrice(formData.overdue)
+      }
+      if (formData.rate) {
+        createData.rate = parseFloat(formData.rate) || 0.01
+      }
+      if (formData.last_charge_date) {
+        createData.last_charge_date = parsePrice(formData.last_charge_date)
+      }
+      await onSubmit(createData)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="billing_period">
+            Periode Tagihan {!payment && <span className="text-red-500">*</span>}
+          </Label>
+          <Input
+            id="billing_period"
+            type="text"
+            value={formData.billing_period}
+            onChange={(e) => handleInputChange('billing_period', e.target.value)}
+            placeholder="Contoh: Januari 2024"
+            className={errors.billing_period ? 'border-red-500' : ''}
+          />
+          {errors.billing_period && (
+            <p className="text-sm text-red-500">{errors.billing_period}</p>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="billing_amount">
+            Jumlah Tagihan {!payment && <span className="text-red-500">*</span>}
+          </Label>
+          <div className="relative">
+            <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
+            <Input
+              id="billing_amount"
+              type="text"
+              value={formatPrice(parsePrice(formData.billing_amount))}
+              onChange={(e) => handleInputChange('billing_amount', e.target.value)}
+              placeholder="0"
+              className={`pl-10 ${errors.billing_amount ? 'border-red-500' : ''}`}
+            />
+          </div>
+          {errors.billing_amount && (
+            <p className="text-sm text-red-500">{errors.billing_amount}</p>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="payment_deadline">
+            Jatuh Tempo {!payment && <span className="text-red-500">*</span>}
+          </Label>
+          <Input
+            id="payment_deadline"
+            type="date"
+            value={formData.payment_deadline}
+            onChange={(e) => handleInputChange('payment_deadline', e.target.value)}
+            className={errors.payment_deadline ? 'border-red-500' : ''}
+          />
+          {errors.payment_deadline && (
+            <p className="text-sm text-red-500">{errors.payment_deadline}</p>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="billing_type">Jenis Tagihan</Label>
+          <Input
+            id="billing_type"
+            type="text"
+            value={formData.billing_type}
+            onChange={(e) => handleInputChange('billing_type', e.target.value)}
+            placeholder="Masukkan jenis tagihan"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="payment_method">Metode Pembayaran</Label>
+          <Select
+            value={formData.payment_method}
+            onValueChange={(value) => handleInputChange('payment_method', value)}
+          >
+            <SelectTrigger className={errors.payment_method ? 'border-red-500' : ''}>
+              <SelectValue placeholder="Pilih metode pembayaran" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="cash">Cash</SelectItem>
+              <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+              <SelectItem value="qris">QRIS</SelectItem>
+              <SelectItem value="other">Other</SelectItem>
+            </SelectContent>
+          </Select>
+          {errors.payment_method && (
+            <p className="text-sm text-red-500">{errors.payment_method}</p>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="payment_date">Tanggal Pembayaran</Label>
+          <Input
+            id="payment_date"
+            type="date"
+            value={formData.payment_date}
+            onChange={(e) => handleInputChange('payment_date', e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="paid_amount">Jumlah Dibayar</Label>
+          <div className="relative">
+            <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
+            <Input
+              id="paid_amount"
+              type="text"
+              value={formatPrice(parsePrice(formData.paid_amount))}
+              onChange={(e) => handleInputChange('paid_amount', e.target.value)}
+              placeholder="0"
+              className="pl-10"
+            />
+          </div>
+        </div>
+      </div>
+
+      
+
+      
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="outstanding">Outstanding</Label>
+          <Input
+            id="outstanding"
+            type="text"
+            value={formData.outstanding}
+            onChange={(e) => handleInputChange('outstanding', e.target.value)}
+            placeholder="Masukkan outstanding"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="overdue">Overdue</Label>
+          <Input
+            id="overdue"
+            type="text"
+            value={formData.overdue}
+            onChange={(e) => handleInputChange('overdue', e.target.value)}
+            placeholder="Masukkan overdue"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="rate">Rate</Label>
+          <Input
+            id="rate"
+            type="number"
+            step="0.01"
+            min="0"
+            value={formData.rate}
+            onChange={(e) => handleInputChange('rate', e.target.value)}
+            placeholder="0.01"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="last_charge_date">Last Charge</Label>
+          <Input
+            id="last_charge_date"
+            type="text"
+            value={formData.last_charge_date}
+            onChange={(e) => handleInputChange('last_charge_date', e.target.value)}
+            placeholder="Masukkan last charge"
+          />
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="notes">Catatan</Label>
+        <Textarea
+          id="notes"
+          value={formData.notes}
+          onChange={(e) => handleInputChange('notes', e.target.value)}
+          placeholder="Masukkan catatan (opsional)"
+          rows={3}
+        />
+      </div>
+
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
+          Batal
+        </Button>
+        <Button type="submit" disabled={loading}>
+          {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {payment ? 'Perbarui Payment' : 'Buat Payment'}
+        </Button>
+      </DialogFooter>
+    </form>
+  )
+}
+
+// Legal Form Component
+interface LegalFormProps {
+  legal?: TenantLegal
+  onSubmit: (data: CreateTenantLegalData | UpdateTenantLegalData) => Promise<void>
+  loading?: boolean
+  onCancel: () => void
+  documentFile: File | null
+  onDocumentFileChange: (file: File | null) => void
+}
+
+function LegalForm({ legal, onSubmit, loading = false, onCancel, documentFile, onDocumentFileChange }: LegalFormProps) {
+  const [formData, setFormData] = useState({
+    doc_type: '',
+    due_date: '',
+    keterangan: '',
+    status: 'belum_selesai' as 'belum_selesai' | 'selesai',
+  })
+  const [errors, setErrors] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    if (legal) {
+      setFormData({
+        doc_type: legal.doc_type || '',
+        due_date: legal.due_date ? new Date(legal.due_date).toISOString().split('T')[0] : '',
+        keterangan: legal.keterangan || '',
+        status: legal.status || 'belum_selesai',
+      })
+    } else {
+      setFormData({
+        doc_type: '',
+        due_date: '',
+        keterangan: '',
+        status: 'belum_selesai',
+      })
+    }
+  }, [legal])
+
+  const handleInputChange = (field: string, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }))
+    // Clear error when user starts typing
+    if (errors[field]) {
+      setErrors(prev => ({ ...prev, [field]: '' }))
+    }
+  }
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      // Validasi tipe file
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+      if (!allowedTypes.includes(file.type)) {
+        toast.error('Hanya file JPG, JPEG, PNG, PDF, DOC, dan DOCX yang diperbolehkan')
+        return
+      }
+
+      // Validasi ukuran file (max 10MB)
+      const maxSize = 10 * 1024 * 1024 // 10MB
+      if (file.size > maxSize) {
+        toast.error('Ukuran file maksimal 10MB')
+        return
+      }
+
+      onDocumentFileChange(file)
+    }
+  }
+
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {}
+
+    if (!formData.doc_type.trim()) {
+      newErrors.doc_type = 'Jenis dokumen harus diisi'
+    }
+
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (!validateForm()) {
+      return
+    }
+
+    const submitData: CreateTenantLegalData | UpdateTenantLegalData = {
+      doc_type: formData.doc_type.trim(),
+      due_date: formData.due_date || undefined,
+      keterangan: formData.keterangan.trim() || undefined,
+      status: formData.status,
+    }
+
+    await onSubmit(submitData)
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="doc_type">
+          Jenis Dokumen <span className="text-red-500">*</span>
+        </Label>
+        <Input
+          id="doc_type"
+          type="text"
+          value={formData.doc_type}
+          onChange={(e) => handleInputChange('doc_type', e.target.value)}
+          placeholder="Masukkan jenis dokumen"
+          className={errors.doc_type ? 'border-red-500' : ''}
+        />
+        {errors.doc_type && (
+          <p className="text-sm text-red-500">{errors.doc_type}</p>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="due_date">Due Date</Label>
+        <Input
+          id="due_date"
+          type="date"
+          value={formData.due_date}
+          onChange={(e) => handleInputChange('due_date', e.target.value)}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="keterangan">Keterangan</Label>
+        <Textarea
+          id="keterangan"
+          value={formData.keterangan}
+          onChange={(e) => handleInputChange('keterangan', e.target.value)}
+          placeholder="Masukkan keterangan (opsional)"
+          rows={3}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="status">Status</Label>
+        <Select
+          value={formData.status}
+          onValueChange={(value) => handleInputChange('status', value)}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Pilih status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="belum_selesai">Belum Selesai</SelectItem>
+            <SelectItem value="selesai">Selesai</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="document">Upload Document</Label>
+        <Input
+          id="document"
+          type="file"
+          onChange={handleFileChange}
+          accept=".jpg,.jpeg,.png,.pdf,.doc,.docx"
+        />
+        {documentFile && (
+          <p className="text-sm text-muted-foreground">
+            File terpilih: {documentFile.name}
+          </p>
+        )}
+        {legal?.document_url && !documentFile && (
+          <p className="text-sm text-muted-foreground">
+            Dokumen saat ini: <a href={legal.document_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Lihat</a>
+          </p>
+        )}
+      </div>
+
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
+          Batal
+        </Button>
+        <Button type="submit" disabled={loading}>
+          {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {legal ? 'Perbarui Legal Document' : 'Buat Legal Document'}
+        </Button>
+      </DialogFooter>
     </form>
   )
 }
