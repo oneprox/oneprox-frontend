@@ -33,6 +33,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import toast from 'react-hot-toast'
 import TaskDetailDialog from '@/components/dialogs/task-detail-dialog'
+import { mergeNonRoutineTasksForDisplay } from '@/lib/mergeNonRoutineTasksForDisplay'
 
 interface TaskWithChildren extends Task {
   children?: TaskWithChildren[]
@@ -129,6 +130,8 @@ export default function TaskParentsPage() {
           task_group_id: task.task_group_id ? (typeof task.task_group_id === 'string' ? parseInt(task.task_group_id) : task.task_group_id) : undefined,
           parent_task_ids: task.parent_task_ids ? (Array.isArray(task.parent_task_ids) ? task.parent_task_ids.map((id: any) => typeof id === 'string' ? parseInt(id) : id) : []) : [],
         }))
+
+        tasksData = mergeNonRoutineTasksForDisplay(tasksData)
         
         setTasks(tasksData)
       } else {
@@ -320,15 +323,27 @@ export default function TaskParentsPage() {
 
     setDeleting(true)
     try {
-      const response = await tasksApi.deleteTask(taskToDelete.id as number)
-      
-      if (response.success) {
-        toast.success('Task berhasil dihapus')
+      const mergedIds = taskToDelete._mergedNonRoutineTaskIds
+      const idsToDelete =
+        mergedIds && mergedIds.length > 0
+          ? mergedIds
+          : [taskToDelete.id as number]
+
+      const results = await Promise.all(idsToDelete.map((id) => tasksApi.deleteTask(id)))
+      const allOk = results.every((r) => r.success)
+
+      if (allOk) {
+        toast.success(
+          idsToDelete.length > 1
+            ? `${idsToDelete.length} task non-rutin berhasil dihapus`
+            : 'Task berhasil dihapus'
+        )
         setDeleteDialogOpen(false)
         setTaskToDelete(null)
         await loadTasks()
       } else {
-        toast.error(response.error || 'Gagal menghapus task')
+        const err = results.find((r) => !r.success)
+        toast.error(err?.error || 'Gagal menghapus task')
       }
     } catch (error) {
       console.error('Delete task error:', error)
@@ -417,8 +432,23 @@ export default function TaskParentsPage() {
           ) : null}
         </TableCell>
         <TableCell className="font-medium max-w-[300px]" style={{ paddingLeft: level > 0 ? `${level * 2}rem` : undefined }}>
-          <div className="truncate" title={task.name}>
-            {task.name}
+          <div className="space-y-1 min-w-0">
+            <div className="truncate" title={task.name}>
+              {task.name}
+            </div>
+            {task.is_routine === false && (
+              <div className="flex flex-wrap gap-1">
+                <Badge variant="secondary" className="text-xs font-normal">
+                  Non-rutin
+                </Badge>
+                <Badge variant="outline" className="text-xs font-normal">
+                  {task.monthly_frequency ??
+                    task.non_routine_items?.length ??
+                    1}
+                  × / bulan
+                </Badge>
+              </div>
+            )}
           </div>
         </TableCell>
         <TableCell>{task.duration} menit</TableCell>
@@ -447,14 +477,16 @@ export default function TaskParentsPage() {
             >
               <Edit className="w-5 h-5" />
             </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              onClick={() => handleManageParents(task)}
-              className="rounded-[50%] text-blue-500 bg-blue-500/10"
-            >
-              <GitBranch className="w-5 h-5" />
-            </Button>
+            {task.is_routine !== false && (
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => handleManageParents(task)}
+                className="rounded-[50%] text-blue-500 bg-blue-500/10"
+              >
+                <GitBranch className="w-5 h-5" />
+              </Button>
+            )}
             <Button
               size="icon"
               variant="ghost"
@@ -744,8 +776,11 @@ export default function TaskParentsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Hapus Task</AlertDialogTitle>
             <AlertDialogDescription>
-              Apakah Anda yakin ingin menghapus task "{taskToDelete?.name}"? 
-              Tindakan ini tidak dapat dibatalkan dan akan menghapus semua data terkait task ini.
+              Apakah Anda yakin ingin menghapus task &quot;{taskToDelete?.name}&quot;?
+              {taskToDelete?._mergedNonRoutineTaskIds &&
+              taskToDelete._mergedNonRoutineTaskIds.length > 1
+                ? ` Ini akan menghapus ${taskToDelete._mergedNonRoutineTaskIds.length} task terkait (gabungan tampilan non-rutin).`
+                : ' Tindakan ini tidak dapat dibatalkan dan akan menghapus semua data terkait task ini.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

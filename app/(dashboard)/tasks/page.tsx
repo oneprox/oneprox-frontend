@@ -12,6 +12,7 @@ import { Home, StickyNote, Plus, Search, RefreshCw, Loader2 } from 'lucide-react
 import TasksTable from '@/components/table/tasks-table'
 import TaskDetailDialog from '@/components/dialogs/task-detail-dialog'
 import toast from 'react-hot-toast'
+import { mergeNonRoutineTasksForDisplay } from '@/lib/mergeNonRoutineTasksForDisplay'
 
 export default function TasksPage() {
   const router = useRouter()
@@ -102,6 +103,8 @@ export default function TasksPage() {
           task_group_id: task.task_group_id ? (typeof task.task_group_id === 'string' ? parseInt(task.task_group_id) : task.task_group_id) : undefined,
           parent_task_id: task.parent_task_id ? (typeof task.parent_task_id === 'string' ? parseInt(task.parent_task_id) : task.parent_task_id) : undefined,
         }))
+
+        tasksData = mergeNonRoutineTasksForDisplay(tasksData)
         
         console.log('Final parsed tasks:', tasksData.length)
         if (tasksData.length > 0) {

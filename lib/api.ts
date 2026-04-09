@@ -1,5 +1,7 @@
 // Utility functions for API calls to oripro-backend
 
+import { getJakartaCalendarMonthIsoRange } from './work/jakartaMonthRange'
+
 // Determine API URL based on environment
 // For development (localhost), always use localhost:3001
 // For production, use NEXT_PUBLIC_API_URL environment variable
@@ -570,6 +572,7 @@ export const usersApi = {
     name?: string
     email?: string
     role_id?: string
+    asset_id?: string
     status?: string
     order?: string
     limit?: number
@@ -579,6 +582,7 @@ export const usersApi = {
     if (params?.name) queryParams.append('name', params.name)
     if (params?.email) queryParams.append('email', params.email)
     if (params?.role_id) queryParams.append('role_id', params.role_id)
+    if (params?.asset_id) queryParams.append('asset_id', params.asset_id)
     if (params?.status) queryParams.append('status', params.status)
     if (params?.order) queryParams.append('order', params.order)
     if (params?.limit) queryParams.append('limit', params.limit.toString())
@@ -1422,6 +1426,8 @@ export interface UpdateTaskGroupData {
 export interface Task {
   id: number | string
   name: string
+  is_routine?: boolean
+  assigned_user_id?: string
   is_main_task: boolean
   is_need_validation: boolean
   is_scan: boolean
@@ -1435,6 +1441,18 @@ export interface Task {
   task_group_id?: number | string | null
   days?: number[]
   times?: string[]
+  monthly_frequency?: number
+  due_date?: string | number
+  area?: string
+  non_routine_items?: Array<{
+    due_date?: string
+    area?: string
+    assigned_user_id?: string
+  }>
+  /** Satu UUID untuk semua task non-rutin yang dibuat/diikat bersamaan */
+  non_routine_group_id?: string | null
+  /** Hanya di UI: hasil merge beberapa task non-rutin legacy */
+  _mergedNonRoutineTaskIds?: number[]
   created_at?: string
   updated_at?: string
   created_by?: string
@@ -1446,6 +1464,8 @@ export interface Task {
 
 export interface CreateTaskData {
   name: string
+  is_routine?: boolean
+  assigned_user_id?: string
   is_main_task?: boolean
   is_need_validation?: boolean
   is_scan?: boolean
@@ -1459,10 +1479,22 @@ export interface CreateTaskData {
   task_group_id?: number
   days?: number[]
   times?: string[]
+  monthly_frequency?: number
+  due_date?: string | number
+  area?: string
+  non_routine_items?: Array<{
+    due_date?: string | number
+    area?: string
+    assigned_user_id?: string
+  }>
+  /** Opsional: kirim UUID yang sama pada beberapa create agar satu kelompok */
+  non_routine_group_id?: string
 }
 
 export interface UpdateTaskData {
   name?: string
+  is_routine?: boolean
+  assigned_user_id?: string
   is_main_task?: boolean
   is_need_validation?: boolean
   is_scan?: boolean
@@ -1476,6 +1508,15 @@ export interface UpdateTaskData {
   task_group_id?: number
   days?: number[]
   times?: string[]
+  monthly_frequency?: number
+  due_date?: string | number
+  area?: string
+  non_routine_items?: Array<{
+    due_date?: string | number
+    area?: string
+    assigned_user_id?: string
+  }>
+  non_routine_group_id?: string | null
 }
 
 // Task Log interface
@@ -1542,6 +1583,8 @@ export const tasksApi = {
     role_id?: number
     task_group_id?: number
     is_main_task?: boolean
+    is_routine?: boolean
+    non_routine_group_id?: string
     order?: string
     limit?: number
     offset?: number
@@ -1552,6 +1595,8 @@ export const tasksApi = {
     if (params?.role_id) queryParams.append('role_id', params.role_id.toString())
     if (params?.task_group_id) queryParams.append('task_group_id', params.task_group_id.toString())
     if (params?.is_main_task !== undefined) queryParams.append('is_main_task', params.is_main_task.toString())
+    if (params?.is_routine !== undefined) queryParams.append('is_routine', params.is_routine.toString())
+    if (params?.non_routine_group_id) queryParams.append('non_routine_group_id', params.non_routine_group_id)
     if (params?.order) queryParams.append('order', params.order)
     if (params?.limit) queryParams.append('limit', params.limit.toString())
     if (params?.offset) queryParams.append('offset', params.offset.toString())
@@ -1765,6 +1810,8 @@ export const complaintReportsApi = {
 export interface UserTask {
   id?: number
   user_task_id?: number | string
+  /** true = rutin (generate shift), false = non-rutin (bulanan) */
+  is_routine?: boolean
   user_id: string
   task_id: number | string
   status: 'pending' | 'inprogress' | 'in_progress' | 'completed' | 'cancelled'
@@ -1797,8 +1844,47 @@ export interface UpdateUserTaskData {
   notes?: string
 }
 
+/** Respons GET /api/user-tasks/non-routine (daftar flat, tanpa sub_user_task) */
+export interface NonRoutineUserTasksListResponse {
+  user_tasks: UserTask[]
+  total: number
+  limit: number
+  offset: number
+}
+
 // User Tasks-specific API functions
 export const userTasksApi = {
+  /**
+   * Task non-rutin: kirim rentang bulan Jakarta + period (selaras backend).
+   * Tanpa date_from/date_to di params, dipakai awal–akhir bulan berjalan WIB.
+   */
+  async getNonRoutineUserTasks(params?: {
+    limit?: number
+    offset?: number
+    user_id?: string
+    date_from?: string
+    date_to?: string
+    /** YYYY-MM; default = bulan berjalan Jakarta */
+    period?: string
+  }): Promise<ApiResponse<NonRoutineUserTasksListResponse>> {
+    const month = getJakartaCalendarMonthIsoRange()
+    const date_from = params?.date_from ?? month.date_from
+    const date_to = params?.date_to ?? month.date_to
+    const period = params?.period ?? month.period
+    const limit = params?.limit != null ? params.limit : 200
+
+    const queryParams = new URLSearchParams()
+    queryParams.append('limit', String(Math.min(500, Math.max(1, limit))))
+    if (params?.offset != null) queryParams.append('offset', params.offset.toString())
+    if (params?.user_id) queryParams.append('user_id', params.user_id)
+    queryParams.append('date_from', date_from)
+    queryParams.append('date_to', date_to)
+    queryParams.append('period', period)
+    return apiClient.get<NonRoutineUserTasksListResponse>(
+      `/api/user-tasks/non-routine?${queryParams.toString()}`
+    )
+  },
+
   async getUserTasks(params?: {
     limit?: number
     offset?: number
@@ -2013,6 +2099,43 @@ export interface FinancialTableData {
   aging: number
 }
 
+export type DashboardNonRoutineStatusTone =
+  | 'success'
+  | 'destructive'
+  | 'warning'
+  | 'info'
+  | 'default'
+  | 'secondary'
+
+export interface DashboardNonRoutineWorkItem {
+  id: number
+  nama: string
+  aset: string
+  area: string
+  jatuhTempo: string
+  jenisPekerjaan: string
+  deskripsiPekerjaan: string
+  status: string
+  /** Warna badge / legenda: hijau selesai, merah lewat tempo, kuning ≤7 hari, biru 8–14 hari, dll. */
+  status_tone: DashboardNonRoutineStatusTone
+}
+
+export interface DashboardNonRoutineWorkResponse {
+  items: DashboardNonRoutineWorkItem[]
+  summary: {
+    total: number
+    selesai: number
+    telah_jatuh_tempo: number
+    satu_minggu: number
+    dua_minggu: number
+    dalam_proses: number
+    belum_dijalankan: number
+  }
+  total: number
+  date_from: string
+  date_to: string
+}
+
 // Dashboard API functions
 export const dashboardApi = {
   async getDashboardData(): Promise<ApiResponse<DashboardData>> {
@@ -2034,6 +2157,25 @@ export const dashboardApi = {
   async getFinancialTable(assetId?: string): Promise<ApiResponse<FinancialTableData[]>> {
     const queryParams = assetId ? `?assetId=${assetId}` : ''
     return apiClient.get<FinancialTableData[]>(`/api/dashboard/financial-table${queryParams}`)
+  },
+
+  async getNonRoutineWork(params?: {
+    asset_id?: string
+    date_from?: string
+    date_to?: string
+    limit?: number
+    offset?: number
+  }): Promise<ApiResponse<DashboardNonRoutineWorkResponse>> {
+    const month = getJakartaCalendarMonthIsoRange()
+    const q = new URLSearchParams()
+    q.set('date_from', params?.date_from ?? month.date_from)
+    q.set('date_to', params?.date_to ?? month.date_to)
+    if (params?.asset_id) q.set('asset_id', params.asset_id)
+    if (params?.limit != null) q.set('limit', String(params.limit))
+    if (params?.offset != null) q.set('offset', String(params.offset))
+    return apiClient.get<DashboardNonRoutineWorkResponse>(
+      `/api/dashboard/non-routine-work?${q.toString()}`
+    )
   },
 }
 

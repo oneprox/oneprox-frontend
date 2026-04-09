@@ -22,7 +22,6 @@ export default function CreateTaskPage() {
     setLoading(true)
     try {
       const response = await tasksApi.createTask(data as CreateTaskData)
-      
       if (response.success) {
         toast.success('Task created successfully')
         router.push('/task-parents')

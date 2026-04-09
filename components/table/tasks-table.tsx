@@ -59,14 +59,25 @@ export default function TasksTable({
 
     setDeleting(true)
     try {
-      const taskId = typeof taskToDelete.id === 'string' ? parseInt(taskToDelete.id, 10) : taskToDelete.id
-      const response = await tasksApi.deleteTask(taskId)
-      
-      if (response.success) {
-        toast.success('Task deleted successfully')
+      const mergedIds = taskToDelete._mergedNonRoutineTaskIds
+      const idsToDelete =
+        mergedIds && mergedIds.length > 0
+          ? mergedIds
+          : [typeof taskToDelete.id === 'string' ? parseInt(taskToDelete.id, 10) : taskToDelete.id]
+
+      const results = await Promise.all(idsToDelete.map((id) => tasksApi.deleteTask(id)))
+      const allOk = results.every((r) => r.success)
+
+      if (allOk) {
+        toast.success(
+          idsToDelete.length > 1
+            ? `${idsToDelete.length} task non-rutin berhasil dihapus`
+            : 'Task deleted successfully'
+        )
         onRefresh()
       } else {
-        toast.error(response.error || 'Failed to delete task')
+        const err = results.find((r) => !r.success)
+        toast.error(err?.error || 'Failed to delete task')
       }
     } catch (error) {
       console.error('Delete task error:', error)
@@ -133,7 +144,22 @@ export default function TasksTable({
                 <TableRow key={task.id}>
                   <TableCell className="font-medium">{String(index + 1)}</TableCell>
                   <TableCell className="font-medium">
-                    {task.name || '-'}
+                    <div className="space-y-1 min-w-0">
+                      <div className="truncate">{task.name || '-'}</div>
+                      {task.is_routine === false && (
+                        <div className="flex flex-wrap gap-1">
+                          <Badge variant="secondary" className="text-xs font-normal">
+                            Non-rutin
+                          </Badge>
+                          <Badge variant="outline" className="text-xs font-normal">
+                            {task.monthly_frequency ??
+                              task.non_routine_items?.length ??
+                              1}
+                            × / bulan
+                          </Badge>
+                        </div>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>
                     {task.asset?.name || '-'}

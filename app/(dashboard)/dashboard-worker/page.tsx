@@ -5,6 +5,11 @@ import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2, Clock, CheckCircle2, Calendar, MapPin, ClipboardList } from 'lucide-react'
 import { attendanceApi, userTasksApi, Attendance, UserTask } from '@/lib/api'
+import {
+  normalizeFlatUserTask,
+  parseNonRoutineUserTasksResponse,
+  parseRoutineUserTasksResponse,
+} from '@/lib/work/userTasksSplit'
 import toast from 'react-hot-toast'
 import LoadingSkeleton from '@/components/loading-skeleton'
 import AttendanceCard from '@/components/attendance/attendance-card'
@@ -14,7 +19,8 @@ import { CompleteTaskDialog } from '@/components/work/CompleteTaskDialog'
 function DashboardWorkerContent() {
   const router = useRouter()
   const [attendanceHistory, setAttendanceHistory] = useState<Attendance[]>([])
-  const [userTasks, setUserTasks] = useState<UserTask[]>([])
+  const [routineUserTasks, setRoutineUserTasks] = useState<UserTask[]>([])
+  const [nonRoutineUserTasks, setNonRoutineUserTasks] = useState<UserTask[]>([])
   const [isLoadingAttendance, setIsLoadingAttendance] = useState(true)
   const [isLoadingTasks, setIsLoadingTasks] = useState(true)
   const [selectedUserTask, setSelectedUserTask] = useState<UserTask | null>(null)
@@ -43,24 +49,30 @@ function DashboardWorkerContent() {
     }
   }
 
-  // Load user tasks
   const loadUserTasks = async () => {
     try {
       setIsLoadingTasks(true)
-      const response = await userTasksApi.getUserTasks({ limit: 10 })
-      
-      if (response.success && response.data) {
-        const responseData = response.data as any
-        const tasks = Array.isArray(responseData.data) ? responseData.data : (Array.isArray(responseData) ? responseData : [])
-        setUserTasks(tasks)
-      } else {
-        console.error('Failed to load user tasks:', response.error)
-        setUserTasks([])
+      const [routineRes, nonRoutineRes] = await Promise.all([
+        userTasksApi.getUserTasks({ limit: 100 }),
+        userTasksApi.getNonRoutineUserTasks({ limit: 100 }),
+      ])
+
+      let routine: UserTask[] = []
+      if (routineRes.success && routineRes.data != null) {
+        routine = parseRoutineUserTasksResponse(routineRes.data)
       }
+      let nonRoutine: UserTask[] = []
+      if (nonRoutineRes.success && nonRoutineRes.data != null) {
+        nonRoutine = parseNonRoutineUserTasksResponse(nonRoutineRes.data).map(normalizeFlatUserTask)
+      }
+
+      setRoutineUserTasks(routine)
+      setNonRoutineUserTasks(nonRoutine)
     } catch (error) {
       console.error('Error loading user tasks:', error)
       toast.error('Terjadi kesalahan saat memuat data task')
-      setUserTasks([])
+      setRoutineUserTasks([])
+      setNonRoutineUserTasks([])
     } finally {
       setIsLoadingTasks(false)
     }
@@ -147,6 +159,8 @@ function DashboardWorkerContent() {
       router.push(route)
     }
   }
+
+  const allTasksForStats = [...routineUserTasks, ...nonRoutineUserTasks]
 
   return (
     <div className="space-y-6">
@@ -259,14 +273,39 @@ function DashboardWorkerContent() {
                 Daftar tugas yang perlu dikerjakan. Klik task untuk membuka halaman detail.
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <TaskList
-                userTasks={userTasks}
-                isLoading={isLoadingTasks}
-                onStartTask={handleStartTask}
-                onCompleteTask={handleCompleteTask}
-                onTaskClick={handleTaskClick}
-              />
+            <CardContent className="space-y-8">
+              {isLoadingTasks ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-semibold text-foreground">Task non-rutin</h3>
+                    <TaskList
+                      userTasks={nonRoutineUserTasks}
+                      isLoading={false}
+                      onStartTask={handleStartTask}
+                      onCompleteTask={handleCompleteTask}
+                      onTaskClick={handleTaskClick}
+                      variant="non-routine"
+                      emptyListMessage="Belum ada task non-rutin"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-semibold text-foreground">Task rutin (generate)</h3>
+                    <TaskList
+                      userTasks={routineUserTasks}
+                      isLoading={false}
+                      onStartTask={handleStartTask}
+                      onCompleteTask={handleCompleteTask}
+                      onTaskClick={handleTaskClick}
+                      variant="routine"
+                      emptyListMessage="Belum ada task rutin"
+                    />
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
 
@@ -290,19 +329,24 @@ function DashboardWorkerContent() {
                 <div className="grid grid-cols-3 gap-4">
                   <div className="text-center p-4 rounded-lg bg-gray-50">
                     <div className="text-2xl font-bold text-gray-900">
-                      {userTasks.filter(t => t.status === 'pending' && !t.started_at && !t.start_at).length}
+                      {allTasksForStats.filter((t) => t.status === 'pending' && !t.started_at && !t.start_at).length}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">Pending</div>
                   </div>
                   <div className="text-center p-4 rounded-lg bg-blue-50">
                     <div className="text-2xl font-bold text-blue-900">
-                      {userTasks.filter(t => (t.status === 'in_progress' || t.status === 'inprogress') && (t.started_at || t.start_at) && !t.completed_at).length}
+                      {allTasksForStats.filter(
+                        (t) =>
+                          (t.status === 'in_progress' || t.status === 'inprogress') &&
+                          (t.started_at || t.start_at) &&
+                          !t.completed_at
+                      ).length}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">Sedang Dikerjakan</div>
                   </div>
                   <div className="text-center p-4 rounded-lg bg-green-50">
                     <div className="text-2xl font-bold text-green-900">
-                      {userTasks.filter(t => t.status === 'completed' || t.completed_at).length}
+                      {allTasksForStats.filter((t) => t.status === 'completed' || t.completed_at).length}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">Selesai</div>
                   </div>

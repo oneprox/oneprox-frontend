@@ -2,6 +2,11 @@
 
 import React, { useState } from 'react'
 import { UserTask } from '@/lib/api'
+import {
+  compareNonRoutineByDue,
+  formatNonRoutineJatuhTempo,
+  getNonRoutineUrgency,
+} from '@/lib/work/nonRoutineDue'
 import { Card, CardContent } from '@/components/ui/card'
 import {
   Table,
@@ -22,9 +27,29 @@ interface TaskListProps {
   onStartTask: (userTaskId: number) => Promise<void>
   onCompleteTask: (userTask: UserTask) => void
   onTaskClick?: (userTask: UserTask) => void
+  /** non-rutin: tampilkan semua baris dengan task; urut berdasarkan start_at */
+  variant?: 'routine' | 'non-routine'
+  /** Saat array kosong */
+  emptyListMessage?: string
+  /** Saat tidak ada yang lolos filter (rutin: validasi/scan) */
+  filterEmptyMessage?: string
 }
 
-export function TaskList({ userTasks, isLoading, onStartTask, onCompleteTask, onTaskClick }: TaskListProps) {
+export function TaskList({
+  userTasks,
+  isLoading,
+  onStartTask,
+  onCompleteTask,
+  onTaskClick,
+  variant = 'routine',
+  emptyListMessage = 'Tidak ada task untuk hari ini',
+  filterEmptyMessage,
+}: TaskListProps) {
+  const defaultFilterEmpty =
+    variant === 'non-routine'
+      ? 'Tidak ada task non-rutin untuk hari ini'
+      : 'Tidak ada task yang memerlukan validasi atau scan untuk hari ini'
+  const resolvedFilterEmpty = filterEmptyMessage ?? defaultFilterEmpty
   const [expandedTasks, setExpandedTasks] = useState<Set<string | number>>(new Set())
 
   if (isLoading) {
@@ -44,7 +69,7 @@ export function TaskList({ userTasks, isLoading, onStartTask, onCompleteTask, on
     return (
       <Card>
         <CardContent className="flex items-center justify-center py-12">
-          <p className="text-muted-foreground">Tidak ada task untuk hari ini</p>
+          <p className="text-muted-foreground">{emptyListMessage}</p>
         </CardContent>
       </Card>
     )
@@ -68,26 +93,32 @@ export function TaskList({ userTasks, isLoading, onStartTask, onCompleteTask, on
   // Filter tasks yang bisa ditampilkan (is_need_validation atau is_scan)
   // Tampilkan main task jika memenuhi kriteria atau punya sub_task yang memenuhi kriteria
   const getDisplayableMainTasks = (tasks: UserTask[]): UserTask[] => {
-    const filtered = tasks.filter(userTask => {
+    const filtered = tasks.filter((userTask) => {
       const task = userTask.task
-      
-      // Check if main task itself meets criteria
-      if (task && (task.is_need_validation || task.is_scan)) {
+      if (!task) return false
+
+      if (variant === 'non-routine') {
         return true
       }
-      
-      // Check if any sub_user_task meets criteria
+
+      if (task.is_need_validation || task.is_scan) {
+        return true
+      }
+
       if (userTask.sub_user_task && Array.isArray(userTask.sub_user_task)) {
-        return userTask.sub_user_task.some(subTask => {
+        return userTask.sub_user_task.some((subTask) => {
           const subTaskData = subTask.task
           return subTaskData && (subTaskData.is_need_validation || subTaskData.is_scan)
         })
       }
-      
+
       return false
     })
-    
-    // Sort by time (ascending - earliest first)
+
+    if (variant === 'non-routine') {
+      return filtered.sort(compareNonRoutineByDue)
+    }
+
     return filtered.sort((a, b) => {
       const timeA = parseTimeToMinutes(a.time)
       const timeB = parseTimeToMinutes(b.time)
@@ -101,9 +132,7 @@ export function TaskList({ userTasks, isLoading, onStartTask, onCompleteTask, on
     return (
       <Card>
         <CardContent className="flex items-center justify-center py-12">
-          <p className="text-muted-foreground">
-            Tidak ada task yang memerlukan validasi atau scan untuk hari ini
-          </p>
+          <p className="text-muted-foreground">{resolvedFilterEmpty}</p>
         </CardContent>
       </Card>
     )
@@ -148,12 +177,35 @@ export function TaskList({ userTasks, isLoading, onStartTask, onCompleteTask, on
     })
   }
 
+  const nonRoutineBadgeClass = (urgency: ReturnType<typeof getNonRoutineUrgency>) => {
+    if (urgency === 'overdue') return 'bg-red-600 hover:bg-red-600 text-white'
+    if (urgency === 'week') return 'bg-yellow-500 hover:bg-yellow-500 text-black'
+    if (urgency === 'twoweeks') return 'bg-blue-500 hover:bg-blue-500 text-white'
+    return ''
+  }
+
+  const nonRoutineRowAccent = (
+    notes: string | null | undefined,
+    isCompleted: boolean
+  ): string => {
+    if (variant !== 'non-routine' || isCompleted) return ''
+    const u = getNonRoutineUrgency(notes ?? null)
+    if (u === 'overdue') return 'border-l-4 border-red-500'
+    if (u === 'week') return 'border-l-4 border-yellow-500'
+    if (u === 'twoweeks') return 'border-l-4 border-blue-500'
+    return ''
+  }
+
   const getStatusBadge = (userTask: UserTask) => {
-    const isPending = userTask.status === 'pending' && !userTask.started_at && !userTask.start_at
-    const isInProgress = (userTask.status === 'in_progress' || userTask.status === 'inprogress') && 
-                         (userTask.started_at || userTask.start_at) && 
-                         !userTask.completed_at
     const isCompleted = userTask.status === 'completed' || userTask.completed_at
+    const hasStarted =
+      !!(userTask.started_at || userTask.start_at) ||
+      userTask.status === 'inprogress' ||
+      userTask.status === 'in_progress'
+    const isInProgress =
+      (userTask.status === 'in_progress' || userTask.status === 'inprogress') &&
+      hasStarted &&
+      !userTask.completed_at
 
     if (isCompleted) {
       return (
@@ -163,6 +215,26 @@ export function TaskList({ userTasks, isLoading, onStartTask, onCompleteTask, on
         </Badge>
       )
     }
+
+    if (variant === 'non-routine') {
+      const urgency = getNonRoutineUrgency(userTask.notes ?? null)
+      const accent = nonRoutineBadgeClass(urgency)
+      if (hasStarted || isInProgress) {
+        return (
+          <Badge variant="default" className={accent || 'bg-blue-600'}>
+            <Clock className="h-3 w-3 mr-1" />
+            Dalam Proses
+          </Badge>
+        )
+      }
+      return (
+        <Badge variant={accent ? 'default' : 'secondary'} className={accent || undefined}>
+          <XCircle className="h-3 w-3 mr-1" />
+          Belum Dijalankan
+        </Badge>
+      )
+    }
+
     if (isInProgress) {
       return (
         <Badge variant="default" className="bg-blue-600">
@@ -192,6 +264,12 @@ export function TaskList({ userTasks, isLoading, onStartTask, onCompleteTask, on
     }
   }
 
+  const nonRoutineDueLabel = (ut: UserTask) =>
+    formatNonRoutineJatuhTempo(ut.notes ?? null) ??
+    (ut.start_at
+      ? new Date(ut.start_at).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' })
+      : null)
+
   const getTaskActions = (userTask: UserTask) => {
     const task = userTask.task
     if (!task) return null
@@ -201,7 +279,9 @@ export function TaskList({ userTasks, isLoading, onStartTask, onCompleteTask, on
     const isCompleted = userTask.status === 'completed' || userTask.completed_at
     const isInProgress = hasStarted && !isCompleted
 
-    const canStart = isPending && (task.is_need_validation || task.is_scan)
+    const canStart =
+      isPending &&
+      (variant === 'non-routine' || task.is_need_validation || task.is_scan)
     const canComplete = hasStarted && !isCompleted
 
     return (
@@ -250,7 +330,8 @@ export function TaskList({ userTasks, isLoading, onStartTask, onCompleteTask, on
     const subTasks = getSubTasks(userTask)
     const hasSubTasks = subTasks.length > 0
     const isExpanded = expandedTasks.has(taskId)
-    const shouldShowMainTask = task.is_need_validation || task.is_scan
+    const shouldShowMainTask =
+      variant === 'non-routine' || task.is_need_validation || task.is_scan
 
     if (isSubTask && !shouldShowMainTask) return null
 
@@ -282,7 +363,10 @@ export function TaskList({ userTasks, isLoading, onStartTask, onCompleteTask, on
 
       if (canComplete) {
         onCompleteTask(userTask)
-      } else if (isPending && (task.is_need_validation || task.is_scan)) {
+      } else if (
+        isPending &&
+        (variant === 'non-routine' || task.is_need_validation || task.is_scan)
+      ) {
         handleStartTaskInline(userTask)
       }
     }
@@ -291,7 +375,7 @@ export function TaskList({ userTasks, isLoading, onStartTask, onCompleteTask, on
       <div key={taskId}>
         <button
           onClick={handleCardClick}
-          className={`w-full text-left border rounded-lg p-4 space-y-3 transition-colors hover:bg-muted/50 active:bg-muted ${isSubTask ? 'ml-4 bg-muted/30' : 'bg-card'}`}
+          className={`w-full text-left border rounded-lg p-4 space-y-3 transition-colors hover:bg-muted/50 active:bg-muted ${isSubTask ? 'ml-4 bg-muted/30' : 'bg-card'} ${nonRoutineRowAccent(userTask.notes, !!(userTask.status === 'completed' || userTask.completed_at))}`}
         >
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1 min-w-0">
@@ -328,10 +412,19 @@ export function TaskList({ userTasks, isLoading, onStartTask, onCompleteTask, on
                 )}
               </div>
               <div className="flex flex-wrap items-center gap-2 text-xs md:text-sm text-muted-foreground overflow-x-auto">
-                {userTask.time && (
+                {(userTask.time || (variant === 'non-routine' && nonRoutineDueLabel(userTask))) && (
                   <>
-                    <span className="whitespace-nowrap">Waktu: {userTask.time}</span>
-                    {(task.is_main_task || task.asset?.name) && <span>•</span>}
+                    <span className="whitespace-nowrap">
+                      {variant === 'non-routine' && !userTask.time
+                        ? `Jatuh tempo: ${nonRoutineDueLabel(userTask) ?? '-'}`
+                        : userTask.time
+                          ? `Waktu: ${userTask.time}`
+                          : ''}
+                    </span>
+                    {(task.is_main_task || task.asset?.name) &&
+                      (userTask.time || (variant === 'non-routine' && nonRoutineDueLabel(userTask))) && (
+                      <span>•</span>
+                    )}
                   </>
                 )}
                 {task.is_main_task && (
@@ -379,7 +472,7 @@ export function TaskList({ userTasks, isLoading, onStartTask, onCompleteTask, on
               {displayableMainTasks.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                    Tidak ada task yang memerlukan validasi atau scan untuk hari ini
+                    {resolvedFilterEmpty}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -391,7 +484,8 @@ export function TaskList({ userTasks, isLoading, onStartTask, onCompleteTask, on
                   const subTasks = getSubTasks(userTask)
                   const hasSubTasks = subTasks.length > 0
                   const isExpanded = expandedTasks.has(taskId)
-                  const shouldShowMainTask = task.is_need_validation || task.is_scan
+                  const shouldShowMainTask =
+                    variant === 'non-routine' || task.is_need_validation || task.is_scan
                   const shouldShowMainTaskRow = shouldShowMainTask || hasSubTasks
 
                   if (!shouldShowMainTaskRow) return null
@@ -415,11 +509,13 @@ export function TaskList({ userTasks, isLoading, onStartTask, onCompleteTask, on
                     }
                   }
 
+                  const rowCompleted = userTask.status === 'completed' || !!userTask.completed_at
+
                   return (
                     <React.Fragment key={taskId}>
                       {/* Main Task Row */}
                       <TableRow 
-                        className={`${isExpanded && hasSubTasks ? 'bg-muted/50' : ''} ${onTaskClick ? 'cursor-pointer hover:bg-muted/30' : ''}`}
+                        className={`${isExpanded && hasSubTasks ? 'bg-muted/50' : ''} ${onTaskClick ? 'cursor-pointer hover:bg-muted/30' : ''} ${nonRoutineRowAccent(userTask.notes, rowCompleted)}`}
                         onClick={onTaskClick ? handleRowClick : undefined}
                       >
                         <TableCell>
@@ -457,7 +553,11 @@ export function TaskList({ userTasks, isLoading, onStartTask, onCompleteTask, on
                           </Badge>
                         </TableCell>
                         <TableCell>{task.asset?.name || '-'}</TableCell>
-                        <TableCell>{userTask.time || '-'}</TableCell>
+                        <TableCell>
+                          {variant === 'non-routine'
+                            ? nonRoutineDueLabel(userTask) ?? '-'
+                            : userTask.time || '-'}
+                        </TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           {shouldShowMainTask ? getTaskActions(userTask) : '-'}
                         </TableCell>
@@ -519,7 +619,7 @@ export function TaskList({ userTasks, isLoading, onStartTask, onCompleteTask, on
         <div className="md:hidden p-4 space-y-3 overflow-x-hidden">
           {displayableMainTasks.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground text-sm">
-              Tidak ada task yang memerlukan validasi atau scan untuk hari ini
+              {resolvedFilterEmpty}
             </div>
           ) : (
             <div className="space-y-3 overflow-y-auto max-h-[calc(100vh-200px)]">
