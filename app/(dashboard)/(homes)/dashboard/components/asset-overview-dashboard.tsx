@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, type RefObject, type WheelEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import FinancialTable from './financial-table'
 import dynamic from 'next/dynamic'
@@ -10,8 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { assetsApi, dashboardApi, Asset } from '@/lib/api'
-import { Leaf, Home, FileText, DollarSign } from "lucide-react"
+import { ChevronRight, Leaf, Home, FileText, DollarSign } from "lucide-react"
 import LoadingSkeleton from "@/components/loading-skeleton"
+import { useSidebar } from '@/components/ui/sidebar'
+import { cn } from '@/lib/utils'
 
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false })
 
@@ -83,6 +85,31 @@ function legalRowDisplayStatus(row: LegalTableData): 'Overdue' | 'On Process' {
   return 'On Process'
 }
 
+function tenantGroupKeyLegal(row: LegalTableData): string {
+  return row.tenantId || `${row.nama}::${row.aset}::${row.unit}`
+}
+
+function earliestDueMsLegal(logs: LegalTableData[]): number {
+  let min = Infinity
+  for (const r of logs) {
+    if (!r.dueDateIso) continue
+    const t = new Date(r.dueDateIso).getTime()
+    if (!Number.isNaN(t)) min = Math.min(min, t)
+  }
+  return min === Infinity ? 0 : min
+}
+
+interface TenantLegalGroup {
+  key: string
+  tenantId: string | undefined
+  nama: string
+  aset: string
+  unit: string
+  logs: LegalTableData[]
+}
+
+const DASHBOARD_LIST_PAGE_SIZE = 10
+
 interface AssetOverviewDashboardProps {
   selectedAssetId?: string
   onAssetChange?: (assetId: string) => void
@@ -115,6 +142,34 @@ export default function AssetOverviewDashboard({
   const [utilizationData, setUtilizationData] = useState<AssetUtilizationData[]>([])
   const [financialData, setFinancialData] = useState<FinancialPerformanceData[]>([])
   const [legalData, setLegalData] = useState<LegalTableData[]>([])
+  const [expandedLegalKeys, setExpandedLegalKeys] = useState<Set<string>>(new Set())
+  const [financialVisibleCount, setFinancialVisibleCount] = useState(DASHBOARD_LIST_PAGE_SIZE)
+  const [legalVisibleCount, setLegalVisibleCount] = useState(DASHBOARD_LIST_PAGE_SIZE)
+  const financialScrollRef = useRef<HTMLDivElement>(null)
+  const legalScrollRef = useRef<HTMLDivElement>(null)
+  const financialScrollTsRef = useRef(0)
+  const legalScrollTsRef = useRef(0)
+  const { state: sidebarState, isMobile: sidebarIsMobile } = useSidebar()
+  /** Hanya dashboard: offset vertikal bar aset = tinggi header aktual (hilangkan gap), tanpa mengubah header global */
+  const [appHeaderHeightPx, setAppHeaderHeightPx] = useState(64)
+
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = document.querySelector('header')
+      if (!el) return
+      setAppHeaderHeightPx(Math.round(el.getBoundingClientRect().height))
+    }
+    measure()
+    const el = document.querySelector('header')
+    if (!el) return
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    window.addEventListener('resize', measure)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', measure)
+    }
+  }, [sidebarState, sidebarIsMobile])
 
   useEffect(() => {
     loadAssets()
@@ -125,6 +180,14 @@ export default function AssetOverviewDashboard({
       loadDashboardData()
     }
   }, [selectedAssetId, assets, propSelectedAssetId])
+
+  useEffect(() => {
+    setFinancialVisibleCount(DASHBOARD_LIST_PAGE_SIZE)
+  }, [financialData])
+
+  useEffect(() => {
+    setLegalVisibleCount(DASHBOARD_LIST_PAGE_SIZE)
+  }, [legalData])
 
   const loadAssets = async () => {
     try {
@@ -313,21 +376,28 @@ export default function AssetOverviewDashboard({
 
   const utilizationChartSeries = utilizationPercentages.map(d => Number.isFinite(d.pct) ? Number(d.pct.toFixed(2)) : 0)
 
+  const financialDataForChart = useMemo(
+    () => financialData.slice(0, financialVisibleCount),
+    [financialData, financialVisibleCount]
+  )
+
   const FINANCIAL_REALISASI = '#335C6E'
   const FINANCIAL_TARGET = '#EF8354'
-  const financialRawMax = financialData.length
-    ? Math.max(0, ...financialData.flatMap((d) => [d.realisasi, d.target]))
+  const financialRawMax = financialDataForChart.length
+    ? Math.max(0, ...financialDataForChart.flatMap((d) => [d.realisasi, d.target]))
     : 0
   const financialYMax = financialNiceYMax(financialRawMax)
   const financialAxisInBillions = financialYMax >= 1_000_000_000
   const financialYAxisDecimals =
     financialAxisInBillions && financialYMax < 5_000_000_000 && financialRawMax < 1_000_000_000 ? 2 : financialAxisInBillions && financialYMax < 20_000_000_000 ? 1 : 0
 
+  const financialChartPixelHeight = Math.max(320, financialDataForChart.length * 68)
+
   // Bar chart — grup per triwulan, mirip mockup Kinerja Keuangan
   const financialChartOptions: ApexOptions = {
     chart: {
       type: 'bar',
-      height: 320,
+      height: financialChartPixelHeight,
       toolbar: { show: false },
       fontFamily: 'inherit',
       animations: { enabled: true, speed: 450 },
@@ -352,7 +422,7 @@ export default function AssetOverviewDashboard({
     dataLabels: { enabled: false },
     stroke: { show: false },
     xaxis: {
-      categories: financialData.map((d) => quarterToTwLabel(d.quarter)),
+      categories: financialDataForChart.map((d) => quarterToTwLabel(d.quarter)),
       axisBorder: { show: false },
       axisTicks: { show: false },
       labels: {
@@ -388,8 +458,8 @@ export default function AssetOverviewDashboard({
   }
 
   const financialChartSeries = [
-    { name: 'Realisasi', data: financialData.map((d) => d.realisasi) },
-    { name: 'Target', data: financialData.map((d) => d.target) },
+    { name: 'Realisasi', data: financialDataForChart.map((d) => d.realisasi) },
+    { name: 'Target', data: financialDataForChart.map((d) => d.target) },
   ]
 
   const financialYear = new Date().getFullYear()
@@ -410,15 +480,115 @@ export default function AssetOverviewDashboard({
       })
   }, [legalData])
 
+  const legalTenantGroups = useMemo((): TenantLegalGroup[] => {
+    const map = new Map<string, LegalTableData[]>()
+    for (const row of legalitasRows) {
+      const key = tenantGroupKeyLegal(row)
+      const list = map.get(key)
+      if (list) list.push(row)
+      else map.set(key, [row])
+    }
+
+    const groups: TenantLegalGroup[] = []
+    for (const [key, logs] of map) {
+      const first = logs[0]
+      groups.push({
+        key,
+        tenantId: first.tenantId,
+        nama: first.nama,
+        aset: first.aset,
+        unit: first.unit,
+        logs,
+      })
+    }
+
+    groups.sort((a, b) => {
+      const da = earliestDueMsLegal(a.logs)
+      const db = earliestDueMsLegal(b.logs)
+      if (!da && !db) return 0
+      if (!da) return 1
+      if (!db) return -1
+      return da - db
+    })
+
+    return groups
+  }, [legalitasRows])
+
+  const visibleLegalGroups = useMemo(
+    () => legalTenantGroups.slice(0, legalVisibleCount),
+    [legalTenantGroups, legalVisibleCount]
+  )
+
+  const handleFinancialScroll = useCallback(() => {
+    const now = Date.now()
+    if (now - financialScrollTsRef.current < 200) return
+    const el = financialScrollRef.current
+    if (!el) return
+    if (el.scrollHeight - el.scrollTop - el.clientHeight >= 80) return
+    financialScrollTsRef.current = now
+    setFinancialVisibleCount((c) =>
+      c >= financialData.length ? c : Math.min(c + DASHBOARD_LIST_PAGE_SIZE, financialData.length)
+    )
+  }, [financialData.length])
+
+  const handleLegalScroll = useCallback(() => {
+    const now = Date.now()
+    if (now - legalScrollTsRef.current < 200) return
+    const el = legalScrollRef.current
+    if (!el) return
+    if (el.scrollHeight - el.scrollTop - el.clientHeight >= 80) return
+    legalScrollTsRef.current = now
+    setLegalVisibleCount((c) =>
+      c >= legalTenantGroups.length ? c : Math.min(c + DASHBOARD_LIST_PAGE_SIZE, legalTenantGroups.length)
+    )
+  }, [legalTenantGroups.length])
+
+  const handleContainerWheel = useCallback(
+    (event: WheelEvent<HTMLDivElement>, ref: RefObject<HTMLDivElement | null>) => {
+      const el = ref.current
+      if (!el) return
+      if (el.scrollHeight <= el.clientHeight) return
+
+      const scrollingDown = event.deltaY > 0
+      const atTop = el.scrollTop <= 0
+      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1
+      if ((scrollingDown && atBottom) || (!scrollingDown && atTop)) return
+
+      event.preventDefault()
+      el.scrollTop += event.deltaY
+    },
+    []
+  )
+
+  const toggleExpandedLegal = (key: string) => {
+    setExpandedLegalKeys((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
   if (loading && assets.length === 0) {
     return <LoadingSkeleton height="h-96" text="Memuat data dashboard..." />
   }
 
   return (
     <div className="space-y-6">
-      {/* Asset Selector */}
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold text-gray-900">SELURUH ASET KELOLAAN</h1>
+      {/* Asset Selector — fixed di bawah header app, tidak ikut scroll */}
+      <div
+        className={cn(
+          'fixed inset-x-0 z-40 flex items-center justify-between border-b border-slate-200 bg-white/95 py-3 backdrop-blur supports-[backdrop-filter]:bg-white/75 transition-[padding,top] duration-200 ease-linear',
+          'pr-4 md:pr-6',
+          sidebarIsMobile
+            ? 'pl-4'
+            : sidebarState === 'collapsed'
+              ? 'pl-4 md:pl-[calc(var(--sidebar-width-icon)+(--spacing(4)))]'
+              : 'pl-4 md:pl-[calc(var(--sidebar-width)+(--spacing(0)))]'
+        )}
+        style={{ top: appHeaderHeightPx }}
+      >
+        <h1 className="pl-6 text-2xl font-semibold text-gray-900 md:pl-6">SELURUH ASET KELOLAAN</h1>
         <Select value={selectedAssetId} onValueChange={handleAssetChange}>
           <SelectTrigger className="w-[250px]">
             <SelectValue placeholder="Pilih Asset" />
@@ -433,6 +603,8 @@ export default function AssetOverviewDashboard({
           </SelectContent>
         </Select>
       </div>
+      {/* Ruang untuk bar fixed (tinggi ≈ judul + py-3 + border) */}
+      <div className="h-16 shrink-0" aria-hidden />
 
       {/* Overview Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -625,12 +797,27 @@ export default function AssetOverviewDashboard({
           </CardHeader>
           <CardContent className="pt-2">
             {financialData.length > 0 ? (
-              <Chart
-                options={financialChartOptions}
-                series={financialChartSeries}
-                type="bar"
-                height={320}
-              />
+              <div
+                ref={financialScrollRef}
+                className={cn(
+                  'overflow-y-auto overscroll-contain rounded-md',
+                  financialVisibleCount < financialData.length ? 'max-h-[300px]' : 'max-h-[380px]'
+                )}
+                onScroll={handleFinancialScroll}
+                onWheel={(event) => handleContainerWheel(event, financialScrollRef)}
+              >
+                <Chart
+                  options={financialChartOptions}
+                  series={financialChartSeries}
+                  type="bar"
+                  height={financialChartPixelHeight}
+                />
+                {financialVisibleCount < financialData.length ? (
+                  <p className="py-2 text-center text-xs text-slate-500">
+                    Gulir ke bawah untuk memuat periode berikutnya
+                  </p>
+                ) : null}
+              </div>
             ) : (
               <div className="rounded-lg border border-dashed border-slate-200 py-12 text-center text-sm text-muted-foreground">
                 Tidak ada data kinerja keuangan
@@ -651,10 +838,16 @@ export default function AssetOverviewDashboard({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="overflow-x-auto rounded-lg border border-slate-100">
+          <div
+            ref={legalScrollRef}
+            className="h-[420px] overflow-auto overscroll-contain rounded-lg border border-slate-100"
+            onScroll={handleLegalScroll}
+            onWheel={(event) => handleContainerWheel(event, legalScrollRef)}
+          >
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-0 z-10 bg-white">
                 <TableRow className="border-b border-slate-100 hover:bg-transparent">
+                  <TableHead className="w-10 px-2" />
                   <TableHead className="w-12 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                     No
                   </TableHead>
@@ -688,83 +881,197 @@ export default function AssetOverviewDashboard({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {legalitasRows.length === 0 ? (
+                {legalTenantGroups.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="py-10 text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={11} className="py-10 text-center text-sm text-muted-foreground">
                       Tidak ada item dengan jatuh tempo yang masih berjalan.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  legalitasRows.map((row, index) => {
-                    const displayStatus = legalRowDisplayStatus(row)
-                    const dotClass = dueDateDotClass(row.dueDateIso)
+                  visibleLegalGroups.map((group, groupIndex) => {
+                    const isOpen = expandedLegalKeys.has(group.key)
+                    const groupOverdue = group.logs.some((r) => legalRowDisplayStatus(r) === 'Overdue')
+                    const groupStatusLabel = groupOverdue ? 'Overdue' : 'On Process'
+                    const earliest = group.logs.reduce<LegalTableData | null>((acc, r) => {
+                      if (!r.dueDateIso) return acc
+                      if (!acc?.dueDateIso) return r
+                      const ta = new Date(acc.dueDateIso).getTime()
+                      const tb = new Date(r.dueDateIso).getTime()
+                      if (Number.isNaN(tb)) return acc
+                      if (Number.isNaN(ta)) return r
+                      return tb < ta ? r : acc
+                    }, null)
+                    const dotClass = dueDateDotClass(earliest?.dueDateIso)
+                    const earliestLabel = earliest?.jatuhTempo || '—'
+                    const avgProgress =
+                      group.logs.length > 0
+                        ? Math.round(group.logs.reduce((s, r) => s + (Number(r.progress) || 0), 0) / group.logs.length)
+                        : 0
+
                     return (
-                      <TableRow
-                        key={`${row.tipe}-${row.id}`}
-                        className="border-b border-slate-100 last:border-0"
-                      >
-                        <TableCell className="text-center text-sm text-slate-600">{index + 1}</TableCell>
-                        <TableCell>
-                          {displayStatus === 'Overdue' ? (
-                            <span className="inline-flex rounded-full border border-red-100 bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700">
-                              Overdue
-                            </span>
-                          ) : (
-                            <span className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">
-                              On Process
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell className="max-w-[200px] font-bold text-slate-900">{row.nama}</TableCell>
-                        <TableCell className="text-sm text-slate-700">{row.aset}</TableCell>
-                        <TableCell className="text-sm text-slate-700">{row.unit}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2 whitespace-nowrap text-sm text-slate-800">
-                            <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${dotClass}`} aria-hidden />
-                            {row.jatuhTempo}
-                          </div>
-                        </TableCell>
-                        <TableCell className="max-w-xs text-sm text-slate-700">{row.kewajibanMitra}</TableCell>
-                        <TableCell className="font-bold tabular-nums text-slate-900">{row.progress}%</TableCell>
-                        <TableCell className="max-w-[140px]">
-                          {row.dokumenUrl ? (
-                            <a
-                              href={row.dokumenUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-sm font-medium text-blue-600 hover:underline"
-                            >
-                              {row.dokumen}
-                            </a>
-                          ) : (
-                            <span className="text-sm font-medium text-blue-600">{row.dokumen}</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {row.tenantId ? (
+                      <Fragment key={`legal-g-${group.key}`}>
+                        <TableRow className="border-b border-slate-100 bg-slate-50/80 last:border-0">
+                          <TableCell className="w-10 px-2 align-middle">
                             <Button
-                              asChild
-                              size="sm"
-                              className="h-8 rounded-md bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700"
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 shrink-0 text-slate-600"
+                              aria-expanded={isOpen}
+                              aria-label={isOpen ? 'Tutup detail legalitas' : 'Buka detail legalitas'}
+                              onClick={() => toggleExpandedLegal(group.key)}
                             >
-                              <Link href={`/tenants/edit/${row.tenantId}`}>Update Data</Link>
+                              <ChevronRight
+                                className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-90' : ''}`}
+                              />
                             </Button>
-                          ) : (
-                            <Button
-                              size="sm"
-                              disabled
-                              className="h-8 rounded-md px-3 text-xs font-semibold"
-                            >
-                              Update Data
-                            </Button>
-                          )}
-                        </TableCell>
-                      </TableRow>
+                          </TableCell>
+                          <TableCell className="text-center text-sm font-medium text-slate-700">
+                            {groupIndex + 1}
+                          </TableCell>
+                          <TableCell>
+                            {groupStatusLabel === 'Overdue' ? (
+                              <span className="inline-flex rounded-full border border-red-100 bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700">
+                                Overdue
+                              </span>
+                            ) : (
+                              <span className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+                                On Process
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="max-w-[200px] font-bold text-slate-900">{group.nama}</TableCell>
+                          <TableCell className="text-sm text-slate-700">{group.aset}</TableCell>
+                          <TableCell className="text-sm text-slate-700">{group.unit}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2 whitespace-nowrap text-sm text-slate-800">
+                              <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${dotClass}`} aria-hidden />
+                              {earliestLabel}
+                            </div>
+                          </TableCell>
+                          <TableCell className="max-w-xs text-sm text-slate-700">{group.logs.length} item</TableCell>
+                          <TableCell className="font-bold tabular-nums text-slate-900">{avgProgress}%</TableCell>
+                          <TableCell className="max-w-[140px]">
+                            <span className="text-sm text-slate-500">—</span>
+                          </TableCell>
+                          <TableCell>
+                            {group.tenantId ? (
+                              <Button
+                                asChild
+                                size="sm"
+                                className="h-8 rounded-md bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700"
+                              >
+                                <Link href={`/tenants/edit/${group.tenantId}`}>Update Data</Link>
+                              </Button>
+                            ) : (
+                              <Button size="sm" disabled className="h-8 rounded-md px-3 text-xs font-semibold">
+                                Update Data
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+
+                        {isOpen && (
+                          <TableRow className="border-b border-slate-100 hover:bg-transparent">
+                            <TableCell colSpan={11} className="p-0 align-top">
+                              <div className="border-t border-slate-200 bg-slate-50/90 px-3 py-3 sm:px-4">
+                                <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                  Detail legalitas
+                                </p>
+                                <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow className="border-b border-slate-100 hover:bg-transparent">
+                                        <TableHead className="w-10 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                          No
+                                        </TableHead>
+                                        <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                          Status
+                                        </TableHead>
+                                        <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                          Jatuh tempo
+                                        </TableHead>
+                                        <TableHead className="min-w-[220px] text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                          Kewajiban mitra
+                                        </TableHead>
+                                        <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                          Progress
+                                        </TableHead>
+                                        <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                          Dokumen
+                                        </TableHead>
+                                        <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                          Tipe
+                                        </TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {group.logs.map((row, idx) => {
+                                        const displayStatus = legalRowDisplayStatus(row)
+                                        const rowDotClass = dueDateDotClass(row.dueDateIso)
+                                        return (
+                                          <TableRow
+                                            key={`legal-${group.key}-${row.id}`}
+                                            className="border-b border-slate-100 last:border-0"
+                                          >
+                                            <TableCell className="text-center text-sm text-slate-600">{idx + 1}</TableCell>
+                                            <TableCell>
+                                              {displayStatus === 'Overdue' ? (
+                                                <span className="inline-flex rounded-full border border-red-100 bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700">
+                                                  Overdue
+                                                </span>
+                                              ) : (
+                                                <span className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+                                                  On Process
+                                                </span>
+                                              )}
+                                            </TableCell>
+                                            <TableCell>
+                                              <div className="flex items-center gap-2 whitespace-nowrap text-sm text-slate-800">
+                                                <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${rowDotClass}`} aria-hidden />
+                                                {row.jatuhTempo}
+                                              </div>
+                                            </TableCell>
+                                            <TableCell className="max-w-xs text-sm text-slate-700">{row.kewajibanMitra}</TableCell>
+                                            <TableCell className="font-bold tabular-nums text-slate-900">{row.progress}%</TableCell>
+                                            <TableCell className="max-w-[160px]">
+                                              {row.dokumenUrl ? (
+                                                <a
+                                                  href={row.dokumenUrl}
+                                                  target="_blank"
+                                                  rel="noopener noreferrer"
+                                                  className="text-sm font-medium text-blue-600 hover:underline"
+                                                >
+                                                  {row.dokumen}
+                                                </a>
+                                              ) : (
+                                                <span className="text-sm font-medium text-blue-600">{row.dokumen}</span>
+                                              )}
+                                            </TableCell>
+                                            <TableCell className="whitespace-nowrap text-sm text-slate-700">
+                                              {row.tipe === 'payment' ? 'Payment' : 'Legal'}
+                                            </TableCell>
+                                          </TableRow>
+                                        )
+                                      })}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </Fragment>
                     )
                   })
                 )}
               </TableBody>
             </Table>
+            {legalTenantGroups.length > 0 && legalVisibleCount < legalTenantGroups.length ? (
+              <p className="border-t border-slate-100 bg-slate-50/80 px-3 py-2 text-center text-xs text-slate-500">
+                Gulir ke bawah untuk memuat baris berikutnya
+              </p>
+            ) : null}
           </div>
           <div className="flex flex-col gap-2 text-xs text-slate-600 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-6 sm:gap-y-2">
             <span className="flex items-center gap-2">

@@ -457,19 +457,36 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
     }
   }
 
+  const normalizeDocumentUrl = (value: unknown): string | undefined => {
+    if (typeof value === 'string') {
+      const trimmed = value.trim()
+      return trimmed.length > 0 ? trimmed : undefined
+    }
+    if (Array.isArray(value)) {
+      const firstValid = value.find((item) => typeof item === 'string' && item.trim().length > 0)
+      return typeof firstValid === 'string' ? firstValid.trim() : undefined
+    }
+    return undefined
+  }
+
   const handleLegalSubmit = async (data: CreateTenantLegalData | UpdateTenantLegalData) => {
     if (!tenant?.id) return
 
     setLegalFormLoading(true)
     try {
       // Upload document if file is selected
-      let documentUrl = editingLegal?.document_url || undefined
+      let documentUrl = normalizeDocumentUrl(editingLegal?.document_url)
       
       if (legalDocumentFile) {
         // Use uploadTenantFile with type 'contract' for legal documents
         const uploadResponse = await tenantsApi.uploadTenantFile(legalDocumentFile, 'contract')
         if (uploadResponse.success && uploadResponse.data) {
-          documentUrl = uploadResponse.data.url
+          documentUrl = normalizeDocumentUrl(uploadResponse.data.url)
+          if (!documentUrl) {
+            toast.error('Format URL dokumen dari server tidak valid')
+            setLegalFormLoading(false)
+            return
+          }
         } else {
           toast.error('Gagal mengupload dokumen')
           setLegalFormLoading(false)
