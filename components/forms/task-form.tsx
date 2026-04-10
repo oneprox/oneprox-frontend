@@ -464,15 +464,16 @@ export default function TaskForm({ task, onSubmit, onCancel, loading = false }: 
         assigned_user_id: it.assigned_user_id || '',
       })
 
-      let rawItems = (task as Task & { non_routine_items?: unknown }).non_routine_items
-      if (typeof rawItems === 'string') {
+      const nonRoutineItemsSource = (task as Task & { non_routine_items?: unknown }).non_routine_items
+      let parsedRawItems: unknown = nonRoutineItemsSource
+      if (typeof parsedRawItems === 'string') {
         try {
-          rawItems = JSON.parse(rawItems) as unknown
+          parsedRawItems = JSON.parse(parsedRawItems)
         } catch {
-          rawItems = []
+          parsedRawItems = []
         }
       }
-      const parsedItems = Array.isArray(rawItems) ? rawItems : []
+      const parsedItems = Array.isArray(parsedRawItems) ? parsedRawItems : []
 
       const isNonRoutine = task.is_routine === false
       const freq = Math.min(5, Math.max(1, Number(task.monthly_frequency) || 1))
