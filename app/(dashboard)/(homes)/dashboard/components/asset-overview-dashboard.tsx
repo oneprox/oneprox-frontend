@@ -40,6 +40,9 @@ interface LegalTableData {
   tenantId?: string
   dueDateIso?: string
   dokumenUrl?: string | null
+  description?: string
+  deskripsi?: string
+  keterangan?: string
   nama: string
   aset: string
   unit: string
@@ -466,8 +469,24 @@ export default function AssetOverviewDashboard({
   const totalFinancialRealisasi = financialData.reduce((s, d) => s + d.realisasi, 0)
   const totalFinancialTarget = financialData.reduce((s, d) => s + d.target, 0)
 
+  const legalitasSourceRows = useMemo(() => {
+    return legalData.filter((row) => row.tipe === 'legal')
+  }, [legalData])
+
+  const legalProgressByTenant = useMemo(() => {
+    const map = new Map<string, { completed: number; total: number }>()
+    for (const row of legalitasSourceRows) {
+      const key = tenantGroupKeyLegal(row)
+      const current = map.get(key) ?? { completed: 0, total: 0 }
+      current.total += 1
+      if (isOpenObligationStatus(row.status)) current.completed += 1
+      map.set(key, current)
+    }
+    return map
+  }, [legalitasSourceRows])
+
   const legalitasRows = useMemo(() => {
-    return legalData
+    return legalitasSourceRows
       .filter((row) => {
         if (isOpenObligationStatus(row.status)) return false
         const hasDue = !!(row.dueDateIso?.trim() || (row.jatuhTempo && row.jatuhTempo !== '-'))
@@ -478,7 +497,7 @@ export default function AssetOverviewDashboard({
         const tb = b.dueDateIso ? new Date(b.dueDateIso).getTime() : 0
         return ta - tb
       })
-  }, [legalData])
+  }, [legalitasSourceRows])
 
   const legalTenantGroups = useMemo((): TenantLegalGroup[] => {
     const map = new Map<string, LegalTableData[]>()
@@ -834,7 +853,7 @@ export default function AssetOverviewDashboard({
             Status Legalitas Aset
           </CardTitle>
           <CardDescription className="text-sm text-slate-500">
-            Detailed legal and compliance tracking for active partners.
+            Detail legal dan pelacakan kepatuhan untuk mitra aktif.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -872,12 +891,6 @@ export default function AssetOverviewDashboard({
                   <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                     Progress
                   </TableHead>
-                  <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                    Dokumen
-                  </TableHead>
-                  <TableHead className="w-[140px] whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                    Action
-                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -903,10 +916,10 @@ export default function AssetOverviewDashboard({
                     }, null)
                     const dotClass = dueDateDotClass(earliest?.dueDateIso)
                     const earliestLabel = earliest?.jatuhTempo || '—'
-                    const avgProgress =
-                      group.logs.length > 0
-                        ? Math.round(group.logs.reduce((s, r) => s + (Number(r.progress) || 0), 0) / group.logs.length)
-                        : 0
+                    const progressSummary = legalProgressByTenant.get(group.key) ?? { completed: 0, total: group.logs.length }
+                    const progressPercent = progressSummary.total > 0
+                      ? Math.round((progressSummary.completed / progressSummary.total) * 100)
+                      : 0
 
                     return (
                       <Fragment key={`legal-g-${group.key}`}>
@@ -950,10 +963,7 @@ export default function AssetOverviewDashboard({
                             </div>
                           </TableCell>
                           <TableCell className="max-w-xs text-sm text-slate-700">{group.logs.length} item</TableCell>
-                          <TableCell className="font-bold tabular-nums text-slate-900">{avgProgress}%</TableCell>
-                          <TableCell className="max-w-[140px]">
-                            <span className="text-sm text-slate-500">—</span>
-                          </TableCell>
+                          <TableCell className="font-bold tabular-nums text-slate-900">{progressPercent}%</TableCell>
                           <TableCell>
                             {group.tenantId ? (
                               <Button
@@ -979,36 +989,39 @@ export default function AssetOverviewDashboard({
                                   Detail legalitas
                                 </p>
                                 <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
-                                  <Table>
+                                  <Table className="table-fixed">
                                     <TableHeader>
                                       <TableRow className="border-b border-slate-100 hover:bg-transparent">
                                         <TableHead className="w-10 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                                           No
                                         </TableHead>
                                         <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                                          Status
-                                        </TableHead>
-                                        <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                                           Jatuh tempo
                                         </TableHead>
-                                        <TableHead className="min-w-[220px] text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                        <TableHead className="w-[34%] text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                                           Kewajiban mitra
                                         </TableHead>
+                                        <TableHead className="w-[34%] text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                          Keterangan
+                                        </TableHead>
                                         <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                                          Progress
+                                          Status penyelesaian
                                         </TableHead>
                                         <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                                           Dokumen
-                                        </TableHead>
-                                        <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                                          Tipe
                                         </TableHead>
                                       </TableRow>
                                     </TableHeader>
                                     <TableBody>
                                       {group.logs.map((row, idx) => {
-                                        const displayStatus = legalRowDisplayStatus(row)
                                         const rowDotClass = dueDateDotClass(row.dueDateIso)
+                                        const jenisDokumenLabel =
+                                          (row.description && row.description.trim() !== '' ? row.description : '') ||
+                                          (row.deskripsi && row.deskripsi.trim() !== '' ? row.deskripsi : '') ||
+                                          row.kewajibanMitra ||
+                                          '—'
+                                        const keteranganLabel = row.keterangan && row.keterangan.trim() !== '' ? row.keterangan : '—'
+                                        const isCompleted = isOpenObligationStatus(row.status)
                                         return (
                                           <TableRow
                                             key={`legal-${group.key}-${row.id}`}
@@ -1016,26 +1029,30 @@ export default function AssetOverviewDashboard({
                                           >
                                             <TableCell className="text-center text-sm text-slate-600">{idx + 1}</TableCell>
                                             <TableCell>
-                                              {displayStatus === 'Overdue' ? (
-                                                <span className="inline-flex rounded-full border border-red-100 bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700">
-                                                  Overdue
-                                                </span>
-                                              ) : (
-                                                <span className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">
-                                                  On Process
-                                                </span>
-                                              )}
-                                            </TableCell>
-                                            <TableCell>
                                               <div className="flex items-center gap-2 whitespace-nowrap text-sm text-slate-800">
                                                 <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${rowDotClass}`} aria-hidden />
                                                 {row.jatuhTempo}
                                               </div>
                                             </TableCell>
-                                            <TableCell className="max-w-xs text-sm text-slate-700">{row.kewajibanMitra}</TableCell>
-                                            <TableCell className="font-bold tabular-nums text-slate-900">{row.progress}%</TableCell>
+                                            <TableCell className="max-w-[420px] whitespace-normal break-words align-top text-sm leading-5 text-slate-700">
+                                              {jenisDokumenLabel}
+                                            </TableCell>
+                                            <TableCell className="max-w-[420px] whitespace-normal break-words align-top text-sm leading-5 text-slate-700">
+                                              {keteranganLabel}
+                                            </TableCell>
+                                            <TableCell>
+                                              {isCompleted ? (
+                                                <span className="inline-flex rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
+                                                  Selesai
+                                                </span>
+                                              ) : (
+                                                <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">
+                                                  Belum selesai
+                                                </span>
+                                              )}
+                                            </TableCell>
                                             <TableCell className="max-w-[160px]">
-                                              {row.dokumenUrl ? (
+                                              {row.dokumenUrl && row.dokumen ? (
                                                 <a
                                                   href={row.dokumenUrl}
                                                   target="_blank"
@@ -1044,12 +1061,7 @@ export default function AssetOverviewDashboard({
                                                 >
                                                   {row.dokumen}
                                                 </a>
-                                              ) : (
-                                                <span className="text-sm font-medium text-blue-600">{row.dokumen}</span>
-                                              )}
-                                            </TableCell>
-                                            <TableCell className="whitespace-nowrap text-sm text-slate-700">
-                                              {row.tipe === 'payment' ? 'Payment' : 'Legal'}
+                                              ) : null}
                                             </TableCell>
                                           </TableRow>
                                         )

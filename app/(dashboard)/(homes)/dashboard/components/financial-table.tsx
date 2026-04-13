@@ -193,7 +193,7 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
         <CardTitle className="text-lg font-bold tracking-tight text-slate-900">Financial</CardTitle>
         <CardDescription className="text-sm text-slate-500">
           Invoice dengan jatuh tempo yang sudah diisi dan status pembayaran belum dibayar, dikelompokkan per
-          tenant. Perluas baris untuk melihat detail tagihan (tenant_payment_logs).
+          tenant.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -334,13 +334,10 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                                         Status tagihan
                                       </TableHead>
                                       <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                                        ID log
+                                        Nomor invoice
                                       </TableHead>
                                       <TableHead className="min-w-[120px] text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                                         Deskripsi
-                                      </TableHead>
-                                      <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                                        Nomor invoice
                                       </TableHead>
                                       <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                                         Nilai invoice
@@ -350,9 +347,6 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                                       </TableHead>
                                       <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                                         Aging
-                                      </TableHead>
-                                      <TableHead className="w-[130px] whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                                        Action
                                       </TableHead>
                                     </TableRow>
                                   </TableHeader>
@@ -380,14 +374,11 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                                               </span>
                                             )}
                                           </TableCell>
-                                          <TableCell className="whitespace-nowrap font-mono text-xs text-slate-600">
-                                            {row.id}
+                                          <TableCell className="whitespace-nowrap text-sm text-slate-800">
+                                            {row.nomorInvoice}
                                           </TableCell>
                                           <TableCell className="max-w-[200px] text-sm text-slate-600">
                                             {deskripsiTampil}
-                                          </TableCell>
-                                          <TableCell className="whitespace-nowrap text-sm text-slate-800">
-                                            {row.nomorInvoice}
                                           </TableCell>
                                           <TableCell className="whitespace-nowrap font-bold tabular-nums text-slate-900">
                                             {formatInvoiceRupiah(row.nilaiInvoice)}
@@ -400,27 +391,6 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                                               <span className="text-red-600">{row.aging} Hari</span>
                                             ) : (
                                               <span className="text-slate-500">—</span>
-                                            )}
-                                          </TableCell>
-                                          <TableCell>
-                                            {row.tenantId ? (
-                                              <Button
-                                                asChild
-                                                size="sm"
-                                                variant="outline"
-                                                className="h-8 rounded-md px-3 text-xs font-semibold"
-                                              >
-                                                <Link href={`/tenants/payment/${row.tenantId}`}>Update Data</Link>
-                                              </Button>
-                                            ) : (
-                                              <Button
-                                                size="sm"
-                                                disabled
-                                                variant="outline"
-                                                className="h-8 rounded-md px-3 text-xs"
-                                              >
-                                                Update Data
-                                              </Button>
                                             )}
                                           </TableCell>
                                         </TableRow>
