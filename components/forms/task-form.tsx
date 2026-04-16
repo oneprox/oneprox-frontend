@@ -42,7 +42,7 @@ const taskSchema = z.object({
   is_need_validation: z.boolean().optional(),
   is_scan: z.boolean().optional(),
   scan_code: z.string().optional().nullable(),
-  duration: z.number().int().min(1, 'Duration must be at least 1 minute'),
+  duration: z.number().int().min(5, 'Duration must be at least 5 minutes'),
   asset_id: z.string().min(1, 'Asset is required').uuid('Asset ID must be a valid UUID'),
   role_id: z.number().int().min(1, 'Role is required'),
   parent_task_ids: z.array(z.number().int()).optional(),
@@ -91,7 +91,7 @@ const taskSchema = z.object({
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['non_routine_items', index, 'due_date'],
-          message: 'Jatuh tempo harus angka 1 sampai 28',
+          message: 'Tanggal jatuh tempo harus angka 1 sampai 28',
         })
       }
       if (!item.area || item.area.trim() === '') {
@@ -155,7 +155,7 @@ export default function TaskForm({ task, onSubmit, onCancel, loading = false }: 
       is_need_validation: false,
       is_scan: false,
       scan_code: null,
-      duration: 1,
+      duration: 5,
       asset_id: '',
       role_id: 0,
       parent_task_ids: [],
@@ -177,6 +177,7 @@ export default function TaskForm({ task, onSubmit, onCancel, loading = false }: 
   const isRoutine = form.watch('is_routine')
   const isMainTask = form.watch('is_main_task')
   const selectedAssetId = form.watch('asset_id')
+  const selectedRoleId = form.watch('role_id')
 
   useEffect(() => {
     if (!isRoutine) {
@@ -261,10 +262,14 @@ export default function TaskForm({ task, onSubmit, onCancel, loading = false }: 
   // Load users for non-routine assignment based on selected asset
   useEffect(() => {
     const loadUsers = async () => {
-      if (isRoutine || !selectedAssetId) {
+      if (isRoutine || !selectedAssetId || !selectedRoleId) {
         setUsers([])
         setUsersLoading(false)
         form.setValue('assigned_user_id', '')
+        const items = form.getValues('non_routine_items') || []
+        items.forEach((_, index) => {
+          form.setValue(`non_routine_items.${index}.assigned_user_id`, '')
+        })
         return
       }
 
@@ -274,6 +279,7 @@ export default function TaskForm({ task, onSubmit, onCancel, loading = false }: 
           limit: 1000,
           status: 'active',
           asset_id: selectedAssetId,
+          role_id: String(selectedRoleId),
         })
         const responseData = response.data as any
         const usersData = Array.isArray(responseData?.data?.users)
@@ -294,6 +300,15 @@ export default function TaskForm({ task, onSubmit, onCancel, loading = false }: 
         ) {
           form.setValue('assigned_user_id', '')
         }
+        const items = form.getValues('non_routine_items') || []
+        items.forEach((item, index) => {
+          if (
+            item?.assigned_user_id &&
+            !usersData.some((user: User) => user.id === item.assigned_user_id)
+          ) {
+            form.setValue(`non_routine_items.${index}.assigned_user_id`, '')
+          }
+        })
       } catch (error) {
         console.error('Load users error:', error)
         setUsers([])
@@ -302,7 +317,7 @@ export default function TaskForm({ task, onSubmit, onCancel, loading = false }: 
       }
     }
     loadUsers()
-  }, [isRoutine, selectedAssetId, form])
+  }, [isRoutine, selectedAssetId, selectedRoleId, form])
 
   // Load task groups
   useEffect(() => {
@@ -543,7 +558,7 @@ export default function TaskForm({ task, onSubmit, onCancel, loading = false }: 
         is_need_validation: false,
         is_scan: false,
         scan_code: null,
-        duration: 1,
+        duration: 5,
         asset_id: '',
         role_id: 0,
         parent_task_ids: [],
@@ -741,46 +756,64 @@ export default function TaskForm({ task, onSubmit, onCancel, loading = false }: 
             // Convert minutes to hours for display (if needed) or keep as minutes
             // Assuming duration is stored in minutes
             const minutes = field.value || 0
-            const hours = Math.floor(minutes / 60)
-            const mins = minutes % 60
+            const hours = Math.min(8, Math.max(0, Math.floor(minutes / 60)))
+            const mins = Math.min(55, Math.max(0, Math.floor((minutes % 60) / 5) * 5))
             
             return (
               <FormItem>
                 <FormLabel>Duration <span className="text-red-500">*</span></FormLabel>
                 <div className="grid grid-cols-2 gap-4">
-                  <FormControl>
-                    <div className="space-y-2">
-                      <label className="text-sm text-muted-foreground">Hours</label>
-                      <Input 
-                        type="number" 
-                        min="0"
-                        placeholder="0"
-                        value={hours}
-                        onChange={(e) => {
-                          const hrs = parseInt(e.target.value) || 0
-                          const totalMinutes = hrs * 60 + mins
-                          field.onChange(totalMinutes)
-                        }}
-                      />
-                    </div>
-                  </FormControl>
-                  <FormControl>
-                    <div className="space-y-2">
-                      <label className="text-sm text-muted-foreground">Minutes</label>
-                      <Input 
-                        type="number" 
-                        min="0"
-                        max="59"
-                        placeholder="0"
-                        value={mins}
-                        onChange={(e) => {
-                          const mns = parseInt(e.target.value) || 0
-                          const totalMinutes = hours * 60 + mns
-                          field.onChange(totalMinutes)
-                        }}
-                      />
-                    </div>
-                  </FormControl>
+                  <div className="space-y-2">
+                    <label className="text-sm text-muted-foreground">Hours</label>
+                    <Select
+                      value={String(hours)}
+                      onValueChange={(value) => {
+                        const hrs = Number(value)
+                        const safeMinutes = hrs === 0 && mins === 0 ? 5 : mins
+                        const totalMinutes = hrs * 60 + safeMinutes
+                        field.onChange(totalMinutes)
+                      }}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="0" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {Array.from({ length: 9 }, (_, i) => (
+                          <SelectItem key={i} value={String(i)}>
+                            {i}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm text-muted-foreground">Minutes</label>
+                    <Select
+                      value={String(mins)}
+                      onValueChange={(value) => {
+                        const mns = Number(value)
+                        const totalMinutes = hours * 60 + mns
+                        field.onChange(totalMinutes)
+                      }}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="0" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {Array.from({ length: 12 }, (_, i) => i * 5)
+                          .filter((i) => !(hours === 0 && i === 0))
+                          .map((i) => (
+                          <SelectItem key={i} value={String(i)}>
+                            {i}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
                 <div className="text-sm text-muted-foreground mt-1">
                   Total: {minutes} minute{minutes !== 1 ? 's' : ''}
@@ -1078,7 +1111,7 @@ export default function TaskForm({ task, onSubmit, onCancel, loading = false }: 
                   name={`non_routine_items.${index}.due_date`}
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Jatuh Tempo #{index + 1} <span className="text-red-500">*</span></FormLabel>
+                      <FormLabel>Tanggal Jatuh Tempo #{index + 1} <span className="text-red-500">*</span></FormLabel>
                       <FormControl>
                         <Input
                           type="number"
@@ -1118,7 +1151,7 @@ export default function TaskForm({ task, onSubmit, onCancel, loading = false }: 
                       <Select
                         onValueChange={field.onChange}
                         value={field.value || ''}
-                        disabled={usersLoading || !selectedAssetId}
+                        disabled={usersLoading || !selectedAssetId || !selectedRoleId}
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -1126,6 +1159,8 @@ export default function TaskForm({ task, onSubmit, onCancel, loading = false }: 
                               placeholder={
                                 !selectedAssetId
                                   ? 'Pilih asset terlebih dahulu'
+                                  : !selectedRoleId
+                                    ? 'Pilih role terlebih dahulu'
                                   : usersLoading
                                     ? 'Loading users...'
                                     : 'Pilih user'
