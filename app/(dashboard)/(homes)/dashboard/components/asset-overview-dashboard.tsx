@@ -128,6 +128,10 @@ export default function AssetOverviewDashboard({
   
   // Use prop if provided, otherwise use internal state
   const selectedAssetId = propSelectedAssetId !== undefined ? propSelectedAssetId : internalSelectedAssetId
+  const selectedAssetName =
+    selectedAssetId === 'all'
+      ? 'SELURUH ASET KELOLAAN'
+      : assets.find((asset) => asset.id === selectedAssetId)?.name ?? 'ASET KELOLAAN'
   
   const handleAssetChange = (assetId: string) => {
     if (onAssetChange) {
@@ -607,7 +611,7 @@ export default function AssetOverviewDashboard({
         )}
         style={{ top: appHeaderHeightPx }}
       >
-        <h1 className="pl-2 text-base font-semibold text-gray-900 sm:pl-4 sm:text-lg md:pl-6 md:text-2xl">SELURUH ASET KELOLAAN</h1>
+        <h1 className="pl-2 text-base font-semibold text-gray-900 sm:pl-4 sm:text-lg md:pl-6 md:text-2xl">{selectedAssetName}</h1>
         <Select value={selectedAssetId} onValueChange={handleAssetChange}>
           <SelectTrigger className="w-[250px]">
             <SelectValue placeholder="Pilih Asset" />
