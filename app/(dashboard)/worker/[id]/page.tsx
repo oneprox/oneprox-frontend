@@ -72,6 +72,33 @@ function WorkerDetailContent() {
   const [isLoadingAllTasks, setIsLoadingAllTasks] = useState(false)
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set())
 
+  const getJakartaDateKey = (value?: string | Date): string | null => {
+    if (!value) return null
+    const date = value instanceof Date ? value : new Date(value)
+    if (Number.isNaN(date.getTime())) return null
+
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Jakarta',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date)
+
+    const year = parts.find((p) => p.type === 'year')?.value
+    const month = parts.find((p) => p.type === 'month')?.value
+    const day = parts.find((p) => p.type === 'day')?.value
+    if (!year || !month || !day) return null
+
+    return `${year}-${month}-${day}`
+  }
+
+  const parseYmdToUtcDate = (ymd?: string): Date | null => {
+    if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null
+    const [year, month, day] = ymd.split('-').map(Number)
+    if (!year || !month || !day) return null
+    return new Date(Date.UTC(year, month - 1, day))
+  }
+
   useEffect(() => {
     setMounted(true)
     // Ensure default dates are set to first day of month
@@ -353,8 +380,8 @@ function WorkerDetailContent() {
       }
       
       try {
-        const createdDate = new Date(task.created_at)
-        const dateStr = createdDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' })
+        const dateStr = getJakartaDateKey(task.created_at)
+        if (!dateStr) return
         
         if (!tasksByDate[dateStr]) {
           tasksByDate[dateStr] = []
@@ -400,6 +427,26 @@ function WorkerDetailContent() {
       })
     })
     
+    // Ensure all dates in selected filter range are represented, even if no task exists.
+    const fromUtc = parseYmdToUtcDate(taskDateFrom)
+    const toUtc = parseYmdToUtcDate(taskDateTo)
+    if (fromUtc && toUtc && fromUtc.getTime() <= toUtc.getTime()) {
+      const cursor = new Date(fromUtc)
+      while (cursor.getTime() <= toUtc.getTime()) {
+        const key = cursor.toISOString().slice(0, 10)
+        if (!dailyStats[key]) {
+          dailyStats[key] = {
+            date: key,
+            completed: 0,
+            pending: 0,
+            total: 0,
+            percentage: 0
+          }
+        }
+        cursor.setUTCDate(cursor.getUTCDate() + 1)
+      }
+    }
+
     console.log('Daily stats before percentage calculation:', dailyStats)
     
     // Calculate percentage for each day
@@ -602,8 +649,7 @@ function WorkerDetailContent() {
     return allUserTasks.filter(task => {
       if (!task.created_at) return false
       try {
-        const createdDate = new Date(task.created_at)
-        const taskDateStr = createdDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' })
+        const taskDateStr = getJakartaDateKey(task.created_at)
         return taskDateStr === date
       } catch {
         return false

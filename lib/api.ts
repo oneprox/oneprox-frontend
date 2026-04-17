@@ -1891,6 +1891,11 @@ export const userTasksApi = {
     user_id?: string
     date_from?: string
     date_to?: string
+    /**
+     * 1 = untuk satu hari: task rutin hanya batch terbaru di hari itu (belum generate = tidak tampil).
+     * 0 / tidak diisi = semua task di rentang (untuk statistik rentang panjang).
+     */
+    routine_latest_batch_only?: boolean | string | number
   }): Promise<ApiResponse<UserTask[]>> {
     const queryParams = new URLSearchParams()
     if (params?.limit) queryParams.append('limit', params.limit.toString())
@@ -1898,6 +1903,10 @@ export const userTasksApi = {
     if (params?.offset) queryParams.append('offset', params.offset.toString())
     if (params?.date_from) queryParams.append('date_from', params.date_from)
     if (params?.date_to) queryParams.append('date_to', params.date_to)
+    const batchOnly = params?.routine_latest_batch_only
+    if (batchOnly === true || batchOnly === 1 || batchOnly === '1' || batchOnly === 'true') {
+      queryParams.append('routine_latest_batch_only', '1')
+    }
     
     const endpoint = `/api/user-tasks${queryParams.toString() ? `?${queryParams.toString()}` : ''}`
     return apiClient.get<UserTask[]>(endpoint)
