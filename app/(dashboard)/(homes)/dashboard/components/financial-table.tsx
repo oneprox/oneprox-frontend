@@ -210,10 +210,10 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                   No
                 </TableHead>
                 <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                  Status
+                  Nama
                 </TableHead>
                 <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                  Nama
+                  Status
                 </TableHead>
                 <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                   Aset
@@ -273,6 +273,7 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                         <TableCell className="text-center text-sm font-medium text-slate-700">
                           {groupIndex + 1}
                         </TableCell>
+                        <TableCell className="max-w-[200px] font-bold text-slate-900">{group.nama}</TableCell>
                         <TableCell>
                           {groupStatusLabel === 'Overdue' ? (
                             <span className="inline-flex rounded-full border border-red-100 bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700">
@@ -284,7 +285,6 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                             </span>
                           )}
                         </TableCell>
-                        <TableCell className="max-w-[200px] font-bold text-slate-900">{group.nama}</TableCell>
                         <TableCell className="text-sm text-slate-700">{group.aset}</TableCell>
                         <TableCell className="text-sm text-slate-700">{group.unit}</TableCell>
                         <TableCell className="whitespace-nowrap text-sm font-medium text-slate-700 tabular-nums">
@@ -307,7 +307,7 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                               size="sm"
                               className="h-8 rounded-md bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700"
                             >
-                              <Link href={`/tenants/payment/${group.tenantId}`}>Update Data</Link>
+                              <Link href={`/tenants/edit/${group.tenantId}?tab=finance`}>Update Data</Link>
                             </Button>
                           ) : (
                             <Button size="sm" disabled className="h-8 rounded-md px-3 text-xs font-semibold">
@@ -331,10 +331,10 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                                         No
                                       </TableHead>
                                       <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                                        Status tagihan
+                                        Nomor invoice
                                       </TableHead>
                                       <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                                        Nomor invoice
+                                        Status tagihan
                                       </TableHead>
                                       <TableHead className="min-w-[120px] text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                                         Deskripsi
@@ -363,6 +363,9 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                                           <TableCell className="text-center text-sm text-slate-600">
                                             {logIdx + 1}
                                           </TableCell>
+                                          <TableCell className="whitespace-nowrap text-sm text-slate-800">
+                                            {row.nomorInvoice}
+                                          </TableCell>
                                           <TableCell>
                                             {displayStatus === 'Overdue' ? (
                                               <span className="inline-flex rounded-full border border-red-100 bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700">
@@ -373,9 +376,6 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                                                 On Process
                                               </span>
                                             )}
-                                          </TableCell>
-                                          <TableCell className="whitespace-nowrap text-sm text-slate-800">
-                                            {row.nomorInvoice}
                                           </TableCell>
                                           <TableCell className="max-w-[200px] text-sm text-slate-600">
                                             {deskripsiTampil}

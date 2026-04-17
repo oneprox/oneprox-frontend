@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Tenant, CreateTenantData, UpdateTenantData, usersApi, unitsApi, tenantsApi, rolesApi, assetsApi, User, Unit, Asset, DURATION_UNITS, DURATION_UNIT_LABELS, TenantPaymentLog, CreateTenantPaymentData, UpdateTenantPaymentData, TenantLegal, CreateTenantLegalData, UpdateTenantLegalData, settingsApi, Setting } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -78,6 +79,7 @@ const STATUS_OPTIONS = [
 ]
 
 export default function TenantForm({ tenant, onSubmit, loading = false }: TenantFormProps) {
+  const searchParams = useSearchParams()
   const [formData, setFormData] = useState({
     name: '',
     user_id: '',
@@ -147,6 +149,18 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
   const [paymentToDelete, setPaymentToDelete] = useState<TenantPaymentLog | null>(null)
   const [deletingPayment, setDeletingPayment] = useState(false)
   const [activeTab, setActiveTab] = useState('info')
+  const tabFromUrl = searchParams.get('tab')?.toLowerCase() ?? ''
+
+  useEffect(() => {
+    if (!tenant?.id || !tabFromUrl) return
+    if (tabFromUrl === 'finance' || tabFromUrl === 'payments') {
+      setActiveTab('payments')
+    } else if (tabFromUrl === 'legals') {
+      setActiveTab('legals')
+    } else if (tabFromUrl === 'info') {
+      setActiveTab('info')
+    }
+  }, [tenant?.id, tabFromUrl])
 
   // Legal documents states
   const [legalDocuments, setLegalDocuments] = useState<TenantLegal[]>([])

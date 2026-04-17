@@ -637,7 +637,7 @@ export default function AssetOverviewDashboard({
                 </p>
               </div>
               <div className="flex shrink-0 flex-col items-end gap-4">
-                <div className="rounded-full bg-white/20 px-3 py-1 text-xs font-semibold">
+                <div className="hidden rounded-full bg-white/20 px-3 py-1 text-xs font-semibold">
                   ↗ 2.4%
                 </div>
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15">
@@ -658,7 +658,7 @@ export default function AssetOverviewDashboard({
                 </p>
               </div>
               <div className="flex shrink-0 flex-col items-end gap-4">
-                <div className="rounded-full bg-white/20 px-3 py-1 text-xs font-semibold">
+                <div className="hidden rounded-full bg-white/20 px-3 py-1 text-xs font-semibold">
                   ↗ 1.7%
                 </div>
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15">
@@ -679,7 +679,7 @@ export default function AssetOverviewDashboard({
                 </p>
               </div>
               <div className="flex shrink-0 flex-col items-end gap-4">
-                <div className="rounded-full bg-white/20 px-3 py-1 text-xs font-semibold">
+                <div className="hidden rounded-full bg-white/20 px-3 py-1 text-xs font-semibold">
                   ↗ 0.9%
                 </div>
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15">
@@ -700,7 +700,7 @@ export default function AssetOverviewDashboard({
                 </p>
               </div>
               <div className="flex shrink-0 flex-col items-end gap-4">
-                <div className="rounded-full bg-white/15 px-3 py-1 text-xs font-semibold">
+                <div className="hidden rounded-full bg-white/15 px-3 py-1 text-xs font-semibold">
                   ↗ 3.2%
                 </div>
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10">
@@ -871,10 +871,10 @@ export default function AssetOverviewDashboard({
                     No
                   </TableHead>
                   <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                    Status
+                    Nama
                   </TableHead>
                   <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                    Nama
+                    Status
                   </TableHead>
                   <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                     Aset
@@ -942,6 +942,7 @@ export default function AssetOverviewDashboard({
                           <TableCell className="text-center text-sm font-medium text-slate-700">
                             {groupIndex + 1}
                           </TableCell>
+                          <TableCell className="max-w-[200px] font-bold text-slate-900">{group.nama}</TableCell>
                           <TableCell>
                             {groupStatusLabel === 'Overdue' ? (
                               <span className="inline-flex rounded-full border border-red-100 bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700">
@@ -953,7 +954,6 @@ export default function AssetOverviewDashboard({
                               </span>
                             )}
                           </TableCell>
-                          <TableCell className="max-w-[200px] font-bold text-slate-900">{group.nama}</TableCell>
                           <TableCell className="text-sm text-slate-700">{group.aset}</TableCell>
                           <TableCell className="text-sm text-slate-700">{group.unit}</TableCell>
                           <TableCell>
@@ -971,7 +971,7 @@ export default function AssetOverviewDashboard({
                                 size="sm"
                                 className="h-8 rounded-md bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700"
                               >
-                                <Link href={`/tenants/edit/${group.tenantId}`}>Update Data</Link>
+                                <Link href={`/tenants/edit/${group.tenantId}?tab=legals`}>Update Data</Link>
                               </Button>
                             ) : (
                               <Button size="sm" disabled className="h-8 rounded-md px-3 text-xs font-semibold">
