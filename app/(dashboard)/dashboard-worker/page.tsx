@@ -4,11 +4,9 @@ import React, { useState, useEffect, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2, Clock, CheckCircle2, Calendar, MapPin, ClipboardList } from 'lucide-react'
-import { attendanceApi, userTasksApi, Attendance, UserTask } from '@/lib/api'
+import { attendanceApi, dashboardApi, userTasksApi, Attendance, UserTask } from '@/lib/api'
 import {
   normalizeFlatUserTask,
-  parseNonRoutineUserTasksResponse,
-  parseRoutineUserTasksResponse,
 } from '@/lib/work/userTasksSplit'
 import toast from 'react-hot-toast'
 import LoadingSkeleton from '@/components/loading-skeleton'
@@ -52,19 +50,11 @@ function DashboardWorkerContent() {
   const loadUserTasks = async () => {
     try {
       setIsLoadingTasks(true)
-      const [routineRes, nonRoutineRes] = await Promise.all([
-        userTasksApi.getUserTasks({ limit: 100 }),
-        userTasksApi.getNonRoutineUserTasks({ limit: 100 }),
-      ])
-
-      let routine: UserTask[] = []
-      if (routineRes.success && routineRes.data != null) {
-        routine = parseRoutineUserTasksResponse(routineRes.data)
-      }
-      let nonRoutine: UserTask[] = []
-      if (nonRoutineRes.success && nonRoutineRes.data != null) {
-        nonRoutine = parseNonRoutineUserTasksResponse(nonRoutineRes.data).map(normalizeFlatUserTask)
-      }
+      const response = await dashboardApi.getWorkerUserTasks({ limit: 100 })
+      const payload = response.success && response.data ? response.data : null
+      const routine = Array.isArray(payload?.routine_tasks) ? payload.routine_tasks : []
+      const nonRoutineRaw = Array.isArray(payload?.non_routine_tasks) ? payload.non_routine_tasks : []
+      const nonRoutine = nonRoutineRaw.map(normalizeFlatUserTask)
 
       setRoutineUserTasks(routine)
       setNonRoutineUserTasks(nonRoutine)

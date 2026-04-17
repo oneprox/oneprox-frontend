@@ -2140,6 +2140,12 @@ export interface DashboardNonRoutineWorkResponse {
   date_to: string
 }
 
+export interface DashboardWorkerUserTasksResponse {
+  routine_tasks: UserTask[]
+  non_routine_tasks: UserTask[]
+  non_routine_total: number
+}
+
 // Dashboard API functions
 export const dashboardApi = {
   async getDashboardData(): Promise<ApiResponse<DashboardData>> {
@@ -2179,6 +2185,23 @@ export const dashboardApi = {
     if (params?.offset != null) q.set('offset', String(params.offset))
     return apiClient.get<DashboardNonRoutineWorkResponse>(
       `/api/dashboard/non-routine-work?${q.toString()}`
+    )
+  },
+  async getWorkerUserTasks(params?: {
+    limit?: number
+    offset?: number
+    date_from?: string
+    date_to?: string
+    period?: string
+  }): Promise<ApiResponse<DashboardWorkerUserTasksResponse>> {
+    const q = new URLSearchParams()
+    if (params?.limit != null) q.set('limit', String(params.limit))
+    if (params?.offset != null) q.set('offset', String(params.offset))
+    if (params?.date_from) q.set('date_from', params.date_from)
+    if (params?.date_to) q.set('date_to', params.date_to)
+    if (params?.period) q.set('period', params.period)
+    return apiClient.get<DashboardWorkerUserTasksResponse>(
+      `/api/dashboard/worker-user-tasks${q.toString() ? `?${q.toString()}` : ''}`
     )
   },
 }
