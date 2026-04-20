@@ -202,35 +202,35 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
           className="h-[380px] overflow-auto overscroll-contain rounded-lg border border-slate-100"
           onScroll={handleScroll}
         >
-          <Table>
+          <Table className="table-fixed">
             <TableHeader className="sticky top-0 z-10 bg-white">
               <TableRow className="border-b border-slate-100 hover:bg-transparent">
                 <TableHead className="w-10 px-2" />
-                <TableHead className="w-10 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <TableHead className="w-11 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                   No
                 </TableHead>
-                <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <TableHead className="min-w-0 w-[22%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Nama
                 </TableHead>
-                <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <TableHead className="w-24 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Status
                 </TableHead>
-                <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <TableHead className="min-w-0 w-[18%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Aset
                 </TableHead>
-                <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <TableHead className="min-w-0 w-[16%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Unit
                 </TableHead>
-                <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <TableHead className="w-24 whitespace-nowrap text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Jumlah tagihan
                 </TableHead>
-                <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <TableHead className="w-32 whitespace-nowrap text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Total nilai
                 </TableHead>
-                <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <TableHead className="w-24 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Aging (maks.)
                 </TableHead>
-                <TableHead className="w-[130px] whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <TableHead className="w-[132px] whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Action
                 </TableHead>
               </TableRow>
@@ -273,8 +273,10 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                         <TableCell className="text-center text-base font-medium text-slate-700">
                           {groupIndex + 1}
                         </TableCell>
-                        <TableCell className="max-w-[200px] text-base font-bold text-slate-900">{group.nama}</TableCell>
-                        <TableCell>
+                        <TableCell className="min-w-0 break-words align-top text-base font-bold whitespace-normal text-slate-900">
+                          {group.nama}
+                        </TableCell>
+                        <TableCell className="align-top">
                           {groupStatusLabel === 'Overdue' ? (
                             <span className="inline-flex rounded-full border border-red-100 bg-red-50 px-2.5 py-0.5 text-sm font-medium text-red-700">
                               Overdue
@@ -285,32 +287,36 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                             </span>
                           )}
                         </TableCell>
-                        <TableCell className="text-base text-slate-700">{group.aset}</TableCell>
-                        <TableCell className="text-base text-slate-700">{group.unit}</TableCell>
-                        <TableCell className="whitespace-nowrap text-base font-medium text-slate-700 tabular-nums">
+                        <TableCell className="min-w-0 break-words align-top text-base whitespace-normal text-slate-700">
+                          {group.aset}
+                        </TableCell>
+                        <TableCell className="min-w-0 break-words align-top text-base whitespace-normal text-slate-700">
+                          {group.unit}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right text-base font-medium tabular-nums text-slate-700">
                           {group.logs.length}
                         </TableCell>
-                        <TableCell className="whitespace-nowrap text-base font-bold tabular-nums text-slate-900">
+                        <TableCell className="whitespace-nowrap text-right text-base font-bold tabular-nums text-slate-900">
                           {formatInvoiceRupiah(totalNilai)}
                         </TableCell>
-                        <TableCell className="text-base font-bold tabular-nums">
+                        <TableCell className="whitespace-nowrap text-base font-bold tabular-nums">
                           {maxAging > 0 ? (
                             <span className="text-red-600">{maxAging} Hari</span>
                           ) : (
                             <span className="text-slate-500">—</span>
                           )}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="min-w-0 align-top">
                           {group.tenantId ? (
                             <Button
                               asChild
                               size="sm"
-                              className="h-8 rounded-md bg-blue-600 px-3 text-sm font-semibold text-white hover:bg-blue-700"
+                              className="h-8 max-w-full truncate rounded-md bg-blue-600 px-2 text-sm font-semibold text-white hover:bg-blue-700"
                             >
                               <Link href={`/tenants/edit/${group.tenantId}?tab=finance`}>Update Data</Link>
                             </Button>
                           ) : (
-                            <Button size="sm" disabled className="h-8 rounded-md px-3 text-sm font-semibold">
+                            <Button size="sm" disabled className="h-8 max-w-full truncate rounded-md px-2 text-sm font-semibold">
                               Update Data
                             </Button>
                           )}
@@ -324,28 +330,28 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                                 Detail tenant_payment_logs
                               </p>
                               <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
-                                <Table>
+                                <Table className="min-w-[720px] table-fixed">
                                   <TableHeader>
                                     <TableRow className="border-b border-slate-100 hover:bg-transparent">
                                       <TableHead className="w-10 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                                         No
                                       </TableHead>
-                                      <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                      <TableHead className="min-w-0 w-[18%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
                                         Nomor invoice
                                       </TableHead>
-                                      <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                      <TableHead className="w-28 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                                         Status tagihan
                                       </TableHead>
-                                      <TableHead className="min-w-[120px] text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                      <TableHead className="min-w-0 w-[30%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
                                         Deskripsi
                                       </TableHead>
-                                      <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                      <TableHead className="w-32 whitespace-nowrap text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
                                         Nilai invoice
                                       </TableHead>
-                                      <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                      <TableHead className="w-32 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                                         Tanggal invoice
                                       </TableHead>
-                                      <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                      <TableHead className="w-24 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                                         Aging
                                       </TableHead>
                                     </TableRow>
@@ -363,10 +369,10 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                                           <TableCell className="text-center text-base text-slate-600">
                                             {logIdx + 1}
                                           </TableCell>
-                                          <TableCell className="whitespace-nowrap text-base text-slate-800">
+                                          <TableCell className="min-w-0 break-words align-top text-base whitespace-normal text-slate-800">
                                             {row.nomorInvoice}
                                           </TableCell>
-                                          <TableCell>
+                                          <TableCell className="align-top">
                                             {displayStatus === 'Overdue' ? (
                                               <span className="inline-flex rounded-full border border-red-100 bg-red-50 px-2.5 py-0.5 text-sm font-medium text-red-700">
                                                 Overdue
@@ -377,13 +383,13 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                                               </span>
                                             )}
                                           </TableCell>
-                                          <TableCell className="max-w-[200px] text-base text-slate-600">
+                                          <TableCell className="min-w-0 break-words align-top text-base whitespace-normal text-slate-600">
                                             {deskripsiTampil}
                                           </TableCell>
-                                          <TableCell className="whitespace-nowrap text-base font-bold tabular-nums text-slate-900">
+                                          <TableCell className="whitespace-nowrap text-right text-base font-bold tabular-nums text-slate-900">
                                             {formatInvoiceRupiah(row.nilaiInvoice)}
                                           </TableCell>
-                                          <TableCell className="whitespace-nowrap text-base text-slate-700">
+                                          <TableCell className="min-w-0 break-words align-top text-base whitespace-normal text-slate-700">
                                             {row.tanggalInvoice}
                                           </TableCell>
                                           <TableCell className="text-base font-bold tabular-nums">

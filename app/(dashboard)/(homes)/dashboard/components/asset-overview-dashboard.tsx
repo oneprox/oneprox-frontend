@@ -352,14 +352,15 @@ export default function AssetOverviewDashboard({
             show: true,
             name: {
               show: true,
-              offsetY: 18,
+              // Jarak vertikal label "OCCUPIED" dari angka % (Apex: label total pakai name.offsetY)
+              offsetY: 30,
               fontSize: '13px',
               fontWeight: 700,
               color: '#94A3B8',
             },
             value: {
               show: true,
-              offsetY: -8,
+              offsetY: -10,
               fontSize: '44px',
               fontWeight: 800,
               color: '#0F172A',
@@ -863,33 +864,36 @@ export default function AssetOverviewDashboard({
             onScroll={handleLegalScroll}
             onWheel={(event) => handleContainerWheel(event, legalScrollRef)}
           >
-            <Table>
+            <Table className="table-fixed">
               <TableHeader className="sticky top-0 z-10 bg-white">
                 <TableRow className="border-b border-slate-100 hover:bg-transparent">
                   <TableHead className="w-10 px-2" />
-                  <TableHead className="w-12 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  <TableHead className="w-11 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                     No
                   </TableHead>
-                  <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  <TableHead className="min-w-0 w-[20%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
                     Nama
                   </TableHead>
-                  <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  <TableHead className="w-28 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                     Status
                   </TableHead>
-                  <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  <TableHead className="min-w-0 w-[16%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
                     Aset
                   </TableHead>
-                  <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  <TableHead className="min-w-0 w-[14%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
                     Unit
                   </TableHead>
-                  <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  <TableHead className="w-[9rem] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
                     Jatuh tempo
                   </TableHead>
-                  <TableHead className="min-w-[180px] text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  <TableHead className="min-w-0 w-[18%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
                     Kewajiban mitra
                   </TableHead>
-                  <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  <TableHead className="w-24 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                     Progress
+                  </TableHead>
+                  <TableHead className="w-[132px] whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    Aksi
                   </TableHead>
                 </TableRow>
               </TableHeader>
@@ -942,8 +946,10 @@ export default function AssetOverviewDashboard({
                           <TableCell className="text-center text-base font-medium text-slate-700">
                             {groupIndex + 1}
                           </TableCell>
-                          <TableCell className="max-w-[200px] text-base font-bold text-slate-900">{group.nama}</TableCell>
-                          <TableCell>
+                          <TableCell className="min-w-0 break-words align-top text-base font-bold whitespace-normal text-slate-900">
+                            {group.nama}
+                          </TableCell>
+                          <TableCell className="align-top">
                             {groupStatusLabel === 'Overdue' ? (
                               <span className="inline-flex rounded-full border border-red-100 bg-red-50 px-2.5 py-0.5 text-sm font-medium text-red-700">
                                 Overdue
@@ -954,27 +960,35 @@ export default function AssetOverviewDashboard({
                               </span>
                             )}
                           </TableCell>
-                          <TableCell className="text-base text-slate-700">{group.aset}</TableCell>
-                          <TableCell className="text-base text-slate-700">{group.unit}</TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2 whitespace-nowrap text-base text-slate-800">
+                          <TableCell className="min-w-0 break-words align-top text-base whitespace-normal text-slate-700">
+                            {group.aset}
+                          </TableCell>
+                          <TableCell className="min-w-0 break-words align-top text-base whitespace-normal text-slate-700">
+                            {group.unit}
+                          </TableCell>
+                          <TableCell className="min-w-0 align-top">
+                            <div className="flex min-w-0 flex-wrap items-center gap-2 text-base text-slate-800">
                               <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${dotClass}`} aria-hidden />
-                              {earliestLabel}
+                              <span className="min-w-0 break-words">{earliestLabel}</span>
                             </div>
                           </TableCell>
-                          <TableCell className="max-w-xs text-base text-slate-700">{group.logs.length} item</TableCell>
-                          <TableCell className="text-base font-bold tabular-nums text-slate-900">{progressPercent}%</TableCell>
-                          <TableCell>
+                          <TableCell className="min-w-0 break-words align-top text-base whitespace-normal text-slate-700">
+                            {group.logs.length} item
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-base font-bold tabular-nums text-slate-900">
+                            {progressPercent}%
+                          </TableCell>
+                          <TableCell className="min-w-0 align-top">
                             {group.tenantId ? (
                               <Button
                                 asChild
                                 size="sm"
-                                className="h-8 rounded-md bg-blue-600 px-3 text-sm font-semibold text-white hover:bg-blue-700"
+                                className="h-8 max-w-full truncate rounded-md bg-blue-600 px-2 text-sm font-semibold text-white hover:bg-blue-700"
                               >
                                 <Link href={`/tenants/edit/${group.tenantId}?tab=legals`}>Update Data</Link>
                               </Button>
                             ) : (
-                              <Button size="sm" disabled className="h-8 rounded-md px-3 text-sm font-semibold">
+                              <Button size="sm" disabled className="h-8 max-w-full truncate rounded-md px-2 text-sm font-semibold">
                                 Update Data
                               </Button>
                             )}
@@ -989,25 +1003,25 @@ export default function AssetOverviewDashboard({
                                   Detail legalitas
                                 </p>
                                 <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
-                                  <Table className="table-fixed">
+                                  <Table className="min-w-[720px] table-fixed">
                                     <TableHeader>
                                       <TableRow className="border-b border-slate-100 hover:bg-transparent">
                                         <TableHead className="w-10 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                                           No
                                         </TableHead>
-                                        <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                        <TableHead className="min-w-0 w-[11rem] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
                                           Jatuh tempo
                                         </TableHead>
-                                        <TableHead className="w-[34%] text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                        <TableHead className="min-w-0 w-[26%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
                                           Kewajiban mitra
                                         </TableHead>
-                                        <TableHead className="w-[34%] text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                        <TableHead className="min-w-0 w-[26%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
                                           Keterangan
                                         </TableHead>
-                                        <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                        <TableHead className="w-36 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                                           Status penyelesaian
                                         </TableHead>
-                                        <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                        <TableHead className="min-w-0 w-[14%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
                                           Dokumen
                                         </TableHead>
                                       </TableRow>
@@ -1028,19 +1042,19 @@ export default function AssetOverviewDashboard({
                                             className="border-b border-slate-100 last:border-0"
                                           >
                                             <TableCell className="text-center text-base text-slate-600">{idx + 1}</TableCell>
-                                            <TableCell>
-                                              <div className="flex items-center gap-2 whitespace-nowrap text-base text-slate-800">
+                                            <TableCell className="min-w-0 align-top">
+                                              <div className="flex min-w-0 flex-wrap items-center gap-2 text-base text-slate-800">
                                                 <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${rowDotClass}`} aria-hidden />
-                                                {row.jatuhTempo}
+                                                <span className="min-w-0 break-words">{row.jatuhTempo}</span>
                                               </div>
                                             </TableCell>
-                                            <TableCell className="max-w-[420px] whitespace-normal break-words align-top text-base leading-6 text-slate-700">
+                                            <TableCell className="min-w-0 whitespace-normal break-words align-top text-base leading-6 text-slate-700">
                                               {jenisDokumenLabel}
                                             </TableCell>
-                                            <TableCell className="max-w-[420px] whitespace-normal break-words align-top text-base leading-6 text-slate-700">
+                                            <TableCell className="min-w-0 whitespace-normal break-words align-top text-base leading-6 text-slate-700">
                                               {keteranganLabel}
                                             </TableCell>
-                                            <TableCell>
+                                            <TableCell className="align-top">
                                               {isCompleted ? (
                                                 <span className="inline-flex rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-0.5 text-sm font-medium text-emerald-700">
                                                   Selesai
@@ -1051,13 +1065,13 @@ export default function AssetOverviewDashboard({
                                                 </span>
                                               )}
                                             </TableCell>
-                                            <TableCell className="max-w-[160px]">
+                                            <TableCell className="min-w-0 max-w-[160px] align-top">
                                               {row.dokumenUrl && row.dokumen ? (
                                                 <a
                                                   href={row.dokumenUrl}
                                                   target="_blank"
                                                   rel="noopener noreferrer"
-                                                  className="text-base font-medium text-blue-600 hover:underline"
+                                                  className="block break-words text-base font-medium text-blue-600 hover:underline"
                                                 >
                                                   {row.dokumen}
                                                 </a>
