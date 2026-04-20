@@ -180,10 +180,10 @@ function radialOptions(percentage: number): ApexOptions {
           show: true,
           name: { show: false },
           value: {
-            fontSize: '18px',
+            fontSize: '24px',
             fontWeight: 700,
             color: '#0f172a',
-            offsetY: 6,
+            offsetY: 5,
             formatter: () => `${pct}%`,
           },
         },
@@ -207,10 +207,10 @@ function donutOptions(label: string, percentage: number): ApexOptions {
           size: '72%',
           labels: {
             show: true,
-            name: { show: true, offsetY: 20, color: '#64748b', fontSize: '11px', fontWeight: 600 },
+            name: { show: true, offsetY: 20, color: '#64748b', fontSize: '13px', fontWeight: 600 },
             value: {
               show: true,
-              fontSize: '22px',
+              fontSize: '26px',
               fontWeight: 700,
               color: '#0f172a',
               formatter: () => `${pct}%`,
@@ -512,25 +512,27 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
   if (selectedAssetId === 'all') {
     return (
       <Card className="border border-gray-200 shadow-sm">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-lg font-bold tracking-tight text-slate-900">
+        <CardHeader className="space-y-1 pb-4">
+          <CardTitle className="text-xl font-bold tracking-tight text-slate-900">
             Status Pekerjaan Harian
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-6 py-0">
           {allAssetsRings.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">Tidak ada data aset atau tugas hari ini.</p>
+            <p className="py-6 text-center text-base text-muted-foreground">
+              Tidak ada data aset atau tugas hari ini.
+            </p>
           ) : (
-            <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
+            <div className="grid grid-cols-2 gap-6 pb-1 md:grid-cols-4 md:gap-8">
               {allAssetsRings.map((row) => (
-                <div key={row.assetId} className="flex flex-col items-center gap-2">
+                <div key={row.assetId} className="flex flex-col items-center gap-3">
                   <Chart
                     options={radialOptions(row.completionPercentage)}
                     series={[row.completionPercentage]}
                     type="radialBar"
-                    height={160}
+                    height={176}
                   />
-                  <p className="max-w-[11rem] text-center text-xs font-medium leading-snug text-slate-800 md:max-w-none">
+                  <p className="max-w-[12rem] text-center text-base font-medium leading-snug text-slate-800 md:max-w-none">
                     {row.assetName}
                   </p>
                 </div>
@@ -547,24 +549,24 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-slate-500">
+      <p className="text-base text-slate-500">
         Aset: <span className="font-semibold text-slate-800">{selectedAsset?.name || selectedAssetId}</span>
       </p>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card className="border border-gray-200 shadow-sm">
           <CardHeader className="space-y-1 pb-2">
-            <CardTitle className="text-base font-bold text-slate-900">Progress Harian Kebersihan</CardTitle>
-            <CardDescription>Pantau pencapaian pekerjaan kebersihan</CardDescription>
+            <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">Progress Harian Kebersihan</CardTitle>
+            <CardDescription className="text-base text-slate-500">Pantau pencapaian pekerjaan kebersihan</CardDescription>
           </CardHeader>
           <CardContent className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-10 text-[10px] font-semibold uppercase text-slate-500">No</TableHead>
-                  <TableHead className="text-[10px] font-semibold uppercase text-slate-500">Pekerjaan</TableHead>
-                  <TableHead className="text-[10px] font-semibold uppercase text-slate-500">Status</TableHead>
-                  <TableHead className="text-[10px] font-semibold uppercase text-slate-500">Hasil</TableHead>
+                  <TableHead className="w-10 text-xs font-semibold uppercase text-slate-500">No</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase text-slate-500">Pekerjaan</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase text-slate-500">Status</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase text-slate-500">Hasil</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -680,7 +682,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
                                     <CornerDownRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                                     <div className="min-w-0 flex flex-wrap items-center gap-2">
                                       <span className="leading-snug">{child.task?.name || '—'}</span>
-                                      <Badge variant="secondary" className="text-[10px] font-normal">
+                                      <Badge variant="secondary" className="text-xs font-normal">
                                         Sub task
                                       </Badge>
                                     </div>
@@ -739,20 +741,20 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
 
         <Card className="border border-gray-200 shadow-sm">
           <CardHeader className="space-y-1 pb-2">
-            <CardTitle className="text-base font-bold text-slate-900">Progress Harian Keamanan</CardTitle>
-            <CardDescription>Pantau pencapaian pekerjaan keamanan</CardDescription>
+            <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">Progress Harian Keamanan</CardTitle>
+            <CardDescription className="text-base text-slate-500">Pantau pencapaian pekerjaan keamanan</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
-                    <TableHead className="w-10 text-[10px] font-semibold uppercase text-slate-500">No</TableHead>
-                    <TableHead className="min-w-[100px] text-[10px] font-semibold uppercase text-slate-500">
+                    <TableHead className="w-10 text-xs font-semibold uppercase text-slate-500">No</TableHead>
+                    <TableHead className="min-w-[100px] text-xs font-semibold uppercase text-slate-500">
                       Titik patroli
                     </TableHead>
                     {PATROL_TIME_SLOTS.map((t) => (
-                      <TableHead key={t} className="whitespace-nowrap text-center text-[10px] font-semibold uppercase text-slate-500">
+                      <TableHead key={t} className="whitespace-nowrap text-center text-xs font-semibold uppercase text-slate-500">
                         {t}
                       </TableHead>
                     ))}
@@ -783,7 +785,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
                 </TableBody>
               </Table>
             </div>
-            <div className="flex flex-wrap gap-4 border-t border-slate-100 pt-3 text-xs text-slate-600">
+            <div className="flex flex-wrap gap-4 border-t border-slate-100 pt-3 text-sm text-slate-600">
               <span className="flex items-center gap-2">
                 <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-white">
                   <Check className="h-3 w-3" strokeWidth={3} />
@@ -813,8 +815,8 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card className="border border-gray-200 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base font-bold text-slate-900">Status Pekerjaan Kebersihan</CardTitle>
+          <CardHeader className="space-y-1 pb-4">
+            <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">Status Pekerjaan Kebersihan</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-6">
@@ -825,7 +827,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
                   type="donut"
                   height={200}
                 />
-                <p className="-mt-2 text-xs font-semibold text-slate-600">Harian</p>
+                <p className="-mt-2 text-sm font-semibold text-slate-600">Harian</p>
               </div>
               <div className="flex flex-col items-center">
                 <Chart
@@ -834,7 +836,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
                   type="donut"
                   height={200}
                 />
-                <p className="-mt-2 text-xs font-semibold text-slate-600">Bulanan</p>
+                <p className="-mt-2 text-sm font-semibold text-slate-600">Bulanan</p>
               </div>
             </div>
           </CardContent>
@@ -842,7 +844,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
 
         <Card className="border border-gray-200 shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base font-bold text-slate-900">Status Pekerjaan Keamanan</CardTitle>
+            <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">Status Pekerjaan Keamanan</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-6">
@@ -853,7 +855,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
                   type="donut"
                   height={200}
                 />
-                <p className="-mt-2 text-xs font-semibold text-slate-600">Harian</p>
+                <p className="-mt-2 text-sm font-semibold text-slate-600">Harian</p>
               </div>
               <div className="flex flex-col items-center">
                 <Chart
@@ -862,7 +864,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
                   type="donut"
                   height={200}
                 />
-                <p className="-mt-2 text-xs font-semibold text-slate-600">Bulanan</p>
+                <p className="-mt-2 text-sm font-semibold text-slate-600">Bulanan</p>
               </div>
             </div>
           </CardContent>

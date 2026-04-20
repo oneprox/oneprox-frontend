@@ -190,8 +190,8 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
   return (
     <Card className="border border-gray-200 shadow-sm">
       <CardHeader className="space-y-1 pb-4">
-        <CardTitle className="text-lg font-bold tracking-tight text-slate-900">Financial</CardTitle>
-        <CardDescription className="text-sm text-slate-500">
+        <CardTitle className="text-xl font-bold tracking-tight text-slate-900">Financial</CardTitle>
+        <CardDescription className="text-base text-slate-500">
           Invoice dengan jatuh tempo yang sudah diisi dan status pembayaran belum dibayar, dikelompokkan per
           tenant.
         </CardDescription>
@@ -206,31 +206,31 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
             <TableHeader className="sticky top-0 z-10 bg-white">
               <TableRow className="border-b border-slate-100 hover:bg-transparent">
                 <TableHead className="w-10 px-2" />
-                <TableHead className="w-10 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                <TableHead className="w-10 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                   No
                 </TableHead>
-                <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Nama
                 </TableHead>
-                <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Status
                 </TableHead>
-                <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Aset
                 </TableHead>
-                <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Unit
                 </TableHead>
-                <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Jumlah tagihan
                 </TableHead>
-                <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Total nilai
                 </TableHead>
-                <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Aging (maks.)
                 </TableHead>
-                <TableHead className="w-[130px] whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                <TableHead className="w-[130px] whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Action
                 </TableHead>
               </TableRow>
@@ -238,7 +238,7 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
             <TableBody>
               {tenantGroups.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={parentColCount} className="py-10 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={parentColCount} className="py-10 text-center text-base text-muted-foreground">
                     Tidak ada tagihan belum dibayar dengan jatuh tempo yang sudah diisi.
                   </TableCell>
                 </TableRow>
@@ -270,30 +270,30 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                             />
                           </Button>
                         </TableCell>
-                        <TableCell className="text-center text-sm font-medium text-slate-700">
+                        <TableCell className="text-center text-base font-medium text-slate-700">
                           {groupIndex + 1}
                         </TableCell>
-                        <TableCell className="max-w-[200px] font-bold text-slate-900">{group.nama}</TableCell>
+                        <TableCell className="max-w-[200px] text-base font-bold text-slate-900">{group.nama}</TableCell>
                         <TableCell>
                           {groupStatusLabel === 'Overdue' ? (
-                            <span className="inline-flex rounded-full border border-red-100 bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700">
+                            <span className="inline-flex rounded-full border border-red-100 bg-red-50 px-2.5 py-0.5 text-sm font-medium text-red-700">
                               Overdue
                             </span>
                           ) : (
-                            <span className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+                            <span className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-2.5 py-0.5 text-sm font-medium text-blue-700">
                               On Process
                             </span>
                           )}
                         </TableCell>
-                        <TableCell className="text-sm text-slate-700">{group.aset}</TableCell>
-                        <TableCell className="text-sm text-slate-700">{group.unit}</TableCell>
-                        <TableCell className="whitespace-nowrap text-sm font-medium text-slate-700 tabular-nums">
+                        <TableCell className="text-base text-slate-700">{group.aset}</TableCell>
+                        <TableCell className="text-base text-slate-700">{group.unit}</TableCell>
+                        <TableCell className="whitespace-nowrap text-base font-medium text-slate-700 tabular-nums">
                           {group.logs.length}
                         </TableCell>
-                        <TableCell className="whitespace-nowrap font-bold tabular-nums text-slate-900">
+                        <TableCell className="whitespace-nowrap text-base font-bold tabular-nums text-slate-900">
                           {formatInvoiceRupiah(totalNilai)}
                         </TableCell>
-                        <TableCell className="font-bold tabular-nums">
+                        <TableCell className="text-base font-bold tabular-nums">
                           {maxAging > 0 ? (
                             <span className="text-red-600">{maxAging} Hari</span>
                           ) : (
@@ -305,12 +305,12 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                             <Button
                               asChild
                               size="sm"
-                              className="h-8 rounded-md bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700"
+                              className="h-8 rounded-md bg-blue-600 px-3 text-sm font-semibold text-white hover:bg-blue-700"
                             >
                               <Link href={`/tenants/edit/${group.tenantId}?tab=finance`}>Update Data</Link>
                             </Button>
                           ) : (
-                            <Button size="sm" disabled className="h-8 rounded-md px-3 text-xs font-semibold">
+                            <Button size="sm" disabled className="h-8 rounded-md px-3 text-sm font-semibold">
                               Update Data
                             </Button>
                           )}
@@ -320,32 +320,32 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                         <TableRow className="border-b border-slate-100 hover:bg-transparent">
                           <TableCell colSpan={parentColCount} className="p-0 align-top">
                             <div className="border-t border-slate-200 bg-slate-50/90 px-3 py-3 sm:px-4">
-                              <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
                                 Detail tenant_payment_logs
                               </p>
                               <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
                                 <Table>
                                   <TableHeader>
                                     <TableRow className="border-b border-slate-100 hover:bg-transparent">
-                                      <TableHead className="w-10 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                      <TableHead className="w-10 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                                         No
                                       </TableHead>
-                                      <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                      <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                                         Nomor invoice
                                       </TableHead>
-                                      <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                      <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                                         Status tagihan
                                       </TableHead>
-                                      <TableHead className="min-w-[120px] text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                      <TableHead className="min-w-[120px] text-xs font-semibold uppercase tracking-wider text-slate-500">
                                         Deskripsi
                                       </TableHead>
-                                      <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                      <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                                         Nilai invoice
                                       </TableHead>
-                                      <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                      <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                                         Tanggal invoice
                                       </TableHead>
-                                      <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                      <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                                         Aging
                                       </TableHead>
                                     </TableRow>
@@ -360,33 +360,33 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                                           key={`fin-${group.key}-${row.id}`}
                                           className="border-b border-slate-100 last:border-0"
                                         >
-                                          <TableCell className="text-center text-sm text-slate-600">
+                                          <TableCell className="text-center text-base text-slate-600">
                                             {logIdx + 1}
                                           </TableCell>
-                                          <TableCell className="whitespace-nowrap text-sm text-slate-800">
+                                          <TableCell className="whitespace-nowrap text-base text-slate-800">
                                             {row.nomorInvoice}
                                           </TableCell>
                                           <TableCell>
                                             {displayStatus === 'Overdue' ? (
-                                              <span className="inline-flex rounded-full border border-red-100 bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700">
+                                              <span className="inline-flex rounded-full border border-red-100 bg-red-50 px-2.5 py-0.5 text-sm font-medium text-red-700">
                                                 Overdue
                                               </span>
                                             ) : (
-                                              <span className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+                                              <span className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-2.5 py-0.5 text-sm font-medium text-blue-700">
                                                 On Process
                                               </span>
                                             )}
                                           </TableCell>
-                                          <TableCell className="max-w-[200px] text-sm text-slate-600">
+                                          <TableCell className="max-w-[200px] text-base text-slate-600">
                                             {deskripsiTampil}
                                           </TableCell>
-                                          <TableCell className="whitespace-nowrap font-bold tabular-nums text-slate-900">
+                                          <TableCell className="whitespace-nowrap text-base font-bold tabular-nums text-slate-900">
                                             {formatInvoiceRupiah(row.nilaiInvoice)}
                                           </TableCell>
-                                          <TableCell className="whitespace-nowrap text-sm text-slate-700">
+                                          <TableCell className="whitespace-nowrap text-base text-slate-700">
                                             {row.tanggalInvoice}
                                           </TableCell>
-                                          <TableCell className="font-bold tabular-nums">
+                                          <TableCell className="text-base font-bold tabular-nums">
                                             {row.aging > 0 ? (
                                               <span className="text-red-600">{row.aging} Hari</span>
                                             ) : (
@@ -410,7 +410,7 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
             </TableBody>
           </Table>
           {tenantGroups.length > 0 && visibleCount < tenantGroups.length ? (
-            <p className="border-t border-slate-100 bg-slate-50/80 px-3 py-2 text-center text-xs text-slate-500">
+            <p className="border-t border-slate-100 bg-slate-50/80 px-3 py-2 text-center text-sm text-slate-500">
               Gulir ke bawah untuk memuat baris berikutnya
             </p>
           ) : null}

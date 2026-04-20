@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { assetsApi, dashboardApi, Asset } from '@/lib/api'
-import { ChevronRight, Leaf, Home, FileText, DollarSign } from "lucide-react"
+import { ChevronRight, Mountain, DraftingCompass, MapPinned, Banknote } from "lucide-react"
 import LoadingSkeleton from "@/components/loading-skeleton"
 import { useSidebar } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
@@ -353,14 +353,14 @@ export default function AssetOverviewDashboard({
             name: {
               show: true,
               offsetY: 18,
-              fontSize: '12px',
+              fontSize: '13px',
               fontWeight: 700,
               color: '#94A3B8',
             },
             value: {
               show: true,
               offsetY: -8,
-              fontSize: '40px',
+              fontSize: '44px',
               fontWeight: 800,
               color: '#0F172A',
               formatter: (val: string) => `${Number(val).toFixed(0)}%`,
@@ -368,7 +368,7 @@ export default function AssetOverviewDashboard({
             total: {
               show: true,
               label: 'OCCUPIED',
-              fontSize: '12px',
+              fontSize: '13px',
               fontWeight: 800,
               color: '#94A3B8',
               formatter: function () {
@@ -433,7 +433,7 @@ export default function AssetOverviewDashboard({
       axisBorder: { show: false },
       axisTicks: { show: false },
       labels: {
-        style: { colors: '#64748B', fontSize: '12px', fontWeight: 500 },
+        style: { colors: '#64748B', fontSize: '13px', fontWeight: 500 },
       },
     },
     yaxis: {
@@ -447,7 +447,7 @@ export default function AssetOverviewDashboard({
           }
           return `${Math.round(val / 1_000_000)}Jt`
         },
-        style: { colors: '#64748B', fontSize: '11px' },
+        style: { colors: '#64748B', fontSize: '12px' },
       },
     },
     legend: { show: false },
@@ -611,9 +611,9 @@ export default function AssetOverviewDashboard({
         )}
         style={{ top: appHeaderHeightPx }}
       >
-        <h1 className="pl-2 text-base font-semibold text-gray-900 sm:pl-4 sm:text-lg md:pl-6 md:text-2xl">{selectedAssetName}</h1>
+        <h1 className="pl-2 text-xl font-semibold text-gray-900 sm:pl-4 sm:text-3xl md:pl-6 md:text-4xl">{selectedAssetName}</h1>
         <Select value={selectedAssetId} onValueChange={handleAssetChange}>
-          <SelectTrigger className="w-[250px]">
+          <SelectTrigger className="w-[250px] text-base">
             <SelectValue placeholder="Pilih Asset" />
           </SelectTrigger>
           <SelectContent>
@@ -627,89 +627,85 @@ export default function AssetOverviewDashboard({
         </Select>
       </div>
       {/* Ruang untuk bar fixed (tinggi ≈ judul + py-3 + border) */}
-      <div className="h-16 shrink-0" aria-hidden />
+      <div className="h-20 shrink-0 md:h-24" aria-hidden />
 
       {/* Overview Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card className="border-0 text-white overflow-hidden" style={{ background: '#F97316' }}>
-          <CardContent className="p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-1">
-                <p className="text-xs font-semibold tracking-wide text-white/80 uppercase">Total Lahan</p>
-                <p className="text-3xl font-bold leading-none">
-                  {formatCompactNumber(overviewData.totalLandArea)} <span className="text-base font-semibold text-white/80">m²</span>
-                </p>
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 md:gap-6 lg:grid-cols-4">
+        <Card
+          className="gap-0 border-0 py-0 text-white shadow-md overflow-hidden rounded-2xl"
+          style={{ background: '#F97316' }}
+        >
+          <CardContent className="px-8 py-4">
+            <div className="flex flex-col gap-6">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/25">
+                <Mountain className="h-6 w-6 text-white" strokeWidth={2} />
               </div>
-              <div className="flex shrink-0 flex-col items-end gap-4">
-                <div className="hidden rounded-full bg-white/20 px-3 py-1 text-xs font-semibold">
-                  ↗ 2.4%
-                </div>
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15">
-                  <Leaf className="h-6 w-6 text-white" />
-                </div>
+              <div className="space-y-3">
+                <p className="text-lg font-bold tracking-wide text-white uppercase">Total Lahan</p>
+                <p className="text-5xl font-bold leading-none tracking-tight sm:text-2xl">
+                  {formatCompactNumber(overviewData.totalLandArea)}{' '}
+                  <span className="text-2xl font-semibold text-white/55 sm:text-2xl">m²</span>
+                </p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-0 text-white overflow-hidden" style={{ background: '#8B5CF6' }}>
-          <CardContent className="p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-1">
-                <p className="text-xs font-semibold tracking-wide text-white/80 uppercase">Luas Bangunan</p>
-                <p className="text-3xl font-bold leading-none">
-                  {formatCompactNumber(overviewData.totalBuildingArea)} <span className="text-base font-semibold text-white/80">m²</span>
-                </p>
+        <Card
+          className="gap-0 border-0 py-0 text-white shadow-md overflow-hidden rounded-2xl"
+          style={{ background: '#8B5CF6' }}
+        >
+          <CardContent className="px-8 py-4">
+            <div className="flex flex-col gap-6">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/25">
+                <DraftingCompass className="h-6 w-6 text-white" strokeWidth={2} />
               </div>
-              <div className="flex shrink-0 flex-col items-end gap-4">
-                <div className="hidden rounded-full bg-white/20 px-3 py-1 text-xs font-semibold">
-                  ↗ 1.7%
-                </div>
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15">
-                  <Home className="h-6 w-6 text-white" />
-                </div>
+              <div className="space-y-3">
+                <p className="text-lg font-bold tracking-wide text-white uppercase">Luas Bangunan</p>
+                <p className="text-5xl font-bold leading-none tracking-tight sm:text-2xl">
+                  {formatCompactNumber(overviewData.totalBuildingArea)}{' '}
+                  <span className="text-2xl font-semibold text-white/55 sm:text-2xl">m²</span>
+                </p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-0 text-white overflow-hidden" style={{ background: '#0EA5A5' }}>
-          <CardContent className="p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-1">
-                <p className="text-xs font-semibold tracking-wide text-white/80 uppercase">Okupansi</p>
-                <p className="text-3xl font-bold leading-none">
-                  {overviewData.occupancy.toFixed(1)}<span className="text-base font-semibold text-white/80">%</span>
-                </p>
+        <Card
+          className="gap-0 border-0 py-0 text-white shadow-md overflow-hidden rounded-2xl"
+          style={{ background: '#0F766E' }}
+        >
+          <CardContent className="px-8 py-4">
+            <div className="flex flex-col gap-6">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/25">
+                <MapPinned className="h-6 w-6 text-white" strokeWidth={2} />
               </div>
-              <div className="flex shrink-0 flex-col items-end gap-4">
-                <div className="hidden rounded-full bg-white/20 px-3 py-1 text-xs font-semibold">
-                  ↗ 0.9%
-                </div>
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15">
-                  <FileText className="h-6 w-6 text-white" />
-                </div>
+              <div className="space-y-3">
+                <p className="text-lg font-bold tracking-wide text-white uppercase">Okupansi</p>
+                <p className="text-5xl font-bold leading-none tracking-tight sm:text-2xl">
+                  {overviewData.occupancy.toFixed(1)}
+                  <span className="text-2xl font-semibold text-white/55 sm:text-2xl">%</span>
+                </p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-0 text-white overflow-hidden" style={{ background: '#111827' }}>
-          <CardContent className="p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-1">
-                <p className="text-xs font-semibold tracking-wide text-white/70 uppercase">Avg. Rate</p>
-                <p className="text-3xl font-bold leading-none">
-                  {formatCompactRupiah(overviewData.averageRate)} <span className="text-base font-semibold text-white/70">/m²</span>
-                </p>
+        <Card
+          className="gap-0 border-0 py-0 text-white shadow-md overflow-hidden rounded-2xl"
+          style={{ background: '#1F2937' }}
+        >
+          <CardContent className="px-8 py-4">
+            <div className="flex flex-col gap-6">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/20">
+                <Banknote className="h-6 w-6 text-white" strokeWidth={2} />
               </div>
-              <div className="flex shrink-0 flex-col items-end gap-4">
-                <div className="hidden rounded-full bg-white/15 px-3 py-1 text-xs font-semibold">
-                  ↗ 3.2%
-                </div>
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10">
-                  <DollarSign className="h-6 w-6 text-white" />
-                </div>
+              <div className="space-y-3">
+                <p className="text-lg font-bold tracking-wide text-white/55 uppercase">Avg. Rate</p>
+                <p className="text-5xl font-bold leading-none tracking-tight sm:text-2xl">
+                  {formatCompactRupiah(overviewData.averageRate)}{' '}
+                  <span className="text-2xl font-semibold text-white/45 sm:text-2xl">/ m²</span>
+                </p>
               </div>
             </div>
           </CardContent>
@@ -721,14 +717,14 @@ export default function AssetOverviewDashboard({
         {/* Asset Utilization Chart */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center justify-between">
+            <CardTitle className="flex items-center justify-between text-2xl font-bold tracking-tight">
               <span>Pemanfaatan Aset</span>
               <button type="button" className="text-muted-foreground hover:text-foreground">
                 <span className="sr-only">Menu</span>
                 <span aria-hidden>⋮</span>
               </button>
             </CardTitle>
-            <p className="text-sm text-muted-foreground -mt-1">Asset occupancy by sector category</p>
+            <p className="text-lg text-muted-foreground -mt-1">Asset occupancy by sector category</p>
           </CardHeader>
           <CardContent>
             {utilizationData.length > 0 ? (
@@ -750,10 +746,10 @@ export default function AssetOverviewDashboard({
                         aria-hidden
                       />
                       <div className="leading-tight">
-                        <div className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
+                        <div className="text-lg font-semibold tracking-wide text-muted-foreground uppercase">
                           {item.category}
                         </div>
-                        <div className="text-lg font-bold text-foreground">
+                        <div className="text-2xl font-bold text-foreground">
                           {Math.round(item.pct)}%
                         </div>
                       </div>
@@ -762,7 +758,7 @@ export default function AssetOverviewDashboard({
                 </div>
               </div>
             ) : (
-              <div className="text-center py-8 text-muted-foreground">
+              <div className="text-center py-8 text-base text-muted-foreground">
                 Tidak ada data pemanfaatan aset
               </div>
             )}
@@ -774,10 +770,10 @@ export default function AssetOverviewDashboard({
           <CardHeader className="space-y-0 pb-2">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="space-y-1">
-                <CardTitle className="text-lg font-bold tracking-tight text-slate-900">
+                <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">
                   Kinerja Keuangan {financialYear}
                 </CardTitle>
-                <CardDescription className="text-sm font-normal text-slate-500">
+                <CardDescription className="text-lg font-normal text-slate-500">
                   Financial tracking against annual projections (Rp)
                 </CardDescription>
               </div>
@@ -790,11 +786,11 @@ export default function AssetOverviewDashboard({
                         style={{ backgroundColor: FINANCIAL_REALISASI }}
                         aria-hidden
                       />
-                      <span className="text-[10px] font-semibold tracking-wider text-slate-500">
+                      <span className="text-xs font-semibold tracking-wider text-slate-500">
                         REALISASI
                       </span>
                     </div>
-                    <p className="text-xl font-bold tabular-nums text-slate-900 sm:text-2xl">
+                    <p className="text-2xl font-bold tabular-nums text-slate-900 sm:text-3xl">
                       {formatFinancialKpi(totalFinancialRealisasi)}
                     </p>
                   </div>
@@ -806,11 +802,11 @@ export default function AssetOverviewDashboard({
                         style={{ backgroundColor: FINANCIAL_TARGET }}
                         aria-hidden
                       />
-                      <span className="text-[10px] font-semibold tracking-wider text-slate-500">
+                      <span className="text-xs font-semibold tracking-wider text-slate-500">
                         TARGET
                       </span>
                     </div>
-                    <p className="text-xl font-bold tabular-nums text-slate-900 sm:text-2xl">
+                    <p className="text-2xl font-bold tabular-nums text-slate-900 sm:text-3xl">
                       {formatFinancialKpi(totalFinancialTarget)}
                     </p>
                   </div>
@@ -836,13 +832,13 @@ export default function AssetOverviewDashboard({
                   height={financialChartPixelHeight}
                 />
                 {financialVisibleCount < financialData.length ? (
-                  <p className="py-2 text-center text-xs text-slate-500">
+                  <p className="py-2 text-center text-base text-slate-500">
                     Gulir ke bawah untuk memuat periode berikutnya
                   </p>
                 ) : null}
               </div>
             ) : (
-              <div className="rounded-lg border border-dashed border-slate-200 py-12 text-center text-sm text-muted-foreground">
+              <div className="rounded-lg border border-dashed border-slate-200 py-12 text-center text-base text-muted-foreground">
                 Tidak ada data kinerja keuangan
               </div>
             )}
@@ -853,10 +849,10 @@ export default function AssetOverviewDashboard({
       {/* Status Legalitas Aset */}
       <Card className="border border-gray-200 shadow-sm">
         <CardHeader className="space-y-1 pb-4">
-          <CardTitle className="text-lg font-bold tracking-tight text-slate-900">
+          <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">
             Status Legalitas Aset
           </CardTitle>
-          <CardDescription className="text-sm text-slate-500">
+          <CardDescription className="text-lg text-slate-500">
             Detail legal dan pelacakan kepatuhan untuk mitra aktif.
           </CardDescription>
         </CardHeader>
@@ -871,28 +867,28 @@ export default function AssetOverviewDashboard({
               <TableHeader className="sticky top-0 z-10 bg-white">
                 <TableRow className="border-b border-slate-100 hover:bg-transparent">
                   <TableHead className="w-10 px-2" />
-                  <TableHead className="w-12 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                  <TableHead className="w-12 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                     No
                   </TableHead>
-                  <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                  <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                     Nama
                   </TableHead>
-                  <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                  <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                     Status
                   </TableHead>
-                  <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                  <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                     Aset
                   </TableHead>
-                  <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                  <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                     Unit
                   </TableHead>
-                  <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                  <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                     Jatuh tempo
                   </TableHead>
-                  <TableHead className="min-w-[180px] text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                  <TableHead className="min-w-[180px] text-xs font-semibold uppercase tracking-wider text-slate-500">
                     Kewajiban mitra
                   </TableHead>
-                  <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                  <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                     Progress
                   </TableHead>
                 </TableRow>
@@ -900,7 +896,7 @@ export default function AssetOverviewDashboard({
               <TableBody>
                 {legalTenantGroups.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="py-10 text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={11} className="py-10 text-center text-base text-muted-foreground">
                       Tidak ada item dengan jatuh tempo yang masih berjalan.
                     </TableCell>
                   </TableRow>
@@ -943,42 +939,42 @@ export default function AssetOverviewDashboard({
                               />
                             </Button>
                           </TableCell>
-                          <TableCell className="text-center text-sm font-medium text-slate-700">
+                          <TableCell className="text-center text-base font-medium text-slate-700">
                             {groupIndex + 1}
                           </TableCell>
-                          <TableCell className="max-w-[200px] font-bold text-slate-900">{group.nama}</TableCell>
+                          <TableCell className="max-w-[200px] text-base font-bold text-slate-900">{group.nama}</TableCell>
                           <TableCell>
                             {groupStatusLabel === 'Overdue' ? (
-                              <span className="inline-flex rounded-full border border-red-100 bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700">
+                              <span className="inline-flex rounded-full border border-red-100 bg-red-50 px-2.5 py-0.5 text-sm font-medium text-red-700">
                                 Overdue
                               </span>
                             ) : (
-                              <span className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+                              <span className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-2.5 py-0.5 text-sm font-medium text-blue-700">
                                 On Process
                               </span>
                             )}
                           </TableCell>
-                          <TableCell className="text-sm text-slate-700">{group.aset}</TableCell>
-                          <TableCell className="text-sm text-slate-700">{group.unit}</TableCell>
+                          <TableCell className="text-base text-slate-700">{group.aset}</TableCell>
+                          <TableCell className="text-base text-slate-700">{group.unit}</TableCell>
                           <TableCell>
-                            <div className="flex items-center gap-2 whitespace-nowrap text-sm text-slate-800">
+                            <div className="flex items-center gap-2 whitespace-nowrap text-base text-slate-800">
                               <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${dotClass}`} aria-hidden />
                               {earliestLabel}
                             </div>
                           </TableCell>
-                          <TableCell className="max-w-xs text-sm text-slate-700">{group.logs.length} item</TableCell>
-                          <TableCell className="font-bold tabular-nums text-slate-900">{progressPercent}%</TableCell>
+                          <TableCell className="max-w-xs text-base text-slate-700">{group.logs.length} item</TableCell>
+                          <TableCell className="text-base font-bold tabular-nums text-slate-900">{progressPercent}%</TableCell>
                           <TableCell>
                             {group.tenantId ? (
                               <Button
                                 asChild
                                 size="sm"
-                                className="h-8 rounded-md bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700"
+                                className="h-8 rounded-md bg-blue-600 px-3 text-sm font-semibold text-white hover:bg-blue-700"
                               >
                                 <Link href={`/tenants/edit/${group.tenantId}?tab=legals`}>Update Data</Link>
                               </Button>
                             ) : (
-                              <Button size="sm" disabled className="h-8 rounded-md px-3 text-xs font-semibold">
+                              <Button size="sm" disabled className="h-8 rounded-md px-3 text-sm font-semibold">
                                 Update Data
                               </Button>
                             )}
@@ -989,29 +985,29 @@ export default function AssetOverviewDashboard({
                           <TableRow className="border-b border-slate-100 hover:bg-transparent">
                             <TableCell colSpan={11} className="p-0 align-top">
                               <div className="border-t border-slate-200 bg-slate-50/90 px-3 py-3 sm:px-4">
-                                <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
                                   Detail legalitas
                                 </p>
                                 <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
                                   <Table className="table-fixed">
                                     <TableHeader>
                                       <TableRow className="border-b border-slate-100 hover:bg-transparent">
-                                        <TableHead className="w-10 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                        <TableHead className="w-10 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                                           No
                                         </TableHead>
-                                        <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                        <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                                           Jatuh tempo
                                         </TableHead>
-                                        <TableHead className="w-[34%] text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                        <TableHead className="w-[34%] text-xs font-semibold uppercase tracking-wider text-slate-500">
                                           Kewajiban mitra
                                         </TableHead>
-                                        <TableHead className="w-[34%] text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                        <TableHead className="w-[34%] text-xs font-semibold uppercase tracking-wider text-slate-500">
                                           Keterangan
                                         </TableHead>
-                                        <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                        <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                                           Status penyelesaian
                                         </TableHead>
-                                        <TableHead className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                        <TableHead className="whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                                           Dokumen
                                         </TableHead>
                                       </TableRow>
@@ -1031,26 +1027,26 @@ export default function AssetOverviewDashboard({
                                             key={`legal-${group.key}-${row.id}`}
                                             className="border-b border-slate-100 last:border-0"
                                           >
-                                            <TableCell className="text-center text-sm text-slate-600">{idx + 1}</TableCell>
+                                            <TableCell className="text-center text-base text-slate-600">{idx + 1}</TableCell>
                                             <TableCell>
-                                              <div className="flex items-center gap-2 whitespace-nowrap text-sm text-slate-800">
+                                              <div className="flex items-center gap-2 whitespace-nowrap text-base text-slate-800">
                                                 <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${rowDotClass}`} aria-hidden />
                                                 {row.jatuhTempo}
                                               </div>
                                             </TableCell>
-                                            <TableCell className="max-w-[420px] whitespace-normal break-words align-top text-sm leading-5 text-slate-700">
+                                            <TableCell className="max-w-[420px] whitespace-normal break-words align-top text-base leading-6 text-slate-700">
                                               {jenisDokumenLabel}
                                             </TableCell>
-                                            <TableCell className="max-w-[420px] whitespace-normal break-words align-top text-sm leading-5 text-slate-700">
+                                            <TableCell className="max-w-[420px] whitespace-normal break-words align-top text-base leading-6 text-slate-700">
                                               {keteranganLabel}
                                             </TableCell>
                                             <TableCell>
                                               {isCompleted ? (
-                                                <span className="inline-flex rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
+                                                <span className="inline-flex rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-0.5 text-sm font-medium text-emerald-700">
                                                   Selesai
                                                 </span>
                                               ) : (
-                                                <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">
+                                                <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-sm font-medium text-slate-700">
                                                   Belum selesai
                                                 </span>
                                               )}
@@ -1061,7 +1057,7 @@ export default function AssetOverviewDashboard({
                                                   href={row.dokumenUrl}
                                                   target="_blank"
                                                   rel="noopener noreferrer"
-                                                  className="text-sm font-medium text-blue-600 hover:underline"
+                                                  className="text-base font-medium text-blue-600 hover:underline"
                                                 >
                                                   {row.dokumen}
                                                 </a>
@@ -1084,12 +1080,12 @@ export default function AssetOverviewDashboard({
               </TableBody>
             </Table>
             {legalTenantGroups.length > 0 && legalVisibleCount < legalTenantGroups.length ? (
-              <p className="border-t border-slate-100 bg-slate-50/80 px-3 py-2 text-center text-xs text-slate-500">
+              <p className="border-t border-slate-100 bg-slate-50/80 px-3 py-2 text-center text-sm text-slate-500">
                 Gulir ke bawah untuk memuat baris berikutnya
               </p>
             ) : null}
           </div>
-          <div className="flex flex-col gap-2 text-xs text-slate-600 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-6 sm:gap-y-2">
+          <div className="flex flex-col gap-2 text-sm text-slate-600 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-6 sm:gap-y-2">
             <span className="flex items-center gap-2">
               <span className="h-2 w-2 shrink-0 rounded-full bg-blue-500" aria-hidden />
               <span className="font-medium uppercase tracking-wide text-slate-500">3 bulan sebelum jatuh tempo</span>
