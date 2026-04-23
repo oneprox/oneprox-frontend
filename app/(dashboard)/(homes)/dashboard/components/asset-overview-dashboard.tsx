@@ -75,6 +75,7 @@ function dueDateDotClass(dueDateIso: string | undefined): string {
 }
 
 function legalRowDisplayStatus(row: LegalTableData): 'Overdue' | 'On Process' {
+  if (isOpenObligationStatus(row.status)) return 'On Process'
   if (row.status === 'Overdue') return 'Overdue'
   if (row.dueDateIso) {
     const due = new Date(row.dueDateIso)
@@ -151,11 +152,9 @@ export default function AssetOverviewDashboard({
   const [legalData, setLegalData] = useState<LegalTableData[]>([])
   const [expandedLegalKeys, setExpandedLegalKeys] = useState<Set<string>>(new Set())
   const [financialVisibleCount, setFinancialVisibleCount] = useState(DASHBOARD_LIST_PAGE_SIZE)
-  const [legalVisibleCount, setLegalVisibleCount] = useState(DASHBOARD_LIST_PAGE_SIZE)
   const financialScrollRef = useRef<HTMLDivElement>(null)
   const legalScrollRef = useRef<HTMLDivElement>(null)
   const financialScrollTsRef = useRef(0)
-  const legalScrollTsRef = useRef(0)
   const { state: sidebarState, isMobile: sidebarIsMobile } = useSidebar()
   /** Hanya dashboard: offset vertikal bar aset = tinggi header aktual (hilangkan gap), tanpa mengubah header global */
   const [appHeaderHeightPx, setAppHeaderHeightPx] = useState(64)
@@ -191,10 +190,6 @@ export default function AssetOverviewDashboard({
   useEffect(() => {
     setFinancialVisibleCount(DASHBOARD_LIST_PAGE_SIZE)
   }, [financialData])
-
-  useEffect(() => {
-    setLegalVisibleCount(DASHBOARD_LIST_PAGE_SIZE)
-  }, [legalData])
 
   const loadAssets = async () => {
     try {
@@ -532,10 +527,7 @@ export default function AssetOverviewDashboard({
     return groups
   }, [legalitasRows])
 
-  const visibleLegalGroups = useMemo(
-    () => legalTenantGroups.slice(0, legalVisibleCount),
-    [legalTenantGroups, legalVisibleCount]
-  )
+  const visibleLegalGroups = legalTenantGroups
 
   const handleFinancialScroll = useCallback(() => {
     const now = Date.now()
@@ -548,18 +540,6 @@ export default function AssetOverviewDashboard({
       c >= financialData.length ? c : Math.min(c + DASHBOARD_LIST_PAGE_SIZE, financialData.length)
     )
   }, [financialData.length])
-
-  const handleLegalScroll = useCallback(() => {
-    const now = Date.now()
-    if (now - legalScrollTsRef.current < 200) return
-    const el = legalScrollRef.current
-    if (!el) return
-    if (el.scrollHeight - el.scrollTop - el.clientHeight >= 80) return
-    legalScrollTsRef.current = now
-    setLegalVisibleCount((c) =>
-      c >= legalTenantGroups.length ? c : Math.min(c + DASHBOARD_LIST_PAGE_SIZE, legalTenantGroups.length)
-    )
-  }, [legalTenantGroups.length])
 
   const handleContainerWheel = useCallback(
     (event: WheelEvent<HTMLDivElement>, ref: RefObject<HTMLDivElement | null>) => {
@@ -855,7 +835,6 @@ export default function AssetOverviewDashboard({
           <div
             ref={legalScrollRef}
             className="h-[420px] overflow-auto overscroll-contain rounded-lg border border-slate-100"
-            onScroll={handleLegalScroll}
             onWheel={(event) => handleContainerWheel(event, legalScrollRef)}
           >
             <Table className="w-full min-w-[980px] table-fixed">
@@ -1087,11 +1066,6 @@ export default function AssetOverviewDashboard({
                 )}
               </TableBody>
             </Table>
-            {legalTenantGroups.length > 0 && legalVisibleCount < legalTenantGroups.length ? (
-              <p className="border-t border-slate-100 bg-slate-50/80 px-3 py-2 text-center text-sm text-slate-500">
-                Gulir ke bawah untuk memuat baris berikutnya
-              </p>
-            ) : null}
           </div>
           <div className="flex flex-col gap-2 text-sm text-slate-600 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-6 sm:gap-y-2">
             <span className="flex items-center gap-2">

@@ -230,7 +230,9 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
               ) : (
                 visibleTenantGroups.map((group, groupIndex) => {
                   const isOpen = expandedKeys.has(group.key)
-                  const totalNilai = group.logs.reduce((s, r) => s + (Number(r.nilaiInvoice) || 0), 0)
+                  const totalNilai = group.logs.some((r) => r.sisaNilai !== undefined)
+                    ? (group.logs.find((r) => r.sisaNilai !== undefined)?.sisaNilai ?? 0)
+                    : group.logs.reduce((s, r) => s + (Number(r.nilaiInvoice) || 0), 0)
                   const maxAging = Math.max(0, ...group.logs.map((r) => r.aging || 0))
                   const groupOverdue = group.logs.some((r) => financialInvoiceDisplayStatus(r) === 'Overdue')
                   const groupStatusLabel = groupOverdue ? 'Overdue' : 'On Process'

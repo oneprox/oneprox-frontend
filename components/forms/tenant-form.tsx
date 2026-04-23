@@ -584,18 +584,36 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
 
     setDeletingPayment(true)
     try {
+      const deletingPaymentId = paymentToDelete.id
       const response = await tenantsApi.deleteTenantPayment(tenant.id, paymentToDelete.id)
       
       if (response.success) {
-        toast.success('Payment log berhasil dihapus')
-        loadPaymentLogs()
-      loadLegalDocuments()
+        toast.success('Penagihan berhasil dihapus')
+        // Optimistic UI update so row disappears immediately
+        setPaymentLogs((prev) => prev.filter((p) => p.id !== deletingPaymentId))
+        await loadPaymentLogs()
+        await loadLegalDocuments()
       } else {
-        toast.error(response.error || 'Gagal menghapus payment log')
+        // Some environments may return a transient network error while the delete already succeeded.
+        if ((response.error || '').toLowerCase().includes('network error')) {
+          const verifyResponse = await tenantsApi.getTenantPaymentLogs(tenant.id)
+          const verifyData = verifyResponse.data as any
+          const verifyLogs = Array.isArray(verifyData?.data)
+            ? verifyData.data
+            : (Array.isArray(verifyData) ? verifyData : [])
+          setPaymentLogs(verifyLogs)
+          const stillExists = verifyLogs.some((p: TenantPaymentLog) => p.id === deletingPaymentId)
+          if (!stillExists) {
+            toast.success('Penagihan berhasil dihapus')
+            await loadLegalDocuments()
+            return
+          }
+        }
+        toast.error(response.error || 'Gagal menghapus penagihan')
       }
     } catch (error) {
       console.error('Delete payment error:', error)
-      toast.error('Terjadi kesalahan saat menghapus payment log')
+      toast.error('Terjadi kesalahan saat menghapus penagihan')
     } finally {
       setDeletingPayment(false)
       setDeletePaymentDialogOpen(false)
@@ -615,29 +633,29 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
         // Update payment
         const response = await tenantsApi.updateTenantPayment(tenant.id, editingPayment.id, data as UpdateTenantPaymentData)
         if (response.success) {
-          toast.success('Payment log berhasil diperbarui')
+          toast.success('Penagihan berhasil diperbarui')
           setPaymentDialogOpen(false)
           setEditingPayment(null)
           loadPaymentLogs()
       loadLegalDocuments()
         } else {
-          toast.error(response.error || 'Gagal memperbarui payment log')
+          toast.error(response.error || 'Gagal memperbarui penagihan')
         }
       } else {
         // Create payment
         const response = await tenantsApi.createTenantPayment(tenant.id, data as CreateTenantPaymentData)
         if (response.success) {
-          toast.success('Payment log berhasil dibuat')
+          toast.success('Penagihan berhasil dibuat')
           setPaymentDialogOpen(false)
           loadPaymentLogs()
       loadLegalDocuments()
         } else {
-          toast.error(response.error || 'Gagal membuat payment log')
+          toast.error(response.error || 'Gagal membuat penagihan')
         }
       }
     } catch (error) {
       console.error('Payment submit error:', error)
-      toast.error('Terjadi kesalahan saat menyimpan payment log')
+      toast.error('Terjadi kesalahan saat menyimpan penagihan')
     } finally {
       setPaymentFormLoading(false)
     }
@@ -2378,9 +2396,9 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
     <AlertDialog open={deletePaymentDialogOpen} onOpenChange={setDeletePaymentDialogOpen}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Hapus Payment Log</AlertDialogTitle>
+          <AlertDialogTitle>Hapus Penagihan</AlertDialogTitle>
           <AlertDialogDescription>
-            Apakah Anda yakin ingin menghapus payment log ini? Tindakan ini tidak dapat dibatalkan.
+            Apakah Anda yakin ingin menghapus penagihan ini? Tindakan ini tidak dapat dibatalkan.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -2541,7 +2559,25 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
   const handleInputChange = (field: string, value: string) => {
     if (field === 'amount' || field === 'paid_amount' || field === 'billing_amount' || field === 'outstanding' || field === 'overdue') {
       const parsedValue = parsePrice(value)
-      setFormData(prev => ({ ...prev, [field]: formatPrice(parsedValue) }))
+      if (field === 'paid_amount') {
+        const isExplicitZero = value.trim() !== '' && parsedValue === 0
+        setFormData(prev => ({
+          ...prev,
+          [field]: isExplicitZero ? '0' : formatPrice(parsedValue),
+          ...(isExplicitZero
+            ? {
+                payment_date: '',
+                payment_method: '',
+                outstanding: '',
+                overdue: '',
+                rate: '',
+                last_charge_date: '',
+              }
+            : {}),
+        }))
+      } else {
+        setFormData(prev => ({ ...prev, [field]: formatPrice(parsedValue) }))
+      }
     } else {
       setFormData(prev => ({ ...prev, [field]: value }))
     }
@@ -2592,13 +2628,13 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
     if (payment) {
       // Update payment
       const updateData: UpdateTenantPaymentData = {
-        payment_method: formData.payment_method,
+        payment_method: formData.payment_method || undefined,
         notes: formData.notes.trim() || undefined,
       }
       if (formData.payment_date) {
         updateData.payment_date = new Date(formData.payment_date).toISOString()
       }
-      if (formData.paid_amount) {
+      if (formData.paid_amount !== '') {
         updateData.paid_amount = parsePrice(formData.paid_amount)
       }
       if (formData.billing_type) {
@@ -2761,7 +2797,7 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
             <Input
               id="paid_amount"
               type="text"
-              value={formatPrice(parsePrice(formData.paid_amount))}
+              value={formData.paid_amount === '0' ? '0' : formatPrice(parsePrice(formData.paid_amount))}
               onChange={(e) => handleInputChange('paid_amount', e.target.value)}
               placeholder="0"
               className="pl-10"

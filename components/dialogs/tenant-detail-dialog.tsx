@@ -386,9 +386,10 @@ export default function TenantDetailDialog({
   const handlePaidAmountChange = (value: string) => {
     const parsedValue = parsePrice(value)
     setPaidAmountDisplay(formatPrice(parsedValue))
+    const isEmptyInput = value.trim() === ''
     setUpdatePaymentData(prev => ({ 
       ...prev, 
-      paid_amount: parsedValue > 0 ? parsedValue : undefined 
+      paid_amount: isEmptyInput ? undefined : parsedValue
     }))
   }
 
@@ -397,7 +398,11 @@ export default function TenantDetailDialog({
 
     setUpdatingPayment(true)
     try {
-      const response = await tenantsApi.updateTenantPayment(tenant.id, selectedPayment.id, updatePaymentData)
+      const sanitizedUpdatePaymentData: UpdateTenantPaymentData = {
+        ...updatePaymentData,
+        payment_method: updatePaymentData.payment_method || undefined,
+      }
+      const response = await tenantsApi.updateTenantPayment(tenant.id, selectedPayment.id, sanitizedUpdatePaymentData)
       
       if (response.success) {
         toast.success('Status pembayaran berhasil diperbarui')

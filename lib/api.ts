@@ -2107,6 +2107,7 @@ export interface FinancialTableData {
   deskripsi: string
   nomorInvoice: string
   nilaiInvoice: number
+  sisaNilai?: number
   tanggalInvoice: string
   status: string
   aging: number
