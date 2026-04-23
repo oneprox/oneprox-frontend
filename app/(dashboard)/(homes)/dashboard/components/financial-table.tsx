@@ -202,7 +202,7 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
           className="h-[380px] overflow-auto overscroll-contain rounded-lg border border-slate-100"
           onScroll={handleScroll}
         >
-          <Table className="table-fixed">
+          <Table className="min-w-[1220px] table-fixed">
             <TableHeader className="sticky top-0 z-10 bg-white">
               <TableRow className="border-b border-slate-100 hover:bg-transparent">
                 <TableHead className="w-10 px-2" />
@@ -224,10 +224,10 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                 <TableHead className="w-24 whitespace-nowrap text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Jumlah tagihan
                 </TableHead>
-                <TableHead className="w-32 whitespace-nowrap text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <TableHead className="w-44 whitespace-nowrap text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Total nilai
                 </TableHead>
-                <TableHead className="w-24 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <TableHead className="w-28 whitespace-nowrap text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Aging (maks.)
                 </TableHead>
                 <TableHead className="w-[132px] whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -299,7 +299,7 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                         <TableCell className="whitespace-nowrap text-right text-base font-bold tabular-nums text-slate-900">
                           {formatInvoiceRupiah(totalNilai)}
                         </TableCell>
-                        <TableCell className="whitespace-nowrap text-base font-bold tabular-nums">
+                        <TableCell className="whitespace-nowrap text-right text-base font-bold tabular-nums">
                           {maxAging > 0 ? (
                             <span className="text-red-600">{maxAging} Hari</span>
                           ) : (
