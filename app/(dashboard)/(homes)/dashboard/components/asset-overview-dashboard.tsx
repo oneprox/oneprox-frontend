@@ -491,17 +491,11 @@ export default function AssetOverviewDashboard({
   }, [legalitasSourceRows])
 
   const legalitasRows = useMemo(() => {
-    return legalitasSourceRows
-      .filter((row) => {
-        if (isOpenObligationStatus(row.status)) return false
-        const hasDue = !!(row.dueDateIso?.trim() || (row.jatuhTempo && row.jatuhTempo !== '-'))
-        return hasDue
-      })
-      .sort((a, b) => {
-        const ta = a.dueDateIso ? new Date(a.dueDateIso).getTime() : 0
-        const tb = b.dueDateIso ? new Date(b.dueDateIso).getTime() : 0
-        return ta - tb
-      })
+    return [...legalitasSourceRows].sort((a, b) => {
+      const ta = a.dueDateIso ? new Date(a.dueDateIso).getTime() : 0
+      const tb = b.dueDateIso ? new Date(b.dueDateIso).getTime() : 0
+      return ta - tb
+    })
   }, [legalitasSourceRows])
 
   const legalTenantGroups = useMemo((): TenantLegalGroup[] => {
@@ -854,7 +848,7 @@ export default function AssetOverviewDashboard({
             Status Legalitas Aset
           </CardTitle>
           <CardDescription className="text-lg text-slate-500">
-            Detail legal dan pelacakan kepatuhan untuk mitra aktif.
+            Detail legalitas per tenant, termasuk yang sudah selesai maupun masih berjalan.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -864,7 +858,7 @@ export default function AssetOverviewDashboard({
             onScroll={handleLegalScroll}
             onWheel={(event) => handleContainerWheel(event, legalScrollRef)}
           >
-            <Table className="table-fixed">
+            <Table className="w-full min-w-[980px] table-fixed">
               <TableHeader className="sticky top-0 z-10 bg-white">
                 <TableRow className="border-b border-slate-100 hover:bg-transparent">
                   <TableHead className="w-10 px-2" />
@@ -901,7 +895,7 @@ export default function AssetOverviewDashboard({
                 {legalTenantGroups.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={11} className="py-10 text-center text-base text-muted-foreground">
-                      Tidak ada item dengan jatuh tempo yang masih berjalan.
+                      Tidak ada data legalitas untuk ditampilkan.
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -946,10 +940,10 @@ export default function AssetOverviewDashboard({
                           <TableCell className="text-center text-base font-medium text-slate-700">
                             {groupIndex + 1}
                           </TableCell>
-                          <TableCell className="min-w-0 break-words align-top text-base font-bold whitespace-normal text-slate-900">
+                          <TableCell className="min-w-0 break-words align-middle text-base font-bold whitespace-normal text-slate-900">
                             {group.nama}
                           </TableCell>
-                          <TableCell className="align-top">
+                          <TableCell className="align-middle">
                             {groupStatusLabel === 'Overdue' ? (
                               <span className="inline-flex rounded-full border border-red-100 bg-red-50 px-2.5 py-0.5 text-sm font-medium text-red-700">
                                 Overdue
@@ -960,25 +954,25 @@ export default function AssetOverviewDashboard({
                               </span>
                             )}
                           </TableCell>
-                          <TableCell className="min-w-0 break-words align-top text-base whitespace-normal text-slate-700">
+                          <TableCell className="min-w-0 break-words align-middle text-base whitespace-normal text-slate-700">
                             {group.aset}
                           </TableCell>
-                          <TableCell className="min-w-0 break-words align-top text-base whitespace-normal text-slate-700">
+                          <TableCell className="min-w-0 break-words align-middle text-base whitespace-normal text-slate-700">
                             {group.unit}
                           </TableCell>
-                          <TableCell className="min-w-0 align-top">
+                          <TableCell className="min-w-0 align-middle">
                             <div className="flex min-w-0 flex-wrap items-center gap-2 text-base text-slate-800">
                               <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${dotClass}`} aria-hidden />
                               <span className="min-w-0 break-words">{earliestLabel}</span>
                             </div>
                           </TableCell>
-                          <TableCell className="min-w-0 break-words align-top text-base whitespace-normal text-slate-700">
+                          <TableCell className="min-w-0 break-words align-middle text-base whitespace-normal text-slate-700">
                             {group.logs.length} item
                           </TableCell>
                           <TableCell className="whitespace-nowrap text-base font-bold tabular-nums text-slate-900">
                             {progressPercent}%
                           </TableCell>
-                          <TableCell className="min-w-0 align-top">
+                          <TableCell className="min-w-0 align-middle">
                             {group.tenantId ? (
                               <Button
                                 asChild
@@ -997,7 +991,7 @@ export default function AssetOverviewDashboard({
 
                         {isOpen && (
                           <TableRow className="border-b border-slate-100 hover:bg-transparent">
-                            <TableCell colSpan={11} className="p-0 align-top">
+                            <TableCell colSpan={11} className="p-0 align-middle">
                               <div className="border-t border-slate-200 bg-slate-50/90 px-3 py-3 sm:px-4">
                                 <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
                                   Detail legalitas
@@ -1042,19 +1036,19 @@ export default function AssetOverviewDashboard({
                                             className="border-b border-slate-100 last:border-0"
                                           >
                                             <TableCell className="text-center text-base text-slate-600">{idx + 1}</TableCell>
-                                            <TableCell className="min-w-0 align-top">
+                                            <TableCell className="min-w-0 align-middle">
                                               <div className="flex min-w-0 flex-wrap items-center gap-2 text-base text-slate-800">
                                                 <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${rowDotClass}`} aria-hidden />
                                                 <span className="min-w-0 break-words">{row.jatuhTempo}</span>
                                               </div>
                                             </TableCell>
-                                            <TableCell className="min-w-0 whitespace-normal break-words align-top text-base leading-6 text-slate-700">
+                                            <TableCell className="min-w-0 whitespace-normal break-words align-middle text-base leading-6 text-slate-700">
                                               {jenisDokumenLabel}
                                             </TableCell>
-                                            <TableCell className="min-w-0 whitespace-normal break-words align-top text-base leading-6 text-slate-700">
+                                            <TableCell className="min-w-0 whitespace-normal break-words align-middle text-base leading-6 text-slate-700">
                                               {keteranganLabel}
                                             </TableCell>
-                                            <TableCell className="align-top">
+                                            <TableCell className="align-middle">
                                               {isCompleted ? (
                                                 <span className="inline-flex rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-0.5 text-sm font-medium text-emerald-700">
                                                   Selesai
@@ -1065,7 +1059,7 @@ export default function AssetOverviewDashboard({
                                                 </span>
                                               )}
                                             </TableCell>
-                                            <TableCell className="min-w-0 max-w-[160px] align-top">
+                                            <TableCell className="min-w-0 max-w-[160px] align-middle">
                                               {row.dokumenUrl && row.dokumen ? (
                                                 <a
                                                   href={row.dokumenUrl}

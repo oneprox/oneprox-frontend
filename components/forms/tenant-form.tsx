@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Tenant, CreateTenantData, UpdateTenantData, usersApi, unitsApi, tenantsApi, rolesApi, assetsApi, User, Unit, Asset, DURATION_UNITS, DURATION_UNIT_LABELS, TenantPaymentLog, CreateTenantPaymentData, UpdateTenantPaymentData, TenantLegal, CreateTenantLegalData, UpdateTenantLegalData, settingsApi, Setting } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -2414,6 +2414,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
         </DialogHeader>
         <LegalForm
           legal={editingLegal || undefined}
+          legalDocSettings={legalDocSettings}
           onSubmit={handleLegalSubmit}
           loading={legalFormLoading}
           onCancel={() => {
@@ -2850,6 +2851,7 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
 // Legal Form Component
 interface LegalFormProps {
   legal?: TenantLegal
+  legalDocSettings: Setting[]
   onSubmit: (data: CreateTenantLegalData | UpdateTenantLegalData) => Promise<void>
   loading?: boolean
   onCancel: () => void
@@ -2857,7 +2859,15 @@ interface LegalFormProps {
   onDocumentFileChange: (file: File | null) => void
 }
 
-function LegalForm({ legal, onSubmit, loading = false, onCancel, documentFile, onDocumentFileChange }: LegalFormProps) {
+function LegalForm({
+  legal,
+  legalDocSettings,
+  onSubmit,
+  loading = false,
+  onCancel,
+  documentFile,
+  onDocumentFileChange,
+}: LegalFormProps) {
   const [formData, setFormData] = useState({
     doc_type: '',
     due_date: '',
@@ -2865,24 +2875,48 @@ function LegalForm({ legal, onSubmit, loading = false, onCancel, documentFile, o
     status: 'belum_selesai' as 'belum_selesai' | 'selesai',
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const resolveDocTypeKey = (docType?: string, description?: string) => {
+    const direct = (docType || '').trim()
+    if (direct) return direct
+
+    const desc = (description || '').trim().toLowerCase()
+    if (!desc) return ''
+
+    const matched = legalDocSettings.find(
+      (item) => (item.description || '').trim().toLowerCase() === desc
+    )
+    return matched?.key || ''
+  }
+
+  const docTypeDescription = useMemo(() => {
+    const setting = legalDocSettings.find((item) => item.key === formData.doc_type)
+    const description = setting?.description?.trim()
+    if (description && description.length > 0) return description
+
+    const legalDescription = (legal?.description || '').trim()
+    if (legalDescription.length > 0) return legalDescription
+
+    return formData.doc_type
+  }, [legalDocSettings, formData.doc_type, legal?.description])
 
   useEffect(() => {
     if (legal) {
+      const resolvedDocType = resolveDocTypeKey(legal.doc_type, legal.description)
       setFormData({
-        doc_type: legal.doc_type || '',
+        doc_type: resolvedDocType,
         due_date: legal.due_date ? new Date(legal.due_date).toISOString().split('T')[0] : '',
         keterangan: legal.keterangan || '',
         status: legal.status || 'belum_selesai',
       })
     } else {
       setFormData({
-        doc_type: '',
+        doc_type: legalDocSettings[0]?.key || '',
         due_date: '',
         keterangan: '',
         status: 'belum_selesai',
       })
     }
-  }, [legal])
+  }, [legal, legalDocSettings])
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }))
@@ -2916,7 +2950,8 @@ function LegalForm({ legal, onSubmit, loading = false, onCancel, documentFile, o
   const validateForm = () => {
     const newErrors: Record<string, string> = {}
 
-    if (!formData.doc_type.trim()) {
+    const resolvedDocType = (legal?.doc_type || formData.doc_type || '').trim()
+    if (!resolvedDocType) {
       newErrors.doc_type = 'Jenis dokumen harus diisi'
     }
 
@@ -2931,8 +2966,9 @@ function LegalForm({ legal, onSubmit, loading = false, onCancel, documentFile, o
       return
     }
 
+    const resolvedDocType = (legal?.doc_type || formData.doc_type || '').trim()
     const submitData: CreateTenantLegalData | UpdateTenantLegalData = {
-      doc_type: formData.doc_type.trim(),
+      doc_type: resolvedDocType,
       due_date: formData.due_date || undefined,
       keterangan: formData.keterangan.trim() || undefined,
       status: formData.status,
@@ -2947,13 +2983,14 @@ function LegalForm({ legal, onSubmit, loading = false, onCancel, documentFile, o
         <Label htmlFor="doc_type">
           Jenis Dokumen <span className="text-red-500">*</span>
         </Label>
-        <Input
+        <Textarea
           id="doc_type"
-          type="text"
-          value={formData.doc_type}
-          onChange={(e) => handleInputChange('doc_type', e.target.value)}
-          placeholder="Masukkan jenis dokumen"
-          className={errors.doc_type ? 'border-red-500' : ''}
+          value={docTypeDescription}
+          readOnly
+          aria-readonly="true"
+          placeholder="Deskripsi jenis dokumen dari setting"
+          rows={3}
+          className={errors.doc_type ? 'border-red-500 resize-none' : 'resize-none'}
         />
         {errors.doc_type && (
           <p className="text-sm text-red-500">{errors.doc_type}</p>

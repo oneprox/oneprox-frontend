@@ -25,12 +25,6 @@ function normalizeDashboardList<T>(payload: unknown): T[] {
   return []
 }
 
-function isOpenObligationStatus(status: string): boolean {
-  const s = (status || '').trim().toLowerCase()
-  if (!s) return false
-  return /^(selesai|done|lunas|completed)$/.test(s) || s.includes('sudah dibayar')
-}
-
 function formatInvoiceRupiah(value: number): string {
   const n = Number.isFinite(value) ? Math.round(value) : 0
   return `Rp ${n.toLocaleString('id-ID')}`
@@ -112,16 +106,8 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
     setVisibleCount(TABLE_PAGE_SIZE)
   }, [selectedAssetId, rows])
 
-  /** API: belum bayar + deadline; filter cadangan di UI */
-  const displayRows = useMemo(() => {
-    return rows.filter((row) => {
-      if (isOpenObligationStatus(row.status)) return false
-      const hasDue =
-        !!(row.dueDateIso && String(row.dueDateIso).trim()) ||
-        !!(row.jatuhTempo && row.jatuhTempo !== '-')
-      return hasDue
-    })
-  }, [rows])
+  /** Tampilkan semua baris dari API (termasuk sudah dibayar / selesai). */
+  const displayRows = useMemo(() => rows, [rows])
 
   const tenantGroups = useMemo((): TenantFinancialGroup[] => {
     const map = new Map<string, FinancialTableData[]>()
@@ -192,8 +178,7 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
       <CardHeader className="space-y-1 pb-4">
         <CardTitle className="text-xl font-bold tracking-tight text-slate-900">Financial</CardTitle>
         <CardDescription className="text-base text-slate-500">
-          Invoice dengan jatuh tempo yang sudah diisi dan status pembayaran belum dibayar, dikelompokkan per
-          tenant.
+          Ringkasan invoice per tenant, termasuk yang sudah dibayar maupun belum dibayar.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -202,7 +187,7 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
           className="h-[380px] overflow-auto overscroll-contain rounded-lg border border-slate-100"
           onScroll={handleScroll}
         >
-          <Table className="table-fixed">
+          <Table className="w-full min-w-[960px] table-fixed">
             <TableHeader className="sticky top-0 z-10 bg-white">
               <TableRow className="border-b border-slate-100 hover:bg-transparent">
                 <TableHead className="w-10 px-2" />
@@ -239,7 +224,7 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
               {tenantGroups.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={parentColCount} className="py-10 text-center text-base text-muted-foreground">
-                    Tidak ada tagihan belum dibayar dengan jatuh tempo yang sudah diisi.
+                    Tidak ada data invoice untuk ditampilkan.
                   </TableCell>
                 </TableRow>
               ) : (
@@ -273,10 +258,10 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                         <TableCell className="text-center text-base font-medium text-slate-700">
                           {groupIndex + 1}
                         </TableCell>
-                        <TableCell className="min-w-0 break-words align-top text-base font-bold whitespace-normal text-slate-900">
+                        <TableCell className="min-w-0 break-words align-middle text-base font-bold whitespace-normal text-slate-900">
                           {group.nama}
                         </TableCell>
-                        <TableCell className="align-top">
+                        <TableCell className="align-middle">
                           {groupStatusLabel === 'Overdue' ? (
                             <span className="inline-flex rounded-full border border-red-100 bg-red-50 px-2.5 py-0.5 text-sm font-medium text-red-700">
                               Overdue
@@ -287,10 +272,10 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                             </span>
                           )}
                         </TableCell>
-                        <TableCell className="min-w-0 break-words align-top text-base whitespace-normal text-slate-700">
+                        <TableCell className="min-w-0 break-words align-middle text-base whitespace-normal text-slate-700">
                           {group.aset}
                         </TableCell>
-                        <TableCell className="min-w-0 break-words align-top text-base whitespace-normal text-slate-700">
+                        <TableCell className="min-w-0 break-words align-middle text-base whitespace-normal text-slate-700">
                           {group.unit}
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-right text-base font-medium tabular-nums text-slate-700">
@@ -306,7 +291,7 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                             <span className="text-slate-500">—</span>
                           )}
                         </TableCell>
-                        <TableCell className="min-w-0 align-top">
+                        <TableCell className="min-w-0 align-middle">
                           {group.tenantId ? (
                             <Button
                               asChild
@@ -324,7 +309,7 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                       </TableRow>
                       {isOpen && (
                         <TableRow className="border-b border-slate-100 hover:bg-transparent">
-                          <TableCell colSpan={parentColCount} className="p-0 align-top">
+                          <TableCell colSpan={parentColCount} className="p-0 align-middle">
                             <div className="border-t border-slate-200 bg-slate-50/90 px-3 py-3 sm:px-4">
                               <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
                                 Detail tenant_payment_logs
@@ -369,10 +354,10 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                                           <TableCell className="text-center text-base text-slate-600">
                                             {logIdx + 1}
                                           </TableCell>
-                                          <TableCell className="min-w-0 break-words align-top text-base whitespace-normal text-slate-800">
+                                          <TableCell className="min-w-0 break-words align-middle text-base whitespace-normal text-slate-800">
                                             {row.nomorInvoice}
                                           </TableCell>
-                                          <TableCell className="align-top">
+                                          <TableCell className="align-middle">
                                             {displayStatus === 'Overdue' ? (
                                               <span className="inline-flex rounded-full border border-red-100 bg-red-50 px-2.5 py-0.5 text-sm font-medium text-red-700">
                                                 Overdue
@@ -383,13 +368,13 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                                               </span>
                                             )}
                                           </TableCell>
-                                          <TableCell className="min-w-0 break-words align-top text-base whitespace-normal text-slate-600">
+                                          <TableCell className="min-w-0 break-words align-middle text-base whitespace-normal text-slate-600">
                                             {deskripsiTampil}
                                           </TableCell>
                                           <TableCell className="whitespace-nowrap text-right text-base font-bold tabular-nums text-slate-900">
                                             {formatInvoiceRupiah(row.nilaiInvoice)}
                                           </TableCell>
-                                          <TableCell className="min-w-0 break-words align-top text-base whitespace-normal text-slate-700">
+                                          <TableCell className="min-w-0 break-words align-middle text-base whitespace-normal text-slate-700">
                                             {row.tanggalInvoice}
                                           </TableCell>
                                           <TableCell className="text-base font-bold tabular-nums">
