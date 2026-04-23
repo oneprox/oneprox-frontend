@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
-import { CreateComplaintReportData, UpdateComplaintReportData, authApi, User, complaintReportsApi } from '@/lib/api'
+import { Asset, CreateComplaintReportData, UpdateComplaintReportData, authApi, assetsApi, User, complaintReportsApi } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -30,6 +30,7 @@ import toast from 'react-hot-toast'
 const complaintReportSchema = z.object({
   title: z.string().min(1, 'Title is required').trim(),
   description: z.string().min(1, 'Description is required').trim(),
+  asset_id: z.string().uuid().nullable().optional(),
   tenant_id: z.string().uuid().nullable().optional(),
   status: z.number().min(0).max(3).optional(),
   priority: z.number().min(0).max(3).optional(),
@@ -45,6 +46,8 @@ interface ComplaintReportFormProps {
 
 export default function ComplaintReportForm({ onSubmit, onCancel, loading = false }: ComplaintReportFormProps) {
   const [currentUser, setCurrentUser] = useState<User | null>(null)
+  const [assets, setAssets] = useState<Asset[]>([])
+  const [assetsLoading, setAssetsLoading] = useState(false)
   const [evidenceFiles, setEvidenceFiles] = useState<File[]>([])
   const [cameraModalOpen, setCameraModalOpen] = useState(false)
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null)
@@ -56,6 +59,7 @@ export default function ComplaintReportForm({ onSubmit, onCancel, loading = fals
     defaultValues: {
       title: '',
       description: '',
+      asset_id: null,
       tenant_id: null,
       status: 0, // pending
       priority: 1, // medium
@@ -73,6 +77,32 @@ export default function ComplaintReportForm({ onSubmit, onCancel, loading = fals
       }
     }
     loadCurrentUser()
+  }, [])
+
+  useEffect(() => {
+    const loadAssets = async () => {
+      setAssetsLoading(true)
+      try {
+        const response = await assetsApi.getAssets({ status: 1, limit: 1000 })
+        if (response.success && response.data) {
+          const responseData = response.data as any
+          const assetsData = Array.isArray(responseData?.data)
+            ? responseData.data
+            : Array.isArray(responseData)
+              ? responseData
+              : []
+          setAssets(assetsData)
+        } else {
+          setAssets([])
+        }
+      } catch (error) {
+        console.error('Load assets error:', error)
+        setAssets([])
+      } finally {
+        setAssetsLoading(false)
+      }
+    }
+    loadAssets()
   }, [])
 
   // Cleanup camera stream when modal closes
@@ -261,6 +291,7 @@ export default function ComplaintReportForm({ onSubmit, onCancel, loading = fals
         title: data.title,
         description: data.description,
         reporter_id: currentUser.id,
+        asset_id: data.asset_id || null,
         tenant_id: data.tenant_id || null,
         status: data.status ?? 0,
         priority: data.priority ?? 1,
@@ -305,6 +336,36 @@ export default function ComplaintReportForm({ onSubmit, onCancel, loading = fals
                   {...field}
                 />
               </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="asset_id"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Asset</FormLabel>
+              <Select
+                onValueChange={(value) => field.onChange(value === 'none' ? null : value)}
+                value={field.value || 'none'}
+                disabled={assetsLoading}
+              >
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue placeholder={assetsLoading ? 'Loading assets...' : 'Select asset'} />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectItem value="none">No asset</SelectItem>
+                  {assets.map((asset) => (
+                    <SelectItem key={asset.id} value={asset.id}>
+                      {asset.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <FormMessage />
             </FormItem>
           )}
