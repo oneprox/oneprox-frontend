@@ -391,6 +391,14 @@ export default function ComplaintReportDetailDialog({
                         </div>
                       </div>
                     )}
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">
+                        Asset
+                      </label>
+                      <div className="mt-1">
+                        <p className="text-sm font-medium">{report.asset?.name || report.asset_id || '-'}</p>
+                      </div>
+                    </div>
                   </div>
                 </CardContent>
               </Card>

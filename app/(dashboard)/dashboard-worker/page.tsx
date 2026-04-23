@@ -51,7 +51,8 @@ function DashboardWorkerContent() {
     try {
       setIsLoadingTasks(true)
       const response = await dashboardApi.getWorkerUserTasks({ limit: 100 })
-      const payload = response.success && response.data ? response.data : null
+      const responseData = response.success && response.data ? (response.data as any) : null
+      const payload = responseData?.data ?? responseData
       const routine = Array.isArray(payload?.routine_tasks) ? payload.routine_tasks : []
       const nonRoutineRaw = Array.isArray(payload?.non_routine_tasks) ? payload.non_routine_tasks : []
       const nonRoutine = nonRoutineRaw.map(normalizeFlatUserTask)
@@ -150,7 +151,31 @@ function DashboardWorkerContent() {
     }
   }
 
-  const allTasksForStats = [...routineUserTasks, ...nonRoutineUserTasks]
+  const flattenRoutineTasks = (tasks: UserTask[]): UserTask[] => {
+    return tasks.flatMap((task) => {
+      const mainTaskId = task.user_task_id ?? task.id
+      const normalizedMain: UserTask = {
+        ...task,
+        user_task_id: mainTaskId,
+      }
+      const subTasks = Array.isArray(task.sub_user_task)
+        ? task.sub_user_task.map((subTask) => ({
+            ...subTask,
+            user_task_id: subTask.user_task_id ?? subTask.id,
+          }))
+        : []
+      return [normalizedMain, ...subTasks]
+    })
+  }
+
+  const allTasksForStats = [...flattenRoutineTasks(routineUserTasks), ...nonRoutineUserTasks]
+  const isTaskCompleted = (t: UserTask) => t.status === 'completed' || !!t.completed_at
+  const isTaskInProgress = (t: UserTask) =>
+    (t.status === 'in_progress' || t.status === 'inprogress') &&
+    !!(t.started_at || t.start_at) &&
+    !t.completed_at
+  const isTaskPending = (t: UserTask) =>
+    t.status === 'pending' && !(t.started_at || t.start_at) && !t.completed_at
 
   return (
     <div className="space-y-6">
@@ -319,24 +344,19 @@ function DashboardWorkerContent() {
                 <div className="grid grid-cols-3 gap-4">
                   <div className="text-center p-4 rounded-lg bg-gray-50">
                     <div className="text-2xl font-bold text-gray-900">
-                      {allTasksForStats.filter((t) => t.status === 'pending' && !t.started_at && !t.start_at).length}
+                      {allTasksForStats.filter(isTaskPending).length}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">Pending</div>
                   </div>
                   <div className="text-center p-4 rounded-lg bg-blue-50">
                     <div className="text-2xl font-bold text-blue-900">
-                      {allTasksForStats.filter(
-                        (t) =>
-                          (t.status === 'in_progress' || t.status === 'inprogress') &&
-                          (t.started_at || t.start_at) &&
-                          !t.completed_at
-                      ).length}
+                      {allTasksForStats.filter(isTaskInProgress).length}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">Sedang Dikerjakan</div>
                   </div>
                   <div className="text-center p-4 rounded-lg bg-green-50">
                     <div className="text-2xl font-bold text-green-900">
-                      {allTasksForStats.filter((t) => t.status === 'completed' || t.completed_at).length}
+                      {allTasksForStats.filter(isTaskCompleted).length}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">Selesai</div>
                   </div>

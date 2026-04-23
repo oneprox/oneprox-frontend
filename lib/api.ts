@@ -1701,6 +1701,7 @@ export interface ComplaintReport {
   description: string
   reporter_id: string
   tenant_id?: string | null
+  asset_id?: string | null
   status: string | number // 'pending' | 'in_progress' | 'resolved' | 'closed' or 0-3
   priority: string | number // 'low' | 'medium' | 'high' | 'urgent' or 0-3
   created_by?: string | null
@@ -1709,6 +1710,7 @@ export interface ComplaintReport {
   updated_at?: string
   reporter?: User
   tenant?: Tenant
+  asset?: Asset
   createdBy?: User
   updatedBy?: User
   evidences?: Array<{ url: string } | string> // Array of evidence objects with url property or string URLs
@@ -1720,6 +1722,7 @@ export interface CreateComplaintReportData {
   description: string
   reporter_id: string
   tenant_id?: string | null
+  asset_id?: string | null
   status?: number // 0=pending, 1=in_progress, 2=resolved, 3=closed
   priority?: number // 0=low, 1=medium, 2=high, 3=urgent
   evidences?: string[] // Array of URLs
