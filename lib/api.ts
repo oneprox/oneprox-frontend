@@ -955,11 +955,19 @@ export const attendanceApi = {
     return apiClient.get<Attendance[]>(`/api/attendances/history${queryParams}`)
   },
 
-  async getUserAttendanceHistoryByDate(userId?: string, dateFrom?: string, dateTo?: string): Promise<ApiResponse<Attendance[]>> {
+  async getUserAttendanceHistoryByDate(
+    userId?: string,
+    dateFrom?: string,
+    dateTo?: string,
+    limit?: number,
+    offset?: number
+  ): Promise<ApiResponse<Attendance[]>> {
     const queryParams = new URLSearchParams()
     if (userId) queryParams.append('user_id', userId)
     if (dateFrom) queryParams.append('date_from', dateFrom)
     if (dateTo) queryParams.append('date_to', dateTo)
+    if (limit != null) queryParams.append('limit', String(limit))
+    if (offset != null) queryParams.append('offset', String(offset))
     const queryString = queryParams.toString()
     return apiClient.get<Attendance[]>(`/api/attendances/history${queryString ? `?${queryString}` : ''}`)
   },

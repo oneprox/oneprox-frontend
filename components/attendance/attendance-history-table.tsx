@@ -15,17 +15,23 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Calendar, RefreshCw, Search } from 'lucide-react'
+import { Loader2, Calendar, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function AttendanceHistoryTable() {
+  const now = new Date()
+  const defaultDateTo = now.toISOString().split('T')[0]
+  const defaultDateFrom = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
   const [attendanceHistory, setAttendanceHistory] = useState<Attendance[]>([])
   const [loading, setLoading] = useState(false)
   const [currentUser, setCurrentUser] = useState<User | null>(null)
-  const [dateFrom, setDateFrom] = useState<string>(new Date().toISOString().split('T')[0])
-  const [dateTo, setDateTo] = useState<string>(new Date().toISOString().split('T')[0])
+  const [dateFrom, setDateFrom] = useState<string>(defaultDateFrom)
+  const [dateTo, setDateTo] = useState<string>(defaultDateTo)
   const [dateError, setDateError] = useState<string>('')
   const [mounted, setMounted] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalData, setTotalData] = useState(0)
+  const pageSize = 10
 
   useEffect(() => {
     setMounted(true)
@@ -74,7 +80,7 @@ export default function AttendanceHistoryTable() {
   }
 
   // Load attendance history
-  const loadAttendanceHistory = async () => {
+  const loadAttendanceHistory = async (page = currentPage) => {
     if (!currentUser?.id) return
 
     if (!validateDateRange(dateFrom, dateTo)) {
@@ -83,23 +89,35 @@ export default function AttendanceHistoryTable() {
 
     setLoading(true)
     try {
-      const response = await attendanceApi.getUserAttendanceHistoryByDate(currentUser.id, dateFrom, dateTo) as any
+      const offset = (page - 1) * pageSize
+      const response = await attendanceApi.getUserAttendanceHistoryByDate(
+        currentUser.id,
+        dateFrom,
+        dateTo,
+        pageSize,
+        offset
+      ) as any
       
       if (response.success && response.data) {
         const responseData = response.data as any
-        const history = Array.isArray(responseData.data) 
+        const history = Array.isArray(responseData.data)
           ? responseData.data 
           : (Array.isArray(responseData) ? responseData : [])
         setAttendanceHistory(history)
+        const total = typeof responseData.total === 'number' ? responseData.total : history.length
+        setTotalData(total)
+        setCurrentPage(page)
       } else {
         console.error('Failed to load attendance history:', response.error)
         setAttendanceHistory([])
+        setTotalData(0)
         toast.error(response.error || 'Gagal memuat riwayat absensi')
       }
     } catch (error) {
       console.error('Error loading attendance history:', error)
       toast.error('Terjadi kesalahan saat memuat riwayat absensi')
       setAttendanceHistory([])
+      setTotalData(0)
     } finally {
       setLoading(false)
     }
@@ -113,6 +131,7 @@ export default function AttendanceHistoryTable() {
 
   const handleDateFromChange = (value: string) => {
     setDateFrom(value)
+    setCurrentPage(1)
     if (value && dateTo) {
       validateDateRange(value, dateTo)
     }
@@ -120,10 +139,13 @@ export default function AttendanceHistoryTable() {
 
   const handleDateToChange = (value: string) => {
     setDateTo(value)
+    setCurrentPage(1)
     if (dateFrom && value) {
       validateDateRange(dateFrom, value)
     }
   }
+
+  const totalPages = Math.max(1, Math.ceil(totalData / pageSize))
 
   const formatTime = (timeString?: string) => {
     if (!timeString || !mounted) return '-'
@@ -189,7 +211,7 @@ export default function AttendanceHistoryTable() {
               />
             </div>
             <Button
-              onClick={loadAttendanceHistory}
+              onClick={() => loadAttendanceHistory(1)}
               disabled={loading || !currentUser?.id || !!dateError}
               variant="outline"
             >
@@ -224,39 +246,66 @@ export default function AttendanceHistoryTable() {
             <p>Tidak ada riwayat absensi untuk tanggal yang dipilih</p>
           </div>
         ) : (
-          <div className="rounded-md border overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Tanggal</TableHead>
-                  <TableHead>Check In</TableHead>
-                  <TableHead>Check Out</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {attendanceHistory.map((attendance) => (
-                  <TableRow key={attendance.id}>
-                    <TableCell>
-                      {formatDate(attendance.check_in_time)}
-                    </TableCell>
-                    <TableCell>
-                      <p className="font-medium">{formatTime(attendance.check_in_time)}</p>
-                    </TableCell>
-                    <TableCell>
-                      {attendance.check_out_time ? (
-                        <p className="font-medium">{formatTime(attendance.check_out_time)}</p>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {getStatusBadge(attendance)}
-                    </TableCell>
+          <div className="space-y-4">
+            <div className="rounded-md border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Tanggal</TableHead>
+                    <TableHead>Check In</TableHead>
+                    <TableHead>Check Out</TableHead>
+                    <TableHead>Status</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {attendanceHistory.map((attendance) => (
+                    <TableRow key={attendance.id}>
+                      <TableCell>
+                        {formatDate(attendance.check_in_time)}
+                      </TableCell>
+                      <TableCell>
+                        <p className="font-medium">{formatTime(attendance.check_in_time)}</p>
+                      </TableCell>
+                      <TableCell>
+                        {attendance.check_out_time ? (
+                          <p className="font-medium">{formatTime(attendance.check_out_time)}</p>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {getStatusBadge(attendance)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            <div className="flex items-center justify-between text-sm text-muted-foreground">
+              <span>
+                Menampilkan halaman {currentPage} dari {totalPages} ({totalData} data)
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={loading || currentPage <= 1}
+                  onClick={() => loadAttendanceHistory(currentPage - 1)}
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Sebelumnya
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={loading || currentPage >= totalPages}
+                  onClick={() => loadAttendanceHistory(currentPage + 1)}
+                >
+                  Selanjutnya
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            </div>
           </div>
         )}
       </CardContent>
