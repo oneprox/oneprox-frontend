@@ -93,14 +93,36 @@ function tenantGroupKeyLegal(row: LegalTableData): string {
   return row.tenantId || `${row.nama}::${row.aset}::${row.unit}`
 }
 
-function earliestDueMsLegal(logs: LegalTableData[]): number {
-  let min = Infinity
-  for (const r of logs) {
-    if (!r.dueDateIso) continue
-    const t = new Date(r.dueDateIso).getTime()
-    if (!Number.isNaN(t)) min = Math.min(min, t)
+function earliestUnfinishedLegalRow(logs: LegalTableData[]): LegalTableData | null {
+  let earliest: LegalTableData | null = null
+  let earliestMs = Infinity
+
+  // Prioritas: legal yang belum selesai, sort by due date ascending.
+  for (const row of logs) {
+    if (isOpenObligationStatus(row.status)) continue
+    if (!row.dueDateIso) continue
+    const t = new Date(row.dueDateIso).getTime()
+    if (Number.isNaN(t)) continue
+    if (t < earliestMs) {
+      earliest = row
+      earliestMs = t
+    }
   }
-  return min === Infinity ? 0 : min
+
+  // Fallback jika semua legal sudah selesai atau tidak punya due date valid.
+  if (!earliest) {
+    for (const row of logs) {
+      if (!row.dueDateIso) continue
+      const t = new Date(row.dueDateIso).getTime()
+      if (Number.isNaN(t)) continue
+      if (t < earliestMs) {
+        earliest = row
+        earliestMs = t
+      }
+    }
+  }
+
+  return earliest
 }
 
 interface TenantLegalGroup {
@@ -293,6 +315,17 @@ export default function AssetOverviewDashboard({
     pct: utilizationTotal > 0 ? (d.value / utilizationTotal) * 100 : 0,
   }))
 
+  const UTILIZATION_AVAILABLE = 'Tersedia'
+  const utilizationCategoryPalette = ['#F47C4B', '#2E5B6C', '#8D49A6', '#9BA31A', '#2C63D6', '#FF5A7A']
+  const utilizationAvailableColor = '#CBD5E1'
+  let utilizationColorIdx = 0
+  const utilizationChartColors = utilizationData.map((d) => {
+    if (d.category === UTILIZATION_AVAILABLE) return utilizationAvailableColor
+    const c = utilizationCategoryPalette[utilizationColorIdx % utilizationCategoryPalette.length]
+    utilizationColorIdx += 1
+    return c
+  })
+
   // Donut chart options for Asset Utilization
   const utilizationChartOptions: ApexOptions = {
     chart: {
@@ -302,8 +335,7 @@ export default function AssetOverviewDashboard({
       animations: { enabled: true, speed: 600 },
     },
     labels: utilizationPercentages.map(d => d.category),
-    // Palet mendekati contoh (lebih “dashboard” dan kontras)
-    colors: ['#F47C4B', '#2E5B6C', '#8D49A6', '#9BA31A', '#2C63D6', '#FF5A7A'],
+    colors: utilizationChartColors,
     legend: { show: false },
     dataLabels: {
       // Hapus label persen per-slice (yang muncul seperti "50%")
@@ -325,7 +357,11 @@ export default function AssetOverviewDashboard({
     tooltip: {
       enabled: true,
       y: {
-        formatter: (val: number) => `${val.toFixed(1)}%`,
+        formatter: (val: number) => {
+          const t = utilizationTotal
+          const pct = t > 0 && Number.isFinite(val) ? (val / t) * 100 : 0
+          return `${pct.toFixed(1)}% (${Number(val).toLocaleString('id-ID')} unit)`
+        },
         title: {
           formatter: (seriesName: string) => `${seriesName}: `,
         },
@@ -337,8 +373,6 @@ export default function AssetOverviewDashboard({
           minAngleToShowLabel: 12,
           offset: -10
         },
-        startAngle: -110,
-        endAngle: 250,
         expandOnClick: false,
         donut: {
           // Lebih kecil = ring lebih tebal
@@ -359,7 +393,13 @@ export default function AssetOverviewDashboard({
               fontSize: '44px',
               fontWeight: 800,
               color: '#0F172A',
-              formatter: (val: string) => `${Number(val).toFixed(0)}%`,
+              formatter: (val: string) => {
+                const rawValue = Number(val)
+                const percent = utilizationTotal > 0 && Number.isFinite(rawValue)
+                  ? (rawValue / utilizationTotal) * 100
+                  : 0
+                return `${percent.toFixed(0)}%`
+              },
             },
             total: {
               show: true,
@@ -377,7 +417,10 @@ export default function AssetOverviewDashboard({
     }
   }
 
-  const utilizationChartSeries = utilizationPercentages.map(d => Number.isFinite(d.pct) ? Number(d.pct.toFixed(2)) : 0)
+  /** Jumlah unit per kategori sektor + slice "Tersedia"; total = semua unit dalam cakupan filter aset. */
+  const utilizationChartSeries = utilizationData.map((d) =>
+    Number.isFinite(d.value) ? d.value : 0
+  )
 
   const financialDataForChart = useMemo(
     () => financialData.slice(0, financialVisibleCount),
@@ -516,12 +559,16 @@ export default function AssetOverviewDashboard({
     }
 
     groups.sort((a, b) => {
-      const da = earliestDueMsLegal(a.logs)
-      const db = earliestDueMsLegal(b.logs)
-      if (!da && !db) return 0
-      if (!da) return 1
-      if (!db) return -1
-      return da - db
+      const da = earliestUnfinishedLegalRow(a.logs)?.dueDateIso
+      const db = earliestUnfinishedLegalRow(b.logs)?.dueDateIso
+      const ta = da ? new Date(da).getTime() : 0
+      const tb = db ? new Date(db).getTime() : 0
+      const daMs = Number.isNaN(ta) ? 0 : ta
+      const dbMs = Number.isNaN(tb) ? 0 : tb
+      if (!daMs && !dbMs) return 0
+      if (!daMs) return 1
+      if (!dbMs) return -1
+      return daMs - dbMs
     })
 
     return groups
@@ -699,7 +746,9 @@ export default function AssetOverviewDashboard({
                 <span aria-hidden>⋮</span>
               </button>
             </CardTitle>
-            <p className="text-lg text-muted-foreground -mt-1">Asset occupancy by sector category</p>
+            <p className="text-lg text-muted-foreground -mt-1">
+              Okupasi unit per sektor dan unit tersedia (semua unit dalam cakupan aset)
+            </p>
           </CardHeader>
           <CardContent>
             {utilizationData.length > 0 ? (
@@ -717,7 +766,10 @@ export default function AssetOverviewDashboard({
                     <div key={`${item.category}-${idx}`} className="flex items-start gap-3">
                       <span
                         className="mt-1.5 h-3 w-3 rounded-full"
-                        style={{ background: (utilizationChartOptions.colors as string[] | undefined)?.[idx % 6] || '#94A3B8' }}
+                        style={{
+                          background:
+                            utilizationChartColors[idx] ?? utilizationAvailableColor,
+                        }}
                         aria-hidden
                       />
                       <div className="leading-tight">
@@ -837,7 +889,7 @@ export default function AssetOverviewDashboard({
             className="h-[420px] overflow-auto overscroll-contain rounded-lg border border-slate-100"
             onWheel={(event) => handleContainerWheel(event, legalScrollRef)}
           >
-            <Table className="w-full min-w-[980px] table-fixed">
+            <Table className="w-full min-w-[1000px] table-fixed">
               <TableHeader className="sticky top-0 z-10 bg-white">
                 <TableRow className="border-b border-slate-100 hover:bg-transparent">
                   <TableHead className="w-10 px-2" />
@@ -856,10 +908,10 @@ export default function AssetOverviewDashboard({
                   <TableHead className="min-w-0 w-[14%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
                     Unit
                   </TableHead>
-                  <TableHead className="w-[9rem] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  <TableHead className="w-[11rem] whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                     Jatuh tempo
                   </TableHead>
-                  <TableHead className="min-w-0 w-[18%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  <TableHead className="min-w-0 w-[14%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
                     Kewajiban mitra
                   </TableHead>
                   <TableHead className="w-24 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -882,15 +934,7 @@ export default function AssetOverviewDashboard({
                     const isOpen = expandedLegalKeys.has(group.key)
                     const groupOverdue = group.logs.some((r) => legalRowDisplayStatus(r) === 'Overdue')
                     const groupStatusLabel = groupOverdue ? 'Overdue' : 'On Process'
-                    const earliest = group.logs.reduce<LegalTableData | null>((acc, r) => {
-                      if (!r.dueDateIso) return acc
-                      if (!acc?.dueDateIso) return r
-                      const ta = new Date(acc.dueDateIso).getTime()
-                      const tb = new Date(r.dueDateIso).getTime()
-                      if (Number.isNaN(tb)) return acc
-                      if (Number.isNaN(ta)) return r
-                      return tb < ta ? r : acc
-                    }, null)
+                    const earliest = earliestUnfinishedLegalRow(group.logs)
                     const dotClass = dueDateDotClass(earliest?.dueDateIso)
                     const earliestLabel = earliest?.jatuhTempo || '—'
                     const progressSummary = legalProgressByTenant.get(group.key) ?? { completed: 0, total: group.logs.length }
@@ -942,7 +986,7 @@ export default function AssetOverviewDashboard({
                           <TableCell className="min-w-0 align-middle">
                             <div className="flex min-w-0 flex-wrap items-center gap-2 text-base text-slate-800">
                               <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${dotClass}`} aria-hidden />
-                              <span className="min-w-0 break-words">{earliestLabel}</span>
+                              <span className="min-w-0 whitespace-nowrap">{earliestLabel}</span>
                             </div>
                           </TableCell>
                           <TableCell className="min-w-0 break-words align-middle text-base whitespace-normal text-slate-700">

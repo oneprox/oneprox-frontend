@@ -2631,6 +2631,9 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
         payment_method: formData.payment_method || undefined,
         notes: formData.notes.trim() || undefined,
       }
+      if (formData.payment_deadline) {
+        updateData.payment_deadline = new Date(formData.payment_deadline).toISOString()
+      }
       if (formData.payment_date) {
         updateData.payment_date = new Date(formData.payment_date).toISOString()
       }

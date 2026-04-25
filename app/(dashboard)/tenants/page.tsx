@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Tenant, tenantsApi, User, authApi } from '@/lib/api'
+import { Tenant, tenantsApi, User, authApi, Asset, assetsApi } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -61,11 +61,13 @@ export default function TenantsPage() {
   
   // Filter dan sorting states
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
+  const [assetFilter, setAssetFilter] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>('all')
   const [order, setOrder] = useState<string>('newest')
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [isTenantUser, setIsTenantUser] = useState(false)
+  const [assets, setAssets] = useState<Asset[]>([])
   
   // Pagination states
   const [limit] = useState<number>(10)
@@ -90,6 +92,9 @@ export default function TenantsPage() {
       
       if (searchTerm.trim()) {
         filterParams.name = searchTerm.trim()
+      }
+      if (!isTenantUser && assetFilter !== 'all') {
+        filterParams.asset_id = assetFilter
       }
       if (!isTenantUser && categoryFilter !== 'all') {
         filterParams.category = categoryFilter
@@ -156,6 +161,24 @@ export default function TenantsPage() {
     }
   }
 
+  const loadAssets = async () => {
+    try {
+      const response = await assetsApi.getAssets({ limit: 1000, status: 1 })
+      if (response.success && response.data) {
+        const assetsData = response.data as any
+        const assetList = Array.isArray(assetsData.data)
+          ? assetsData.data
+          : (Array.isArray(assetsData) ? assetsData : [])
+        setAssets(assetList)
+      } else {
+        setAssets([])
+      }
+    } catch (error) {
+      console.error('Load assets error:', error)
+      setAssets([])
+    }
+  }
+
 
   const loadCurrentUser = async () => {
     try {
@@ -186,6 +209,7 @@ export default function TenantsPage() {
 
   useEffect(() => {
     loadCurrentUser()
+    loadAssets()
   }, [])
 
   useEffect(() => {
@@ -199,7 +223,7 @@ export default function TenantsPage() {
     if (currentUser) {
       loadTenants()
     }
-  }, [searchTerm, categoryFilter, statusFilter, paymentStatusFilter, order, offset, currentUser, isTenantUser])
+  }, [searchTerm, assetFilter, categoryFilter, statusFilter, paymentStatusFilter, order, offset, currentUser, isTenantUser])
 
   const handlePageChange = (newOffset: number) => {
     setOffset(newOffset)
@@ -384,6 +408,20 @@ export default function TenantsPage() {
                   ))}
                 </SelectContent>
               </Select>
+
+              <Select value={assetFilter} onValueChange={setAssetFilter}>
+                <SelectTrigger className="w-[220px] bg-white">
+                  <SelectValue placeholder="Asset" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Asset</SelectItem>
+                  {assets.map((asset) => (
+                    <SelectItem key={asset.id} value={asset.id}>
+                      {asset.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-[180px] bg-white">
@@ -428,6 +466,7 @@ export default function TenantsPage() {
                 size="sm" 
                 onClick={() => {
                   setSearchTerm('')
+                  setAssetFilter('all')
                   setCategoryFilter('all')
                   setStatusFilter('all')
                   setPaymentStatusFilter('all')

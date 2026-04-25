@@ -488,6 +488,7 @@ export interface CreateTenantPaymentData {
 
 // Update Tenant Payment Data interface
 export interface UpdateTenantPaymentData {
+  payment_deadline?: string
   payment_date?: string
   payment_method?: string
   notes?: string
@@ -1019,9 +1020,9 @@ export interface CreateUnitData {
   rent_price: number
   lamp?: number
   electric_socket?: number
-  electrical_power: number
+  electrical_power?: number
   electrical_unit?: string
-  is_toilet_exist: boolean
+  is_toilet_exist?: boolean
   description?: string
 }
 
@@ -1178,6 +1179,7 @@ export const tenantsApi = {
   async getTenants(params?: {
     name?: string
     user_id?: string
+    asset_id?: string
     category?: number | string
     status?: number | string
     payment_status?: string
@@ -1188,6 +1190,7 @@ export const tenantsApi = {
     const queryParams = new URLSearchParams()
     if (params?.name) queryParams.append('name', params.name)
     if (params?.user_id) queryParams.append('user_id', params.user_id)
+    if (params?.asset_id) queryParams.append('asset_id', params.asset_id)
     if (params?.category) queryParams.append('category', params.category.toString())
     if (params?.status !== undefined && params?.status !== null) {
       queryParams.append('status', params.status.toString())
