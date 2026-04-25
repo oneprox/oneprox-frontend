@@ -889,7 +889,7 @@ export default function AssetOverviewDashboard({
             className="h-[420px] overflow-auto overscroll-contain rounded-lg border border-slate-100"
             onWheel={(event) => handleContainerWheel(event, legalScrollRef)}
           >
-            <Table className="w-full min-w-[1000px] table-fixed">
+            <Table className="w-full min-w-[1020px] table-fixed">
               <TableHeader className="sticky top-0 z-10 bg-white">
                 <TableRow className="border-b border-slate-100 hover:bg-transparent">
                   <TableHead className="w-10 px-2" />
@@ -908,10 +908,10 @@ export default function AssetOverviewDashboard({
                   <TableHead className="min-w-0 w-[14%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
                     Unit
                   </TableHead>
-                  <TableHead className="w-[11rem] whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  <TableHead className="w-[12rem] whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                     Jatuh tempo
                   </TableHead>
-                  <TableHead className="min-w-0 w-[14%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  <TableHead className="min-w-0 w-[11%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
                     Kewajiban mitra
                   </TableHead>
                   <TableHead className="w-24 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
