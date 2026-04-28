@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { TaskGroup, CreateTaskGroupData, UpdateTaskGroupData } from '@/lib/api'
+import { TaskGroup, CreateTaskGroupData, UpdateTaskGroupData, settingsApi } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -37,6 +37,9 @@ interface TaskGroupFormProps {
 }
 
 export default function TaskGroupForm({ taskGroup, onSubmit, onCancel, loading = false }: TaskGroupFormProps) {
+  const [beforeHours, setBeforeHours] = useState<string>('...')
+  const [afterHours, setAfterHours] = useState<string>('...')
+
   const form = useForm<TaskGroupFormData>({
     resolver: zodResolver(taskGroupSchema) as any,
     defaultValues: {
@@ -60,6 +63,31 @@ export default function TaskGroupForm({ taskGroup, onSubmit, onCancel, loading =
       })
     }
   }, [taskGroup, form])
+
+  useEffect(() => {
+    const getSettingValue = async (key: string) => {
+      try {
+        const res = await settingsApi.getSettingByKey(key)
+        if (!res.success || !res.data) return null
+        const payload = res.data as any
+        const raw = payload?.data?.value ?? payload?.value
+        return raw != null ? String(raw) : null
+      } catch {
+        return null
+      }
+    }
+
+    const loadGenerationWindow = async () => {
+      const [before, after] = await Promise.all([
+        getSettingValue('task_generation_before_hours'),
+        getSettingValue('task_generation_after_hours'),
+      ])
+      if (before) setBeforeHours(before)
+      if (after) setAfterHours(after)
+    }
+
+    loadGenerationWindow()
+  }, [])
 
   const handleSubmit = async (data: TaskGroupFormData) => {
     try {
@@ -122,6 +150,9 @@ export default function TaskGroupForm({ taskGroup, onSubmit, onCancel, loading =
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Start Time <span className="text-red-500">*</span></FormLabel>
+                <p className="text-xs text-muted-foreground">
+                  Generate task bisa didapatkan dari {beforeHours} jam sebelum start_time dan {afterHours} jam setelah start_time.
+                </p>
                 <FormControl>
                   <Input 
                     type="time"
