@@ -421,6 +421,7 @@ export default function AssetOverviewDashboard({
   const utilizationChartSeries = utilizationData.map((d) =>
     Number.isFinite(d.value) ? d.value : 0
   )
+  const utilizationChartKey = `${selectedAssetId}-${overviewData.occupancy}-${utilizationChartSeries.join(',')}`
 
   const financialDataForChart = useMemo(
     () => financialData.slice(0, financialVisibleCount),
@@ -755,6 +756,7 @@ export default function AssetOverviewDashboard({
               <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] gap-6 items-center">
                 <div className="flex justify-center">
                   <Chart
+                    key={utilizationChartKey}
                     options={utilizationChartOptions}
                     series={utilizationChartSeries}
                     type="donut"
