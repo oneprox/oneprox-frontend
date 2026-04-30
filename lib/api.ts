@@ -1869,6 +1869,14 @@ export interface NonRoutineUserTasksListResponse {
   offset: number
 }
 
+export interface DailyWorkStatusResponse {
+  day_date: string
+  month_from: string
+  month_to: string
+  today_tasks: UserTask[]
+  month_tasks: UserTask[]
+}
+
 // User Tasks-specific API functions
 export const userTasksApi = {
   /**
@@ -1927,6 +1935,32 @@ export const userTasksApi = {
     
     const endpoint = `/api/user-tasks${queryParams.toString() ? `?${queryParams.toString()}` : ''}`
     return apiClient.get<UserTask[]>(endpoint)
+  },
+
+  async getDailyWorkStatus(params?: {
+    user_id?: string
+    all_users?: boolean | string | number
+    asset_id?: string
+    day_date?: string
+    month_from?: string
+    month_to?: string
+    limit?: number
+    offset?: number
+  }): Promise<ApiResponse<DailyWorkStatusResponse>> {
+    const queryParams = new URLSearchParams()
+    if (params?.user_id) queryParams.append('user_id', params.user_id)
+    const allUsers = params?.all_users
+    if (allUsers === true || allUsers === 1 || allUsers === '1' || allUsers === 'true') {
+      queryParams.append('all_users', '1')
+    }
+    if (params?.asset_id) queryParams.append('asset_id', params.asset_id)
+    if (params?.day_date) queryParams.append('day_date', params.day_date)
+    if (params?.month_from) queryParams.append('month_from', params.month_from)
+    if (params?.month_to) queryParams.append('month_to', params.month_to)
+    if (params?.limit != null) queryParams.append('limit', String(params.limit))
+    if (params?.offset != null) queryParams.append('offset', String(params.offset))
+    const endpoint = `/api/user-tasks/daily-status${queryParams.toString() ? `?${queryParams.toString()}` : ''}`
+    return apiClient.get<DailyWorkStatusResponse>(endpoint)
   },
 
   async getUpcomingUserTasks(): Promise<ApiResponse<UserTask[]>> {

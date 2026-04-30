@@ -71,7 +71,33 @@ function isKeamanan(ut: UserTask): boolean {
 
 function isCompleted(ut: UserTask): boolean {
   const s = (ut.status || '').toLowerCase()
-  return s === 'completed' || !!ut.completed_at
+  const selfCompleted =
+    s === 'completed' ||
+    s === 'done' ||
+    s === 'selesai' ||
+    s === 'lunas' ||
+    s === 'paid' ||
+    s.includes('sudah dibayar') ||
+    !!ut.completed_at
+
+  if (selfCompleted) return true
+
+  // Samakan pola dashboard worker: main task bisa dianggap selesai
+  // ketika seluruh sub task sudah selesai meskipun status main belum ter-update.
+  const children = Array.isArray(ut.sub_user_task) ? ut.sub_user_task : []
+  if (children.length === 0) return false
+  return children.every((child) => {
+    const cs = (child.status || '').toLowerCase()
+    return (
+      cs === 'completed' ||
+      cs === 'done' ||
+      cs === 'selesai' ||
+      cs === 'lunas' ||
+      cs === 'paid' ||
+      cs.includes('sudah dibayar') ||
+      !!child.completed_at
+    )
+  })
 }
 
 function isInProgress(ut: UserTask): boolean {
@@ -80,10 +106,17 @@ function isInProgress(ut: UserTask): boolean {
 }
 
 function dateKey(d: Date): string {
-  const year = d.getFullYear()
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
+  // Samakan boundary tanggal dengan backend yang memakai WIB.
+  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' })
+}
+
+function statusHistogram(tasks: UserTask[]): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const t of tasks) {
+    const key = String(t.status || '(kosong)').toLowerCase().trim() || '(kosong)'
+    out[key] = (out[key] || 0) + 1
+  }
+  return out
 }
 
 /** Map jam dari scheduled_at ke indeks slot patroli */
@@ -204,13 +237,20 @@ function donutOptions(label: string, percentage: number): ApexOptions {
     plotOptions: {
       pie: {
         donut: {
-          size: '72%',
+          size: '76%',
           labels: {
             show: true,
-            name: { show: true, offsetY: 20, color: '#64748b', fontSize: '13px', fontWeight: 600 },
+            name: {
+              show: true,
+              offsetY: 18,
+              color: '#64748b',
+              fontSize: '12px',
+              fontWeight: 600,
+            },
             value: {
               show: true,
-              fontSize: '26px',
+              offsetY: -6,
+              fontSize: '22px',
               fontWeight: 700,
               color: '#0f172a',
               formatter: () => `${pct}%`,
@@ -221,6 +261,10 @@ function donutOptions(label: string, percentage: number): ApexOptions {
           },
         },
       },
+    },
+    states: {
+      hover: { filter: { type: 'none' } },
+      active: { filter: { type: 'none' } },
     },
     legend: { show: false },
   }
@@ -302,25 +346,31 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
     return d
   }, [])
 
-  const monthRange = useMemo(() => {
-    const start = new Date(today.getFullYear(), today.getMonth(), 1)
-    const end = new Date(today.getFullYear(), today.getMonth() + 1, 1)
-    return { start, end }
-  }, [today])
-
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
       const todayStr = dateKey(today)
-      const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0)
-      const monthToStr = dateKey(lastDayOfMonth)
+      const [yearStr, monthStr] = todayStr.split('-')
+      const year = Number(yearStr)
+      const month = Number(monthStr)
+      const monthFromStr = `${yearStr}-${monthStr}-01`
+      const lastDay = new Date(year, month, 0).getDate()
+      const monthToStr = `${yearStr}-${monthStr}-${String(lastDay).padStart(2, '0')}`
+      console.info('[DailyWorkStatus] request range', {
+        selectedAssetId,
+        todayStr,
+        monthFrom: monthFromStr,
+        monthTo: monthToStr,
+      })
 
-      const [assetsRes, dayRes, monthRes] = await Promise.all([
+      const [assetsRes, dayRes] = await Promise.all([
         assetsApi.getAssets({ limit: 1000 }),
-        userTasksApi.getUserTasks({ date_from: todayStr, date_to: todayStr, limit: 10000 }),
-        userTasksApi.getUserTasks({
-          date_from: dateKey(monthRange.start),
-          date_to: monthToStr,
+        userTasksApi.getDailyWorkStatus({
+          all_users: 1,
+          asset_id: selectedAssetId !== 'all' ? selectedAssetId : undefined,
+          day_date: todayStr,
+          month_from: monthFromStr,
+          month_to: monthToStr,
           limit: 10000,
         }),
       ])
@@ -337,8 +387,45 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
         setAssets([])
       }
 
-      setTasksToday(dayRes.success && dayRes.data != null ? normalizeUserTasksPayload(dayRes.data) : [])
-      setTasksMonth(monthRes.success && monthRes.data != null ? normalizeUserTasksPayload(monthRes.data) : [])
+      if (!dayRes.success) {
+        console.error('[DailyWorkStatus] daily-status request failed', {
+          error: dayRes.error,
+          message: dayRes.message,
+        })
+      }
+
+      const payload = dayRes.success && dayRes.data != null ? (dayRes.data as any) : null
+      const todaySource = payload?.today_tasks ?? payload?.data?.today_tasks
+      const monthSource = payload?.month_tasks ?? payload?.data?.month_tasks
+      const dayTasks = normalizeUserTasksPayload(todaySource)
+      const monthTasks = normalizeUserTasksPayload(monthSource)
+
+      setTasksToday(dayTasks)
+      setTasksMonth(monthTasks)
+
+      const flatDayTasks = flattenUserTasks(dayTasks)
+      const completedByRule = flatDayTasks.filter(isCompleted).length
+      const dayTasksDebug = flatDayTasks.map((t) => ({
+        id: t.user_task_id ?? t.id ?? null,
+        task_name: t.task?.name || null,
+        asset_id: getTaskAssetId(t) || null,
+        asset_name: t.task?.asset?.name || null,
+        status: t.status || null,
+        start_at: t.start_at || null,
+        completed_at: t.completed_at || null,
+        created_at: t.created_at || null,
+      }))
+      console.info('[DailyWorkStatus] response summary', {
+        requestSuccess: dayRes.success === true,
+        assetsCount: assetsRes.success ? 'ok' : 'failed',
+        tasksTodayMain: dayTasks.length,
+        tasksTodayFlat: flatDayTasks.length,
+        tasksMonthMain: monthTasks.length,
+        dayStatusHistogram: statusHistogram(flatDayTasks),
+        completedByRule,
+        payloadKeys: payload && typeof payload === 'object' ? Object.keys(payload) : [],
+        dayTasks: dayTasksDebug,
+      })
     } catch (e) {
       console.error('DailyWorkStatus load error:', e)
       setTasksToday([])
@@ -346,11 +433,33 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
     } finally {
       setLoading(false)
     }
-  }, [today, monthRange.start, monthRange.end])
+  }, [today, selectedAssetId])
 
   useEffect(() => {
     loadData()
   }, [loadData, selectedAssetId])
+
+  useEffect(() => {
+    // Jaga chart tetap sinkron saat user balik fokus ke tab/halaman dashboard.
+    const onFocus = () => {
+      void loadData()
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void loadData()
+    }
+
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    const intervalId = window.setInterval(() => {
+      void loadData()
+    }, 60_000)
+
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.clearInterval(intervalId)
+    }
+  }, [loadData])
 
   const flatToday = useMemo(() => flattenUserTasks(tasksToday), [tasksToday])
 
@@ -567,10 +676,6 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
 
   return (
     <div className="space-y-6">
-      <p className="text-base text-slate-500">
-        Aset: <span className="font-semibold text-slate-800">{selectedAsset?.name || selectedAssetId}</span>
-      </p>
-
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card className="border border-gray-200 shadow-sm">
           <CardHeader className="space-y-1 pb-2">
@@ -578,13 +683,13 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
             <CardDescription className="text-base text-slate-500">Pantau pencapaian pekerjaan kebersihan</CardDescription>
           </CardHeader>
           <CardContent className="overflow-x-auto">
-            <Table>
+            <Table className="table-fixed">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="w-10 text-xs font-semibold uppercase text-slate-500">No</TableHead>
-                  <TableHead className="text-xs font-semibold uppercase text-slate-500">Pekerjaan</TableHead>
-                  <TableHead className="text-xs font-semibold uppercase text-slate-500">Status</TableHead>
-                  <TableHead className="text-xs font-semibold uppercase text-slate-500">Hasil</TableHead>
+                  <TableHead className="w-[52%] text-xs font-semibold uppercase text-slate-500">Pekerjaan</TableHead>
+                  <TableHead className="w-[18%] text-xs font-semibold uppercase text-slate-500">Status</TableHead>
+                  <TableHead className="w-[24%] text-xs font-semibold uppercase text-slate-500">Hasil</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -609,7 +714,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
                         {(isKebersihan(main) || hasChildren) && (
                           <TableRow className="bg-slate-50/80">
                             <TableCell className="align-middle text-slate-600">{gIdx + 1}</TableCell>
-                            <TableCell className="max-w-[min(100vw,280px)] text-sm text-slate-900">
+                            <TableCell className="max-w-[min(100vw,280px)] align-top text-sm text-slate-900">
                               <div className="flex items-start gap-1">
                                 {hasChildren ? (
                                   <Button
@@ -630,7 +735,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
                                 ) : (
                                   <span className="inline-block w-7 shrink-0" />
                                 )}
-                                <span className="min-w-0 font-medium leading-snug">
+                                <span className="min-w-0 break-words font-medium leading-snug whitespace-normal">
                                   {mainTitle}
                                   {hasChildren ? (
                                     <span className="ml-2 font-normal text-muted-foreground">({vis.length})</span>
@@ -638,7 +743,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
                                 </span>
                               </div>
                             </TableCell>
-                            <TableCell className="align-middle">
+                            <TableCell className="align-middle whitespace-nowrap">
                               {isKebersihan(main) ? (
                                 <span
                                   className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${mainSt.className}`}
@@ -654,7 +759,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
                                 mainEv.length === 0 ? (
                                   <span className="text-xs text-muted-foreground">Belum ada bukti</span>
                                 ) : (
-                                  <div className="flex max-w-[280px] flex-wrap gap-1">
+                                  <div className="flex max-w-[240px] flex-wrap gap-1">
                                     {mainEv.map((e) =>
                                       e.isText ? (
                                         <span
@@ -670,7 +775,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
                                           type="button"
                                           size="sm"
                                           variant="ghost"
-                                          className="h-7 bg-blue-600 px-2 text-xs text-white hover:bg-blue-700"
+                                          className="h-7 min-w-[64px] rounded-md bg-blue-600 px-2 text-xs font-semibold text-white hover:bg-blue-700"
                                           asChild
                                         >
                                           <a href={e.href!} target="_blank" rel="noopener noreferrer">
@@ -695,18 +800,18 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
                             return (
                               <TableRow key={`${key}-sub-${child.user_task_id ?? child.id ?? cIdx}`} className="bg-white">
                                 <TableCell className="text-muted-foreground" />
-                                <TableCell className="max-w-[min(100vw,280px)] text-sm text-slate-800">
+                                <TableCell className="max-w-[min(100vw,280px)] align-top text-sm text-slate-800">
                                   <div className="ml-2 flex items-start gap-2 border-l border-slate-200 pl-3">
                                     <CornerDownRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                                     <div className="min-w-0 flex flex-wrap items-center gap-2">
-                                      <span className="leading-snug">{child.task?.name || '—'}</span>
+                                      <span className="leading-snug break-words whitespace-normal">{child.task?.name || '—'}</span>
                                       <Badge variant="secondary" className="text-xs font-normal">
                                         Sub task
                                       </Badge>
                                     </div>
                                   </div>
                                 </TableCell>
-                                <TableCell>
+                                <TableCell className="whitespace-nowrap">
                                   <span
                                     className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${st.className}`}
                                   >
@@ -717,7 +822,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
                                   {evidenceEntries.length === 0 ? (
                                     <span className="text-xs text-muted-foreground">Belum ada bukti</span>
                                   ) : (
-                                    <div className="flex max-w-[280px] flex-wrap gap-1">
+                                    <div className="flex max-w-[240px] flex-wrap gap-1">
                                       {evidenceEntries.map((e) =>
                                         e.isText ? (
                                           <span
@@ -733,7 +838,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
                                             type="button"
                                             size="sm"
                                             variant="ghost"
-                                            className="h-7 bg-blue-600 px-2 text-xs text-white hover:bg-blue-700"
+                                            className="h-7 min-w-[64px] rounded-md bg-blue-600 px-2 text-xs font-semibold text-white hover:bg-blue-700"
                                             asChild
                                           >
                                             <a href={e.href!} target="_blank" rel="noopener noreferrer">
@@ -840,18 +945,18 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
             <div className="grid grid-cols-2 gap-6">
               <div className="flex flex-col items-center">
                 <Chart
-                  options={{ ...donutOptions('Harian', pctHarianKebersihan), labels: ['Harian', 'Sisa'] }}
-                  series={[pctHarianKebersihan, 100 - pctHarianKebersihan]}
-                  type="donut"
+                  options={radialOptions(pctHarianKebersihan)}
+                  series={[pctHarianKebersihan]}
+                  type="radialBar"
                   height={200}
                 />
                 <p className="-mt-2 text-sm font-semibold text-slate-600">Harian</p>
               </div>
               <div className="flex flex-col items-center">
                 <Chart
-                  options={{ ...donutOptions('Bulanan', pctBulananKebersihan), labels: ['Bulanan', 'Sisa'] }}
-                  series={[pctBulananKebersihan, 100 - pctBulananKebersihan]}
-                  type="donut"
+                  options={radialOptions(pctBulananKebersihan)}
+                  series={[pctBulananKebersihan]}
+                  type="radialBar"
                   height={200}
                 />
                 <p className="-mt-2 text-sm font-semibold text-slate-600">Bulanan</p>
@@ -868,18 +973,18 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
             <div className="grid grid-cols-2 gap-6">
               <div className="flex flex-col items-center">
                 <Chart
-                  options={{ ...donutOptions('Harian', pctHarianKeamanan), labels: ['Harian', 'Sisa'] }}
-                  series={[pctHarianKeamanan, 100 - pctHarianKeamanan]}
-                  type="donut"
+                  options={radialOptions(pctHarianKeamanan)}
+                  series={[pctHarianKeamanan]}
+                  type="radialBar"
                   height={200}
                 />
                 <p className="-mt-2 text-sm font-semibold text-slate-600">Harian</p>
               </div>
               <div className="flex flex-col items-center">
                 <Chart
-                  options={{ ...donutOptions('Bulanan', pctBulananKeamanan), labels: ['Bulanan', 'Sisa'] }}
-                  series={[pctBulananKeamanan, 100 - pctBulananKeamanan]}
-                  type="donut"
+                  options={radialOptions(pctBulananKeamanan)}
+                  series={[pctBulananKeamanan]}
+                  type="radialBar"
                   height={200}
                 />
                 <p className="-mt-2 text-sm font-semibold text-slate-600">Bulanan</p>
