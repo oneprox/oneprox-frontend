@@ -683,7 +683,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
             <CardDescription className="text-base text-slate-500">Pantau pencapaian pekerjaan kebersihan</CardDescription>
           </CardHeader>
           <CardContent className="overflow-x-auto">
-            <Table className="table-fixed">
+            <Table className="min-w-[640px] table-fixed">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="w-10 text-xs font-semibold uppercase text-slate-500">No</TableHead>
@@ -743,10 +743,10 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
                                 </span>
                               </div>
                             </TableCell>
-                            <TableCell className="align-middle whitespace-nowrap">
+                            <TableCell className="align-top whitespace-nowrap">
                               {isKebersihan(main) ? (
                                 <span
-                                  className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${mainSt.className}`}
+                                  className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium sm:px-2.5 sm:text-xs ${mainSt.className}`}
                                 >
                                   {mainSt.label}
                                 </span>
@@ -775,7 +775,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
                                           type="button"
                                           size="sm"
                                           variant="ghost"
-                                          className="h-7 min-w-[64px] rounded-md bg-blue-600 px-2 text-xs font-semibold text-white hover:bg-blue-700"
+                                          className="h-6 min-w-[56px] rounded-md bg-blue-600 px-2 text-[10px] font-semibold text-white hover:bg-blue-700 sm:h-7 sm:min-w-[64px] sm:text-xs"
                                           asChild
                                         >
                                           <a href={e.href!} target="_blank" rel="noopener noreferrer">
@@ -811,9 +811,9 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
                                     </div>
                                   </div>
                                 </TableCell>
-                                <TableCell className="whitespace-nowrap">
+                                <TableCell className="align-top whitespace-nowrap">
                                   <span
-                                    className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${st.className}`}
+                                    className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium sm:px-2.5 sm:text-xs ${st.className}`}
                                   >
                                     {st.label}
                                   </span>
@@ -838,7 +838,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
                                             type="button"
                                             size="sm"
                                             variant="ghost"
-                                            className="h-7 min-w-[64px] rounded-md bg-blue-600 px-2 text-xs font-semibold text-white hover:bg-blue-700"
+                                            className="h-6 min-w-[56px] rounded-md bg-blue-600 px-2 text-[10px] font-semibold text-white hover:bg-blue-700 sm:h-7 sm:min-w-[64px] sm:text-xs"
                                             asChild
                                           >
                                             <a href={e.href!} target="_blank" rel="noopener noreferrer">
@@ -869,7 +869,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="overflow-x-auto">
-              <Table>
+              <Table className="min-w-[760px]">
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
                     <TableHead className="w-10 text-xs font-semibold uppercase text-slate-500">No</TableHead>
