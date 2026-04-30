@@ -120,6 +120,20 @@ export default function NonRoutineWork({ selectedAssetId = 'all' }: NonRoutineWo
       .filter((u: string | undefined) => typeof u === 'string' && u.trim() !== '')
   }
 
+  const formatDateTime = (value?: string | null): string => {
+    if (!value) return '-'
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return '-'
+    return date.toLocaleString('id-ID', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
+  }
+
   if (loading) {
     return <LoadingSkeleton height="h-96" text="Memuat data pekerjaan non rutin..." />
   }
@@ -211,6 +225,14 @@ export default function NonRoutineWork({ selectedAssetId = 'all' }: NonRoutineWo
               <div><span className="font-medium">Jenis Pekerjaan:</span> {selectedItem.jenisPekerjaan}</div>
               <div><span className="font-medium">Deskripsi Pekerjaan:</span> {selectedDetail?.task?.name || selectedItem.deskripsiPekerjaan}</div>
               <div className="flex items-center gap-2"><span className="font-medium">Status:</span>{getStatusBadge(selectedItem)}</div>
+              <div>
+                <span className="font-medium">Waktu Dimulai:</span>{' '}
+                {formatDateTime(selectedDetail?.started_at || selectedDetail?.start_at || null)}
+              </div>
+              <div>
+                <span className="font-medium">Waktu Selesai:</span>{' '}
+                {formatDateTime(selectedDetail?.completed_at || null)}
+              </div>
 
               {detailLoading ? (
                 <div className="text-muted-foreground">Memuat detail...</div>

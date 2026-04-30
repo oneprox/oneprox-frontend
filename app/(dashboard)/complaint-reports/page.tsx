@@ -34,12 +34,17 @@ export default function ComplaintReportsPage() {
   const [sortOrder, setSortOrder] = useState<string>('desc')
 
   const loadComplaintReports = async () => {
+    if (!currentUser) return
     setLoading(true)
     try {
       const filterParams: any = {}
+      const isAdmin = currentUser?.role_id === 1 || currentUser?.role_id === 2
       
       if (searchTerm.trim()) {
         filterParams.title = searchTerm.trim()
+      }
+      if (!isAdmin && currentUser?.assetIds && currentUser.assetIds.length > 0) {
+        filterParams.asset_id = currentUser.assetIds[0]
       }
       // Only apply type filter if user is super admin (role_id 1 or 2)
       if (showTypeColumn() && typeFilter !== 'all') {
@@ -111,14 +116,13 @@ export default function ComplaintReportsPage() {
   }
 
   useEffect(() => {
-    loadComplaintReports()
     loadCurrentUser()
   }, [])
 
   // Reload data when filters change
   useEffect(() => {
     loadComplaintReports()
-  }, [searchTerm, typeFilter, statusFilter, priorityFilter, sortBy, sortOrder])
+  }, [searchTerm, typeFilter, statusFilter, priorityFilter, sortBy, sortOrder, currentUser])
 
   // Check if user can create complaint reports (only role_id 4 and 5)
   const canCreateComplaintReport = () => {

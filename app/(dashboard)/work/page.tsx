@@ -150,21 +150,6 @@ function WorkContent() {
 
       <div className="space-y-8">
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold tracking-tight">Task non-rutin</h2>
-          <p className="text-sm text-muted-foreground">
-            Dari API non-rutin: filter bulan berjalan (created_at), jatuh tempo di kolom tanggal
-          </p>
-          <TaskList
-            userTasks={nonRoutineUserTasks}
-            isLoading={isLoading}
-            onStartTask={handleStartTask}
-            onCompleteTask={handleCompleteTask}
-            variant="non-routine"
-            emptyListMessage="Tidak ada task non-rutin untuk hari ini"
-          />
-        </section>
-
-        <section className="space-y-3">
           <h2 className="text-lg font-semibold tracking-tight">Task rutin (generate)</h2>
           <p className="text-sm text-muted-foreground">
             Dari generate task shift; tampil jika dibuat hari ini
@@ -176,6 +161,21 @@ function WorkContent() {
             onCompleteTask={handleCompleteTask}
             variant="routine"
             emptyListMessage="Tidak ada task rutin untuk hari ini"
+          />
+        </section>
+
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold tracking-tight">Task non-rutin</h2>
+          <p className="text-sm text-muted-foreground">
+            Dari API non-rutin: filter bulan berjalan (created_at), jatuh tempo di kolom tanggal
+          </p>
+          <TaskList
+            userTasks={nonRoutineUserTasks}
+            isLoading={isLoading}
+            onStartTask={handleStartTask}
+            onCompleteTask={handleCompleteTask}
+            variant="non-routine"
+            emptyListMessage="Tidak ada task non-rutin untuk hari ini"
           />
         </section>
       </div>

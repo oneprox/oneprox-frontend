@@ -307,6 +307,7 @@ export interface User {
   phone?: string
   gender?: string
   role_id?: number
+  assetIds?: string[]
   status?: string
   role?: {
     id: number
@@ -1771,6 +1772,7 @@ export const complaintReportsApi = {
     type?: 'complaint' | 'report'
     status?: string | number
     priority?: string | number
+    asset_id?: string
     tenant_id?: string
     reporter_id?: string
     order?: string
@@ -1782,6 +1784,7 @@ export const complaintReportsApi = {
     if (params?.type) queryParams.append('type', params.type)
     if (params?.status !== undefined && params?.status !== null) queryParams.append('status', String(params.status))
     if (params?.priority !== undefined && params?.priority !== null) queryParams.append('priority', String(params.priority))
+    if (params?.asset_id) queryParams.append('asset_id', params.asset_id)
     if (params?.tenant_id) queryParams.append('tenant_id', params.tenant_id)
     if (params?.reporter_id) queryParams.append('reporter_id', params.reporter_id)
     if (params?.order) queryParams.append('order', params.order)

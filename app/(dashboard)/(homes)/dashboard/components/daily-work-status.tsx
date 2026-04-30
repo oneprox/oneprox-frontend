@@ -243,12 +243,30 @@ function buildUserTaskTreeGroups(
     return isRole(main) || subs.some(isRole)
   })
 
-  return mains.map((main) => {
+  const groups = mains.map((main) => {
     const subs = ((main.sub_user_task || []) as UserTask[]).filter(
       (s) => selectedAssetId === 'all' || getTaskAssetId(s) === selectedAssetId
     )
     const key = String(main.user_task_id ?? main.id ?? '')
     return { key, main, children: subs }
+  })
+
+  const isRoutineGroup = (group: UserTaskTreeGroup): boolean => {
+    const mainRoutine = group.main.is_routine === true || group.main.task?.is_routine === true
+    if (mainRoutine) return true
+    return group.children.some((child) => child.is_routine === true || child.task?.is_routine === true)
+  }
+
+  return groups.sort((a, b) => {
+    const aRoutine = isRoutineGroup(a)
+    const bRoutine = isRoutineGroup(b)
+    if (aRoutine !== bRoutine) {
+      return aRoutine ? -1 : 1
+    }
+
+    const aTitle = mainTaskGroupTitle(a.main, 'Task')
+    const bTitle = mainTaskGroupTitle(b.main, 'Task')
+    return aTitle.localeCompare(bTitle, 'id')
   })
 }
 

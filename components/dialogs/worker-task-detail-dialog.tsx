@@ -101,10 +101,13 @@ export default function WorkerTaskDetailDialog({
     })
   }
 
-  const formatTime = (dateString: string | undefined | null) => {
+  const formatDateTime = (dateString: string | undefined | null) => {
     if (!mounted) return 'Loading...'
     if (!dateString) return '-'
-    return new Date(dateString).toLocaleTimeString('id-ID', {
+    return new Date(dateString).toLocaleString('id-ID', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit'
@@ -217,15 +220,15 @@ export default function WorkerTaskDetailDialog({
               {(userTask.started_at || userTask.start_at) && (
                 <div className="flex items-center gap-2">
                   <Play className="h-3 w-3 text-blue-600" />
-                  <span className="text-muted-foreground">Dimulai: </span>
-                  <span className="font-medium">{formatTime(userTask.started_at || userTask.start_at || null)}</span>
+                  <span className="text-muted-foreground">Tanggal & Jam Dimulai: </span>
+                  <span className="font-medium">{formatDateTime(userTask.started_at || userTask.start_at || null)}</span>
                 </div>
               )}
               {userTask.completed_at && (
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="h-3 w-3 text-green-600" />
-                  <span className="text-muted-foreground">Selesai: </span>
-                  <span className="font-medium">{formatTime(userTask.completed_at)}</span>
+                  <span className="text-muted-foreground">Tanggal & Jam Selesai: </span>
+                  <span className="font-medium">{formatDateTime(userTask.completed_at)}</span>
                 </div>
               )}
             </div>
