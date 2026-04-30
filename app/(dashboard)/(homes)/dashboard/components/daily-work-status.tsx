@@ -368,6 +368,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
         userTasksApi.getDailyWorkStatus({
           all_users: 1,
           asset_id: selectedAssetId !== 'all' ? selectedAssetId : undefined,
+          non_routine: false,
           day_date: todayStr,
           month_from: monthFromStr,
           month_to: monthToStr,

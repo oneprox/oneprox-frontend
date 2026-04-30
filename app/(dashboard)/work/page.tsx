@@ -10,7 +10,6 @@ import { GenerateTaskButton } from '../../../components/work/GenerateTaskButton'
 import { TaskList } from '../../../components/work/TaskList'
 import { CompleteTaskDialog } from '../../../components/work/CompleteTaskDialog'
 import {
-  filterRoutineTasksForToday,
   normalizeFlatUserTask,
   parseNonRoutineUserTasksResponse,
   parseRoutineUserTasksResponse,
@@ -112,8 +111,7 @@ function WorkContent() {
     
   }
 
-  const routineTasksForToday = filterRoutineTasksForToday(routineUserTasks)
-  const hasRoutineTasksToday = routineTasksForToday.length > 0
+  const hasRoutineTasks = routineUserTasks.length > 0
   const hasNonRoutineThisMonth = nonRoutineUserTasks.length > 0
 
   return (
@@ -130,15 +128,15 @@ function WorkContent() {
         </div>
       </div>
 
-      {/* Generate rutin — hanya jika tidak ada task rutin hari ini (non-rutin tidak pakai generate) */}
-      {!isLoading && !hasRoutineTasksToday && (
+      {/* Generate rutin — hanya jika belum ada task rutin sama sekali (non-rutin tidak pakai generate) */}
+      {!isLoading && !hasRoutineTasks && (
         <Card>
           <CardContent className="flex items-center justify-center py-8 md:py-12 px-4">
             <div className="text-center space-y-4 w-full max-w-md">
               <p className="text-sm md:text-base text-muted-foreground">
                 {hasNonRoutineThisMonth
-                  ? 'Belum ada task rutin (shift) untuk hari ini. Task non-rutin bulan ini ada di bawah.'
-                  : 'Belum ada user task rutin untuk hari ini'}
+                  ? 'Belum ada task rutin (shift). Task non-rutin bulan ini ada di bawah.'
+                  : 'Belum ada user task rutin'}
               </p>
               <div className="flex justify-center">
                 <GenerateTaskButton onGenerateSuccess={handleGenerateSuccess} />
@@ -152,15 +150,16 @@ function WorkContent() {
         <section className="space-y-3">
           <h2 className="text-lg font-semibold tracking-tight">Task rutin (generate)</h2>
           <p className="text-sm text-muted-foreground">
-            Dari generate task shift; tampil jika dibuat hari ini
+            Menampilkan semua task rutin dari endpoint backend
           </p>
           <TaskList
-            userTasks={routineTasksForToday}
+            userTasks={routineUserTasks}
             isLoading={isLoading}
             onStartTask={handleStartTask}
             onCompleteTask={handleCompleteTask}
             variant="routine"
-            emptyListMessage="Tidak ada task rutin untuk hari ini"
+            emptyListMessage="Tidak ada task rutin"
+            filterByTaskRequirement={false}
           />
         </section>
 

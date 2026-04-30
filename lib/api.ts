@@ -1941,6 +1941,7 @@ export const userTasksApi = {
     user_id?: string
     all_users?: boolean | string | number
     asset_id?: string
+    non_routine?: boolean | string | number
     day_date?: string
     month_from?: string
     month_to?: string
@@ -1954,6 +1955,17 @@ export const userTasksApi = {
       queryParams.append('all_users', '1')
     }
     if (params?.asset_id) queryParams.append('asset_id', params.asset_id)
+    const nonRoutine = params?.non_routine
+    if (nonRoutine === true || nonRoutine === 1 || nonRoutine === '1' || nonRoutine === 'true') {
+      queryParams.append('non_routine', 'true')
+    } else if (
+      nonRoutine === false ||
+      nonRoutine === 0 ||
+      nonRoutine === '0' ||
+      nonRoutine === 'false'
+    ) {
+      queryParams.append('non_routine', 'false')
+    }
     if (params?.day_date) queryParams.append('day_date', params.day_date)
     if (params?.month_from) queryParams.append('month_from', params.month_from)
     if (params?.month_to) queryParams.append('month_to', params.month_to)

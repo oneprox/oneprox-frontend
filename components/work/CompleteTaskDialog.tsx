@@ -210,30 +210,7 @@ export function CompleteTaskDialog({
 
   const handleFileChange = (field: 'fileBefore' | 'fileAfter' | 'fileScan', file: File | null) => {
     if (file) {
-      // For keamanan role with need_validation: only allow after attachment
-      if (task?.is_need_validation && (userRoleName?.toLowerCase() === 'keamanan' || userRoleName?.toLowerCase() === 'security')) {
-        if (field === 'fileBefore') {
-          toast.error('Untuk role keamanan, hanya boleh mengupload foto After')
-          return
-        }
-        // Clear fileBefore if it exists when uploading after
-        if (field === 'fileAfter') {
-          setFormData(prev => ({
-            ...prev,
-            fileBefore: null,
-            fileAfter: file
-          }))
-          setFilePreview(prev => {
-            const newPreview = { ...prev }
-            delete newPreview.before
-            return newPreview
-          })
-        } else {
-          setFormData(prev => ({ ...prev, [field]: file }))
-        }
-      } else {
-        setFormData(prev => ({ ...prev, [field]: file }))
-      }
+      setFormData(prev => ({ ...prev, [field]: file }))
       
       // Read and set preview for the new file
       const reader = new FileReader()
@@ -888,29 +865,14 @@ export function CompleteTaskDialog({
   const handleSubmit = async () => {
     if (!userTask || !task) return
 
-    // Role-based attachment validation
+    // Validation attachment for task that needs validation
     if (task.is_need_validation) {
       const hasBefore = formData.fileBefore !== null
       const hasAfter = formData.fileAfter !== null
-      
-      // For keamanan role: must have after attachment only
-      if (userRoleName?.toLowerCase() === 'keamanan' || userRoleName?.toLowerCase() === 'security') {
-        if (!hasAfter) {
-          toast.error('Untuk role keamanan, wajib mengupload foto After')
-          return
-        }
-        if (hasBefore) {
-          toast.error('Untuk role keamanan, hanya boleh mengupload foto After')
-          return
-        }
-      }
-      
-      // For kebersihan role: must have both before AND after attachments
-      if (userRoleName?.toLowerCase() === 'kebersihan' || userRoleName?.toLowerCase() === 'cleaning') {
-        if (!hasBefore || !hasAfter) {
-          toast.error('Untuk role kebersihan, wajib mengupload foto Before dan After')
-          return
-        }
+
+      if (!hasBefore || !hasAfter) {
+        toast.error('Task validasi wajib upload foto Before dan After')
+        return
       }
     }
 
@@ -1176,69 +1138,52 @@ export function CompleteTaskDialog({
           {/* Validation Form (if is_need_validation) */}
           {task.is_need_validation && (
             <div className="space-y-4">
-              {/* Role-based requirement message */}
-              {(userRoleName?.toLowerCase() === 'keamanan' || userRoleName?.toLowerCase() === 'security') && (
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
-                  <p className="text-sm text-blue-800">
-                    <strong>Catatan:</strong> Untuk role keamanan, Anda wajib mengupload foto After
-                  </p>
-                </div>
-              )}
-              {(userRoleName?.toLowerCase() === 'kebersihan' || userRoleName?.toLowerCase() === 'cleaning') && (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-md">
-                  <p className="text-sm text-amber-800">
-                    <strong>Catatan:</strong> Untuk role kebersihan, Anda wajib mengupload foto Before <strong>dan</strong> After
-                  </p>
-                </div>
-              )}
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-md">
+                <p className="text-sm text-amber-800">
+                  <strong>Catatan:</strong> Task validasi wajib mengupload foto <strong>Before</strong> dan <strong>After</strong>
+                </p>
+              </div>
               
-              {/* Foto Before - hanya untuk kebersihan */}
-              {(userRoleName?.toLowerCase() === 'kebersihan' || userRoleName?.toLowerCase() === 'cleaning') && (
-                <div>
-                  <Label>Foto Before <span className="text-red-500">*</span></Label>
-                  <div className="flex gap-2 mt-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => captureFromCamera('fileBefore')}
-                      className="flex items-center gap-2"
-                    >
-                      <Camera className="h-4 w-4" />
-                      Ambil Foto
+              <div>
+                <Label>Foto Before <span className="text-red-500">*</span></Label>
+                <div className="flex gap-2 mt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => captureFromCamera('fileBefore')}
+                    className="flex items-center gap-2"
+                  >
+                    <Camera className="h-4 w-4" />
+                    Ambil Foto
+                  </Button>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) handleFileChange('fileBefore', file)
+                    }}
+                    className="hidden"
+                    id="file-before-input"
+                  />
+                  <label htmlFor="file-before-input">
+                    <Button type="button" variant="outline" asChild>
+                      <span>Pilih File</span>
                     </Button>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0]
-                        if (file) handleFileChange('fileBefore', file)
-                      }}
-                      className="hidden"
-                      id="file-before-input"
-                    />
-                    <label htmlFor="file-before-input">
-                      <Button type="button" variant="outline" asChild>
-                        <span>Pilih File</span>
-                      </Button>
-                    </label>
-                  </div>
-                  {filePreview.before && (
-                    <img
-                      src={filePreview.before}
-                      alt="Before"
-                      className="mt-2 w-full max-w-xs h-32 object-cover rounded"
-                    />
-                  )}
+                  </label>
                 </div>
-              )}
+                {filePreview.before && (
+                  <img
+                    src={filePreview.before}
+                    alt="Before"
+                    className="mt-2 w-full max-w-xs h-32 object-cover rounded"
+                  />
+                )}
+              </div>
 
               <div>
-                <Label>Foto After {
-                  ((userRoleName?.toLowerCase() === 'kebersihan' || userRoleName?.toLowerCase() === 'cleaning') || 
-                   (userRoleName?.toLowerCase() === 'keamanan' || userRoleName?.toLowerCase() === 'security')) && 
-                  <span className="text-red-500">*</span>
-                }</Label>
+                <Label>Foto After <span className="text-red-500">*</span></Label>
                 <div className="flex gap-2 mt-2">
                   <Button
                     type="button"
@@ -1409,27 +1354,9 @@ export function CompleteTaskDialog({
 
                 // Validation for photo attachments (is_need_validation)
                 if (task.is_need_validation) {
-                  // For keamanan role: only need fileAfter
-                  if (userRoleName?.toLowerCase() === 'keamanan' || userRoleName?.toLowerCase() === 'security') {
-                    if (!formData.fileAfter) {
-                      return true
-                    }
-                    // Must not have fileBefore for keamanan
-                    if (formData.fileBefore) {
-                      return true
-                    }
-                  }
-                  // For kebersihan role: need both fileBefore and fileAfter
-                  else if (userRoleName?.toLowerCase() === 'kebersihan' || userRoleName?.toLowerCase() === 'cleaning') {
-                    if (!formData.fileBefore || !formData.fileAfter) {
-                      return true
-                    }
-                  }
-                  // For other roles: need at least one file
-                  else {
-                    if (!formData.fileBefore && !formData.fileAfter) {
-                      return true
-                    }
+                  // For validation task: always need both before and after
+                  if (!formData.fileBefore || !formData.fileAfter) {
+                    return true
                   }
                 }
 

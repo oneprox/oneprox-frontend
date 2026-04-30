@@ -33,6 +33,8 @@ interface TaskListProps {
   emptyListMessage?: string
   /** Saat tidak ada yang lolos filter (rutin: validasi/scan) */
   filterEmptyMessage?: string
+  /** Jika false, tampilkan semua task dari endpoint tanpa filter requirement */
+  filterByTaskRequirement?: boolean
 }
 
 export function TaskList({
@@ -44,6 +46,7 @@ export function TaskList({
   variant = 'routine',
   emptyListMessage = 'Tidak ada task untuk hari ini',
   filterEmptyMessage,
+  filterByTaskRequirement = true,
 }: TaskListProps) {
   const defaultFilterEmpty =
     variant === 'non-routine'
@@ -98,6 +101,10 @@ export function TaskList({
       if (!task) return false
 
       if (variant === 'non-routine') {
+        return true
+      }
+
+      if (!filterByTaskRequirement) {
         return true
       }
 
@@ -157,7 +164,9 @@ export function TaskList({
     
     const filtered = userTask.sub_user_task.filter(subTask => {
       const subTaskData = subTask.task
-      return subTaskData && (subTaskData.is_need_validation || subTaskData.is_scan)
+      if (!subTaskData) return false
+      if (!filterByTaskRequirement) return true
+      return subTaskData.is_need_validation || subTaskData.is_scan
     })
     
     // Sort by time first, then by task name
@@ -281,7 +290,7 @@ export function TaskList({
 
     const canStart =
       isPending &&
-      (variant === 'non-routine' || task.is_need_validation || task.is_scan)
+      (variant === 'non-routine' || !filterByTaskRequirement || task.is_need_validation || task.is_scan)
     const canComplete = hasStarted && !isCompleted
 
     return (
@@ -331,7 +340,7 @@ export function TaskList({
     const hasSubTasks = subTasks.length > 0
     const isExpanded = expandedTasks.has(taskId)
     const shouldShowMainTask =
-      variant === 'non-routine' || task.is_need_validation || task.is_scan
+      variant === 'non-routine' || !filterByTaskRequirement || task.is_need_validation || task.is_scan
 
     if (isSubTask && !shouldShowMainTask) return null
 
@@ -365,7 +374,7 @@ export function TaskList({
         onCompleteTask(userTask)
       } else if (
         isPending &&
-        (variant === 'non-routine' || task.is_need_validation || task.is_scan)
+        (variant === 'non-routine' || !filterByTaskRequirement || task.is_need_validation || task.is_scan)
       ) {
         handleStartTaskInline(userTask)
       }
@@ -485,7 +494,7 @@ export function TaskList({
                   const hasSubTasks = subTasks.length > 0
                   const isExpanded = expandedTasks.has(taskId)
                   const shouldShowMainTask =
-                    variant === 'non-routine' || task.is_need_validation || task.is_scan
+                    variant === 'non-routine' || !filterByTaskRequirement || task.is_need_validation || task.is_scan
                   const shouldShowMainTaskRow = shouldShowMainTask || hasSubTasks
 
                   if (!shouldShowMainTaskRow) return null
