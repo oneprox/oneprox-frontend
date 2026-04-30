@@ -390,7 +390,7 @@ export default function AssetOverviewDashboard({
             value: {
               show: true,
               offsetY: -10,
-              fontSize: '44px',
+              fontSize: '34px',
               fontWeight: 800,
               color: '#0F172A',
               formatter: (val: string) => {
@@ -738,7 +738,7 @@ export default function AssetOverviewDashboard({
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Asset Utilization Chart */}
-        <Card>
+        <Card className="overflow-hidden">
           <CardHeader>
             <CardTitle className="flex items-center justify-between text-2xl font-bold tracking-tight">
               <span>Pemanfaatan Aset</span>
@@ -751,36 +751,36 @@ export default function AssetOverviewDashboard({
               Okupasi unit per sektor dan unit tersedia (semua unit dalam cakupan aset)
             </p>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pb-6">
             {utilizationData.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] gap-6 items-center">
-                <div className="flex justify-center">
+              <div className="grid min-w-0 grid-cols-1 gap-4 items-center">
+                <div className="flex flex-col items-center justify-center">
                   <Chart
                     key={utilizationChartKey}
                     options={utilizationChartOptions}
                     series={utilizationChartSeries}
                     type="donut"
-                    height={300}
+                    height={320}
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-x-8 gap-y-5">
+                <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
                   {utilizationPercentages.map((item, idx) => (
-                    <div key={`${item.category}-${idx}`} className="flex items-start gap-3">
+                    <div key={`${item.category}-${idx}`} className="flex min-w-0 items-center gap-3 rounded-md border border-slate-100 px-3 py-2">
                       <span
-                        className="mt-1.5 h-3 w-3 rounded-full"
+                        className="h-3 w-3 shrink-0 rounded-full"
                         style={{
                           background:
                             utilizationChartColors[idx] ?? utilizationAvailableColor,
                         }}
                         aria-hidden
                       />
-                      <div className="leading-tight">
-                        <div className="text-lg font-semibold tracking-wide text-muted-foreground uppercase">
+                      <div className="min-w-0 flex-1 leading-tight">
+                        <div className="text-sm font-semibold tracking-wide text-muted-foreground uppercase whitespace-normal break-words">
                           {item.category}
                         </div>
-                        <div className="text-2xl font-bold text-foreground">
+                      </div>
+                      <div className="text-xl font-bold text-foreground tabular-nums">
                           {Math.round(item.pct)}%
-                        </div>
                       </div>
                     </div>
                   ))}
