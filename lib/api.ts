@@ -463,7 +463,7 @@ export interface TenantPaymentLog {
   outstanding?: number
   overdue?: number
   rate?: number // default 0.01
-  last_charge_date?: number // last charge (nominal)
+  last_charge_date?: string // ISO date
   updatedBy?: {
     id: string
     name: string
@@ -484,7 +484,7 @@ export interface CreateTenantPaymentData {
   outstanding?: number
   overdue?: number
   rate?: number
-  last_charge_date?: number // last charge (nominal)
+  last_charge_date?: string // ISO date
 }
 
 // Update Tenant Payment Data interface
@@ -500,7 +500,7 @@ export interface UpdateTenantPaymentData {
   outstanding?: number
   overdue?: number
   rate?: number
-  last_charge_date?: number // last charge (nominal)
+  last_charge_date?: string // ISO date
 }
 
 // Tenant Legal interface

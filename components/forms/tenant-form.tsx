@@ -2162,10 +2162,9 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                     <TableHead className="w-[8%]">Jumlah Tagihan</TableHead>
                     <TableHead className="w-[8%]">Tanggal Bayar</TableHead>
                     <TableHead className="w-[8%]">Jumlah Bayar</TableHead>
-                    <TableHead className="w-[8%]">Dibayar</TableHead>
                     <TableHead className="w-[7%]">Metode</TableHead>
                     <TableHead className="w-[8%]">Outstanding</TableHead>
-                    <TableHead className="w-[8%]">Overdue</TableHead>
+                    <TableHead className="w-[8%]">Overdue (hari)</TableHead>
                     <TableHead className="w-[5%]">Rate</TableHead>
                     <TableHead className="w-[8%]">Last Charge</TableHead>
                     <TableHead className="w-[6%]">Status</TableHead>
@@ -2175,7 +2174,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                 <TableBody>
                   {paymentLogs.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={15} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={14} className="text-center py-8 text-muted-foreground">
                         Tidak ada data payment
                       </TableCell>
                     </TableRow>
@@ -2205,11 +2204,6 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                             : '-'}
                         </TableCell>
                         <TableCell>
-                          {payment.amount 
-                            ? `Rp ${payment.amount.toLocaleString('id-ID')}`
-                            : '-'}
-                        </TableCell>
-                        <TableCell>
                           {payment.paid_amount 
                             ? `Rp ${payment.paid_amount.toLocaleString('id-ID')}`
                             : '-'}
@@ -2226,16 +2220,16 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                             : '-'}
                         </TableCell>
                         <TableCell>
-                          {payment.overdue 
-                            ? `Rp ${payment.overdue.toLocaleString('id-ID')}`
+                          {payment.overdue != null
+                            ? `${Math.round(Number(payment.overdue))} hari`
                             : '-'}
                         </TableCell>
                         <TableCell>
-                          {payment.rate ? (payment.rate * 100).toFixed(2) + '%' : '0.01%'}
+                          {((payment.rate ?? 0.01) * 100).toFixed(2)}
                         </TableCell>
                         <TableCell>
                           {payment.last_charge_date 
-                            ? `Rp ${payment.last_charge_date.toLocaleString('id-ID')}`
+                            ? new Date(payment.last_charge_date).toLocaleDateString('id-ID')
                             : '-'}
                         </TableCell>
                         <TableCell>
@@ -2517,7 +2511,7 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
         billing_period: payment.billing_period || '',
         billing_amount: payment.billing_amount?.toString() || '',
         outstanding: payment.outstanding?.toString() || '',
-        overdue: payment.overdue?.toString() || '',
+        overdue: payment.overdue != null ? String(Math.round(Number(payment.overdue))) : '',
         rate: payment.rate?.toString() || '0.01',
         last_charge_date: payment.last_charge_date ? new Date(payment.last_charge_date).toISOString().split('T')[0] : '',
       })
@@ -2557,7 +2551,7 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
   }
 
   const handleInputChange = (field: string, value: string) => {
-    if (field === 'amount' || field === 'paid_amount' || field === 'billing_amount' || field === 'outstanding' || field === 'overdue') {
+    if (field === 'amount' || field === 'paid_amount' || field === 'billing_amount' || field === 'outstanding') {
       const parsedValue = parsePrice(value)
       if (field === 'paid_amount') {
         const isExplicitZero = value.trim() !== '' && parsedValue === 0
@@ -2578,6 +2572,9 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
       } else {
         setFormData(prev => ({ ...prev, [field]: formatPrice(parsedValue) }))
       }
+    } else if (field === 'overdue') {
+      const digitsOnly = value.replace(/\D/g, '')
+      setFormData(prev => ({ ...prev, overdue: digitsOnly }))
     } else {
       setFormData(prev => ({ ...prev, [field]: value }))
     }
@@ -2652,14 +2649,14 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
       if (formData.outstanding) {
         updateData.outstanding = parsePrice(formData.outstanding)
       }
-      if (formData.overdue) {
-        updateData.overdue = parsePrice(formData.overdue)
+      if (formData.overdue !== '') {
+        updateData.overdue = Number(formData.overdue)
       }
       if (formData.rate) {
         updateData.rate = parseFloat(formData.rate) || 0.01
       }
       if (formData.last_charge_date) {
-        updateData.last_charge_date = parsePrice(formData.last_charge_date)
+        updateData.last_charge_date = new Date(formData.last_charge_date).toISOString()
       }
       await onSubmit(updateData)
     } else {
@@ -2678,14 +2675,14 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
       if (formData.outstanding) {
         createData.outstanding = parsePrice(formData.outstanding)
       }
-      if (formData.overdue) {
-        createData.overdue = parsePrice(formData.overdue)
+      if (formData.overdue !== '') {
+        createData.overdue = Number(formData.overdue)
       }
       if (formData.rate) {
         createData.rate = parseFloat(formData.rate) || 0.01
       }
       if (formData.last_charge_date) {
-        createData.last_charge_date = parsePrice(formData.last_charge_date)
+        createData.last_charge_date = new Date(formData.last_charge_date).toISOString()
       }
       await onSubmit(createData)
     }
@@ -2816,23 +2813,28 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="outstanding">Outstanding</Label>
-          <Input
-            id="outstanding"
-            type="text"
-            value={formData.outstanding}
-            onChange={(e) => handleInputChange('outstanding', e.target.value)}
-            placeholder="Masukkan outstanding"
-          />
+          <div className="relative">
+            <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
+            <Input
+              id="outstanding"
+              type="text"
+              value={formatPrice(parsePrice(formData.outstanding))}
+              onChange={(e) => handleInputChange('outstanding', e.target.value)}
+              placeholder="0"
+              className="pl-10"
+            />
+          </div>
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="overdue">Overdue</Label>
+          <Label htmlFor="overdue">Overdue (hari)</Label>
           <Input
             id="overdue"
             type="text"
+            inputMode="numeric"
             value={formData.overdue}
             onChange={(e) => handleInputChange('overdue', e.target.value)}
-            placeholder="Masukkan overdue"
+            placeholder="0"
           />
         </div>
       </div>
@@ -2855,10 +2857,9 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
           <Label htmlFor="last_charge_date">Last Charge</Label>
           <Input
             id="last_charge_date"
-            type="text"
+            type="date"
             value={formData.last_charge_date}
             onChange={(e) => handleInputChange('last_charge_date', e.target.value)}
-            placeholder="Masukkan last charge"
           />
         </div>
       </div>
