@@ -2225,7 +2225,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                             : '-'}
                         </TableCell>
                         <TableCell>
-                          {((payment.rate ?? 0.01) * 100).toFixed(2)}
+                          {`${((payment.rate ?? 0.01) * 100).toFixed(2)}%`}
                         </TableCell>
                         <TableCell>
                           {payment.last_charge_date 
@@ -2550,6 +2550,25 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
     return parseFloat(parsed) || 0
   }
 
+  const parseRate = (value: string): number | undefined => {
+    const v = (value ?? '').trim()
+    if (!v) return undefined
+    // Support koma Indonesia (,) dan banyak angka desimal.
+    // Simpan hanya digit + separator pertama.
+    const normalized = v
+      .replace(/[^\d,\.]/g, '')
+      .replace(',', '.')
+    // Jika user ketik lebih dari satu titik, ambil yang pertama saja.
+    const firstDot = normalized.indexOf('.')
+    const safe =
+      firstDot === -1
+        ? normalized
+        : normalized.slice(0, firstDot + 1) + normalized.slice(firstDot + 1).replace(/\./g, '')
+    const n = Number(safe)
+    if (!Number.isFinite(n)) return undefined
+    return n
+  }
+
   const handleInputChange = (field: string, value: string) => {
     if (field === 'amount' || field === 'paid_amount' || field === 'billing_amount' || field === 'outstanding') {
       const parsedValue = parsePrice(value)
@@ -2575,6 +2594,9 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
     } else if (field === 'overdue') {
       const digitsOnly = value.replace(/\D/g, '')
       setFormData(prev => ({ ...prev, overdue: digitsOnly }))
+    } else if (field === 'rate') {
+      // Keep raw input (support koma/desimal panjang)
+      setFormData(prev => ({ ...prev, rate: value }))
     } else {
       setFormData(prev => ({ ...prev, [field]: value }))
     }
@@ -2646,14 +2668,18 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
       if (formData.billing_amount) {
         updateData.billing_amount = parsePrice(formData.billing_amount)
       }
-      if (formData.outstanding) {
+      // Jika dikosongkan, kirim null agar data lama di-clear di backend
+      if (formData.outstanding === '') {
+        updateData.outstanding = null as any
+      } else {
         updateData.outstanding = parsePrice(formData.outstanding)
       }
       if (formData.overdue !== '') {
         updateData.overdue = Number(formData.overdue)
       }
       if (formData.rate) {
-        updateData.rate = parseFloat(formData.rate) || 0.01
+        const parsed = parseRate(formData.rate)
+        if (parsed !== undefined) updateData.rate = parsed
       }
       if (formData.last_charge_date) {
         updateData.last_charge_date = new Date(formData.last_charge_date).toISOString()
@@ -2661,25 +2687,45 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
       await onSubmit(updateData)
     } else {
       // Create payment - billing_period, billing_amount, dan payment_deadline adalah mandatory
+      const paidAmount =
+        formData.paid_amount !== '' ? parsePrice(formData.paid_amount) : undefined
+      const amount =
+        formData.amount !== ''
+          ? parsePrice(formData.amount)
+          : (paidAmount !== undefined ? paidAmount : undefined)
+
+      // Jika user isi paid_amount tapi belum isi tanggal bayar, default ke hari ini
+      const paymentDateIso =
+        formData.payment_date
+          ? new Date(formData.payment_date).toISOString()
+          : (paidAmount !== undefined && paidAmount > 0 ? new Date().toISOString() : undefined)
+
       const createData: CreateTenantPaymentData = {
         billing_period: formData.billing_period.trim(),
         billing_amount: parsePrice(formData.billing_amount),
         payment_deadline: new Date(formData.payment_deadline).toISOString(),
-        amount: formData.amount ? parsePrice(formData.amount) : undefined,
+        amount,
         payment_method: formData.payment_method || undefined,
         notes: formData.notes.trim() || undefined,
+      }
+      if (paidAmount !== undefined) {
+        createData.paid_amount = paidAmount
+      }
+      if (paymentDateIso) {
+        createData.payment_date = paymentDateIso
       }
       if (formData.billing_type) {
         createData.billing_type = formData.billing_type
       }
-      if (formData.outstanding) {
+      if (formData.outstanding !== '') {
         createData.outstanding = parsePrice(formData.outstanding)
       }
       if (formData.overdue !== '') {
         createData.overdue = Number(formData.overdue)
       }
       if (formData.rate) {
-        createData.rate = parseFloat(formData.rate) || 0.01
+        const parsed = parseRate(formData.rate)
+        if (parsed !== undefined) createData.rate = parsed
       }
       if (formData.last_charge_date) {
         createData.last_charge_date = new Date(formData.last_charge_date).toISOString()
@@ -2844,9 +2890,8 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
           <Label htmlFor="rate">Rate</Label>
           <Input
             id="rate"
-            type="number"
-            step="0.01"
-            min="0"
+            type="text"
+            inputMode="decimal"
             value={formData.rate}
             onChange={(e) => handleInputChange('rate', e.target.value)}
             placeholder="0.01"

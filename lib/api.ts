@@ -478,6 +478,10 @@ export interface CreateTenantPaymentData {
   billing_amount: number // mandatory
   payment_deadline: string // mandatory
   amount?: number
+  /** Jika diisi (atau payment_date diisi), penagihan langsung tercatat sebagai dibayar */
+  paid_amount?: number
+  /** ISO date string; jika diisi saat create maka status otomatis paid */
+  payment_date?: string
   payment_method?: string
   notes?: string
   billing_type?: string

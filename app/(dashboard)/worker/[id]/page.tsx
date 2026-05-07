@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Loader2, Calendar, Clock, MapPin, CheckCircle2, Eye, RefreshCw, ArrowLeft, User as UserIcon, ChevronDown, ChevronRight, Home, UserRoundPen } from 'lucide-react'
-import { attendanceApi, userTasksApi, usersApi, Attendance, UserTask, User } from '@/lib/api'
+import { attendanceApi, userTasksApi, usersApi, Attendance, UserTask, User, UserAsset } from '@/lib/api'
 import toast from 'react-hot-toast'
 import WorkerTaskDetailDialog from '@/components/dialogs/worker-task-detail-dialog'
 
@@ -28,10 +28,12 @@ function WorkerDetailContent() {
   const userId = params.id as string
   
   const [user, setUser] = useState<User | null>(null)
+  const [userAssets, setUserAssets] = useState<UserAsset[]>([])
   const [activeTab, setActiveTab] = useState('attendance')
   const [attendanceHistory, setAttendanceHistory] = useState<Attendance[]>([])
   const [userTasks, setUserTasks] = useState<UserTask[]>([])
   const [isLoadingUser, setIsLoadingUser] = useState(true)
+  const [isLoadingAssets, setIsLoadingAssets] = useState(true)
   const [isLoadingAttendance, setIsLoadingAttendance] = useState(true)
   const [isLoadingTasks, setIsLoadingTasks] = useState(true)
   const [selectedUserTask, setSelectedUserTask] = useState<UserTask | null>(null)
@@ -141,6 +143,26 @@ function WorkerDetailContent() {
 
     loadUser()
   }, [userId, router])
+
+  // Load user assets
+  useEffect(() => {
+    const loadAssets = async () => {
+      if (!userId) return
+      setIsLoadingAssets(true)
+      try {
+        const res = await usersApi.getUserAssets(userId)
+        const data = (res.data as any)?.data ?? res.data
+        setUserAssets(Array.isArray(data) ? data : [])
+      } catch (error) {
+        console.error('Load user assets error:', error)
+        setUserAssets([])
+      } finally {
+        setIsLoadingAssets(false)
+      }
+    }
+
+    loadAssets()
+  }, [userId])
 
   // Load attendance history
   const loadAttendanceHistory = async () => {
@@ -741,6 +763,25 @@ function WorkerDetailContent() {
             <div>
               <Label className="text-sm text-muted-foreground">Status</Label>
               <p className="font-medium">{user.status || '-'}</p>
+            </div>
+            <div className="md:col-span-3">
+              <Label className="text-sm text-muted-foreground">Asset</Label>
+              {isLoadingAssets ? (
+                <p className="font-medium text-muted-foreground">Memuat asset...</p>
+              ) : userAssets.length === 0 ? (
+                <p className="font-medium">-</p>
+              ) : (
+                <div className="mt-1 space-y-1">
+                  {userAssets.map((ua) => {
+                    const name = ua.asset?.name || ua.asset_name || 'Asset'
+                    return (
+                      <div key={ua.id} className="text-sm leading-tight font-medium">
+                        - {name}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </CardContent>
