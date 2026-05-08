@@ -1987,8 +1987,11 @@ export const userTasksApi = {
     return apiClient.get<UserTask>(`/api/user-tasks/${id}`)
   },
 
-  async generateUpcomingUserTasks(): Promise<ApiResponse<any>> {
-    return apiClient.post<any>('/api/user-tasks/generate-upcoming')
+  async generateUpcomingUserTasks(params?: {
+    asset_id?: string
+    asset_ids?: string[]
+  }): Promise<ApiResponse<any>> {
+    return apiClient.post<any>('/api/user-tasks/generate-upcoming', params ?? {})
   },
 
   async startUserTask(id: number): Promise<ApiResponse<UserTask>> {

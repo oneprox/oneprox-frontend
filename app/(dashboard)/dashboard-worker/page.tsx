@@ -6,8 +6,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Loader2, Clock, CheckCircle2, Calendar, MapPin, ClipboardList } from 'lucide-react'
 import { attendanceApi, dashboardApi, userTasksApi, Attendance, UserTask } from '@/lib/api'
 import {
+  filterRoutineTasksForToday,
   normalizeFlatUserTask,
 } from '@/lib/work/userTasksSplit'
+import { getJakartaCalendarMonthIsoRange } from '@/lib/work/jakartaMonthRange'
 import toast from 'react-hot-toast'
 import LoadingSkeleton from '@/components/loading-skeleton'
 import AttendanceCard from '@/components/attendance/attendance-card'
@@ -50,7 +52,13 @@ function DashboardWorkerContent() {
   const loadUserTasks = async () => {
     try {
       setIsLoadingTasks(true)
-      const response = await dashboardApi.getWorkerUserTasks({ limit: 100 })
+      const month = getJakartaCalendarMonthIsoRange()
+      const response = await dashboardApi.getWorkerUserTasks({
+        limit: 10000,
+        date_from: month.date_from,
+        date_to: month.date_to,
+        period: month.period,
+      })
       const responseData = response.success && response.data ? (response.data as any) : null
       const payload = responseData?.data ?? responseData
       const routine = Array.isArray(payload?.routine_tasks) ? payload.routine_tasks : []
@@ -167,6 +175,9 @@ function DashboardWorkerContent() {
       return [normalizedMain, ...subTasks]
     })
   }
+
+  /** List rutin: hanya batch yang `created_at`-nya hari ini (WIB). Statistik: seluruh bulan berjalan. */
+  const routineTasksForToday = filterRoutineTasksForToday(routineUserTasks)
 
   const allTasksForStats = [...flattenRoutineTasks(routineUserTasks), ...nonRoutineUserTasks]
   const isTaskCompleted = (t: UserTask) => t.status === 'completed' || !!t.completed_at
@@ -309,14 +320,18 @@ function DashboardWorkerContent() {
                   </div>
                   <div className="space-y-2">
                     <h3 className="text-sm font-semibold text-foreground">Task rutin (generate)</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Hanya tugas rutin yang dibuat hari ini. Statistik di bawah memakai data bulan berjalan.
+                    </p>
                     <TaskList
-                      userTasks={routineUserTasks}
+                      userTasks={routineTasksForToday}
                       isLoading={false}
                       onStartTask={handleStartTask}
                       onCompleteTask={handleCompleteTask}
                       onTaskClick={handleTaskClick}
                       variant="routine"
-                      emptyListMessage="Belum ada task rutin"
+                      emptyListMessage="Belum ada task rutin untuk hari ini"
+                      filterByTaskRequirement={false}
                     />
                   </div>
                 </>
@@ -332,7 +347,7 @@ function DashboardWorkerContent() {
                 Statistik Tugas
               </CardTitle>
               <CardDescription>
-                Ringkasan status tugas Anda
+                Ringkasan status tugas Anda bulan ini (task rutin + non-rutin)
               </CardDescription>
             </CardHeader>
             <CardContent>
