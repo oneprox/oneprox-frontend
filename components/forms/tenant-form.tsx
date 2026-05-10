@@ -2155,33 +2155,82 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[3%]">No</TableHead>
+                    <TableHead className="sticky left-0 z-30 w-12 min-w-12 max-w-12 shrink-0 border-r bg-muted text-center">
+                      No
+                    </TableHead>
+                    <TableHead className="sticky left-12 z-30 w-[140px] min-w-[140px] max-w-[140px] shrink-0 border-r bg-muted text-center">
+                      Aksi
+                    </TableHead>
+                    <TableHead className="sticky left-[188px] z-30 w-32 min-w-[8rem] max-w-[8rem] shrink-0 border-r bg-muted whitespace-nowrap">
+                      No. Invoice
+                    </TableHead>
+                    <TableHead className="w-[7%] whitespace-nowrap">Status</TableHead>
                     <TableHead className="w-[8%]">Periode Tagihan</TableHead>
                     <TableHead className="w-[8%]">Jatuh Tempo</TableHead>
                     <TableHead className="w-[7%]">Jenis Tagihan</TableHead>
+                    <TableHead className="w-[7%]">SPK</TableHead>
+                    <TableHead className="w-[6%]">Tgl. Invoice</TableHead>
+                    <TableHead className="w-[6%]">PPh</TableHead>
                     <TableHead className="w-[8%]">Jumlah Tagihan</TableHead>
                     <TableHead className="w-[8%]">Tanggal Bayar</TableHead>
                     <TableHead className="w-[8%]">Jumlah Bayar</TableHead>
                     <TableHead className="w-[7%]">Metode</TableHead>
+                    <TableHead className="w-[14%] min-w-[120px]">Catatan</TableHead>
                     <TableHead className="w-[8%]">Outstanding</TableHead>
                     <TableHead className="w-[8%]">Overdue (hari)</TableHead>
                     <TableHead className="w-[5%]">Rate</TableHead>
                     <TableHead className="w-[8%]">Last Charge</TableHead>
-                    <TableHead className="w-[6%]">Status</TableHead>
-                    <TableHead className="w-[8%] text-center">Aksi</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {paymentLogs.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={14} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={19} className="text-center py-8 text-muted-foreground">
                         Tidak ada data payment
                       </TableCell>
                     </TableRow>
                   ) : (
                     paymentLogs.map((payment, index) => (
-                      <TableRow key={payment.id}>
-                        <TableCell className="font-medium text-center">{index + 1}</TableCell>
+                      <TableRow key={payment.id} className="group hover:bg-muted">
+                        <TableCell className="sticky left-0 z-20 w-12 min-w-12 max-w-12 shrink-0 border-r bg-background group-hover:bg-muted font-medium text-center">
+                          {index + 1}
+                        </TableCell>
+                        <TableCell className="sticky left-12 z-20 w-[140px] min-w-[140px] max-w-[140px] shrink-0 border-r bg-background group-hover:bg-muted">
+                          <div className="flex justify-center gap-2">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => handleEditPayment(payment)}
+                              className="h-8 w-8 rounded-full text-green-600 bg-green-600/10 hover:bg-green-600/20"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => handleDeletePayment(payment)}
+                              className="h-8 w-8 rounded-full text-red-500 bg-red-500/10 hover:bg-red-500/20"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                        <TableCell className="sticky left-[188px] z-20 w-32 min-w-[8rem] max-w-[8rem] shrink-0 border-r bg-background group-hover:bg-muted truncate font-mono text-sm" title={payment.invoice_number || undefined}>
+                          {payment.invoice_number || '-'}
+                        </TableCell>
+                        <TableCell>
+                          <span
+                            className={`px-2 py-1 rounded text-xs font-medium border ${
+                              payment.status === 1
+                                ? 'bg-green-600/15 text-green-600 border-green-600'
+                                : payment.status === 2
+                                ? 'bg-red-600/15 text-red-600 border-red-600'
+                                : 'bg-yellow-600/15 text-yellow-600 border-yellow-600'
+                            }`}
+                          >
+                            {payment.status === 1 ? 'Paid' : payment.status === 2 ? 'Expired' : 'Unpaid'}
+                          </span>
+                        </TableCell>
                         <TableCell>
                           {payment.billing_period || '-'}
                         </TableCell>
@@ -2192,6 +2241,17 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                         </TableCell>
                         <TableCell>
                           {payment.billing_type || '-'}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">{payment.spk || '-'}</TableCell>
+                        <TableCell>
+                          {payment.invoice_date
+                            ? new Date(String(payment.invoice_date).slice(0, 10)).toLocaleDateString('id-ID')
+                            : '-'}
+                        </TableCell>
+                        <TableCell>
+                          {payment.pph != null && !Number.isNaN(Number(payment.pph))
+                            ? `Rp ${Number(payment.pph).toLocaleString('id-ID')}`
+                            : '-'}
                         </TableCell>
                         <TableCell>
                           {payment.billing_amount 
@@ -2214,6 +2274,11 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                            payment.payment_method === 'qris' ? 'QRIS' :
                            payment.payment_method === 'other' ? 'Other' : '-'}
                         </TableCell>
+                        <TableCell className="max-w-[200px] align-top">
+                          <span className="line-clamp-3 whitespace-pre-wrap break-words text-sm">
+                            {payment.notes?.trim() ? payment.notes : '-'}
+                          </span>
+                        </TableCell>
                         <TableCell>
                           {payment.outstanding 
                             ? `Rp ${payment.outstanding.toLocaleString('id-ID')}`
@@ -2231,39 +2296,6 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                           {payment.last_charge_date 
                             ? new Date(payment.last_charge_date).toLocaleDateString('id-ID')
                             : '-'}
-                        </TableCell>
-                        <TableCell>
-                          <span
-                            className={`px-2 py-1 rounded text-xs font-medium border ${
-                              payment.status === 1
-                                ? 'bg-green-600/15 text-green-600 border-green-600'
-                                : payment.status === 2
-                                ? 'bg-red-600/15 text-red-600 border-red-600'
-                                : 'bg-yellow-600/15 text-yellow-600 border-yellow-600'
-                            }`}
-                          >
-                            {payment.status === 1 ? 'Paid' : payment.status === 2 ? 'Expired' : 'Unpaid'}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex justify-center gap-2">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => handleEditPayment(payment)}
-                              className="h-8 w-8 rounded-full text-green-600 bg-green-600/10 hover:bg-green-600/20"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => handleDeletePayment(payment)}
-                              className="h-8 w-8 rounded-full text-red-500 bg-red-500/10 hover:bg-red-500/20"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
                         </TableCell>
                       </TableRow>
                     ))
@@ -2482,7 +2514,6 @@ interface PaymentFormProps {
 
 function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFormProps) {
   const [formData, setFormData] = useState({
-    amount: '',
     payment_method: '',
     payment_date: '',
     paid_amount: '',
@@ -2495,13 +2526,16 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
     overdue: '',
     rate: '0.01',
     last_charge_date: '',
+    spk: '',
+    invoice_number: '',
+    invoice_date: '',
+    pph: '',
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   useEffect(() => {
     if (payment) {
       setFormData({
-        amount: payment.amount?.toString() || '',
         payment_method: payment.payment_method || '',
         payment_date: payment.payment_date ? new Date(payment.payment_date).toISOString().split('T')[0] : '',
         paid_amount: payment.paid_amount?.toString() || '',
@@ -2514,10 +2548,20 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
         overdue: payment.overdue != null ? String(Math.round(Number(payment.overdue))) : '',
         rate: payment.rate?.toString() || '0.01',
         last_charge_date: payment.last_charge_date ? new Date(payment.last_charge_date).toISOString().split('T')[0] : '',
+        spk: payment.spk || '',
+        invoice_number: payment.invoice_number || '',
+        invoice_date: payment.invoice_date
+          ? String(payment.invoice_date).slice(0, 10)
+          : '',
+        pph:
+          payment.pph != null && !Number.isNaN(Number(payment.pph))
+            ? Math.floor(Number(payment.pph))
+                .toString()
+                .replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+            : '',
       })
     } else {
       setFormData({
-        amount: '',
         payment_method: '',
         payment_date: '',
         paid_amount: '',
@@ -2530,6 +2574,10 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
         overdue: '',
         rate: '0.01',
         last_charge_date: '',
+        spk: '',
+        invoice_number: '',
+        invoice_date: '',
+        pph: '',
       })
     }
   }, [payment])
@@ -2570,7 +2618,12 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
   }
 
   const handleInputChange = (field: string, value: string) => {
-    if (field === 'amount' || field === 'paid_amount' || field === 'billing_amount' || field === 'outstanding') {
+    if (
+      field === 'paid_amount' ||
+      field === 'billing_amount' ||
+      field === 'outstanding' ||
+      field === 'pph'
+    ) {
       const parsedValue = parsePrice(value)
       if (field === 'paid_amount') {
         const isExplicitZero = value.trim() !== '' && parsedValue === 0
@@ -2622,11 +2675,6 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
       if (!formData.payment_deadline || formData.payment_deadline.trim() === '') {
         newErrors.payment_deadline = 'Jatuh tempo harus diisi'
       }
-    }
-
-    // Field opsional untuk create, tapi tetap validasi jika diisi
-    if (formData.amount && parsePrice(formData.amount) <= 0) {
-      newErrors.amount = 'Jumlah pembayaran harus lebih dari 0'
     }
 
     if (formData.payment_method && !['cash', 'bank_transfer', 'qris', 'other'].includes(formData.payment_method)) {
@@ -2684,15 +2732,23 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
       if (formData.last_charge_date) {
         updateData.last_charge_date = new Date(formData.last_charge_date).toISOString()
       }
+      updateData.spk = formData.spk.trim() ? formData.spk.trim() : (null as any)
+      updateData.invoice_number = formData.invoice_number.trim()
+        ? formData.invoice_number.trim()
+        : (null as any)
+      updateData.invoice_date = formData.invoice_date
+        ? new Date(formData.invoice_date).toISOString()
+        : (null as any)
+      if (formData.pph === '') {
+        updateData.pph = null as any
+      } else {
+        updateData.pph = parsePrice(formData.pph)
+      }
       await onSubmit(updateData)
     } else {
       // Create payment - billing_period, billing_amount, dan payment_deadline adalah mandatory
       const paidAmount =
         formData.paid_amount !== '' ? parsePrice(formData.paid_amount) : undefined
-      const amount =
-        formData.amount !== ''
-          ? parsePrice(formData.amount)
-          : (paidAmount !== undefined ? paidAmount : undefined)
 
       // Jika user isi paid_amount tapi belum isi tanggal bayar, default ke hari ini
       const paymentDateIso =
@@ -2704,7 +2760,6 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
         billing_period: formData.billing_period.trim(),
         billing_amount: parsePrice(formData.billing_amount),
         payment_deadline: new Date(formData.payment_deadline).toISOString(),
-        amount,
         payment_method: formData.payment_method || undefined,
         notes: formData.notes.trim() || undefined,
       }
@@ -2729,6 +2784,18 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
       }
       if (formData.last_charge_date) {
         createData.last_charge_date = new Date(formData.last_charge_date).toISOString()
+      }
+      if (formData.spk.trim()) {
+        createData.spk = formData.spk.trim()
+      }
+      if (formData.invoice_number.trim()) {
+        createData.invoice_number = formData.invoice_number.trim()
+      }
+      if (formData.invoice_date) {
+        createData.invoice_date = new Date(formData.invoice_date).toISOString()
+      }
+      if (formData.pph !== '') {
+        createData.pph = parsePrice(formData.pph)
       }
       await onSubmit(createData)
     }
@@ -2777,6 +2844,38 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
 
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
+          <Label htmlFor="spk">Nomor SPK</Label>
+          <Input
+            id="spk"
+            type="text"
+            value={formData.spk}
+            onChange={(e) => handleInputChange('spk', e.target.value)}
+            placeholder="Nomor SPK"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="invoice_number">No. Invoice</Label>
+          <Input
+            id="invoice_number"
+            type="text"
+            value={formData.invoice_number}
+            onChange={(e) => handleInputChange('invoice_number', e.target.value)}
+            placeholder="Nomor invoice"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="invoice_date">Tanggal Invoice</Label>
+          <Input
+            id="invoice_date"
+            type="date"
+            value={formData.invoice_date}
+            onChange={(e) => handleInputChange('invoice_date', e.target.value)}
+          />
+        </div>
+        <div className="space-y-2">
           <Label htmlFor="payment_deadline">
             Jatuh Tempo {!payment && <span className="text-red-500">*</span>}
           </Label>
@@ -2791,7 +2890,9 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
             <p className="text-sm text-red-500">{errors.payment_deadline}</p>
           )}
         </div>
+      </div>
 
+      <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="billing_type">Jenis Tagihan</Label>
           <Input
@@ -2802,7 +2903,6 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
             placeholder="Masukkan jenis tagihan"
           />
         </div>
-
         <div className="space-y-2">
           <Label htmlFor="payment_method">Metode Pembayaran</Label>
           <Select
@@ -2897,16 +2997,30 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
             placeholder="0.01"
           />
         </div>
-
         <div className="space-y-2">
-          <Label htmlFor="last_charge_date">Last Charge</Label>
-          <Input
-            id="last_charge_date"
-            type="date"
-            value={formData.last_charge_date}
-            onChange={(e) => handleInputChange('last_charge_date', e.target.value)}
-          />
+          <Label htmlFor="pph">PPh</Label>
+          <div className="relative">
+            <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
+            <Input
+              id="pph"
+              type="text"
+              value={formatPrice(parsePrice(formData.pph))}
+              onChange={(e) => handleInputChange('pph', e.target.value)}
+              placeholder="0"
+              className="pl-10"
+            />
+          </div>
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="last_charge_date">Last Charge</Label>
+        <Input
+          id="last_charge_date"
+          type="date"
+          value={formData.last_charge_date}
+          onChange={(e) => handleInputChange('last_charge_date', e.target.value)}
+        />
       </div>
 
       <div className="space-y-2">

@@ -464,6 +464,10 @@ export interface TenantPaymentLog {
   overdue?: number
   rate?: number // default 0.01
   last_charge_date?: string // ISO date
+  spk?: string
+  invoice_number?: string
+  invoice_date?: string
+  pph?: number
   updatedBy?: {
     id: string
     name: string
@@ -477,8 +481,7 @@ export interface CreateTenantPaymentData {
   billing_period: string // mandatory
   billing_amount: number // mandatory
   payment_deadline: string // mandatory
-  amount?: number
-  /** Jika diisi (atau payment_date diisi), penagihan langsung tercatat sebagai dibayar */
+  /** Nilai yang dibayar; jika lebih dari 0 penagihan tercatat sebagai dibayar */
   paid_amount?: number
   /** ISO date string; jika diisi saat create maka status otomatis paid */
   payment_date?: string
@@ -489,6 +492,10 @@ export interface CreateTenantPaymentData {
   overdue?: number
   rate?: number
   last_charge_date?: string // ISO date
+  spk?: string
+  invoice_number?: string
+  invoice_date?: string
+  pph?: number
 }
 
 // Update Tenant Payment Data interface
@@ -505,6 +512,10 @@ export interface UpdateTenantPaymentData {
   overdue?: number
   rate?: number
   last_charge_date?: string // ISO date
+  spk?: string | null
+  invoice_number?: string | null
+  invoice_date?: string | null
+  pph?: number | null
 }
 
 // Tenant Legal interface

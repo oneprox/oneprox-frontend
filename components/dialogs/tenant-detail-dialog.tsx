@@ -48,6 +48,24 @@ const CATEGORY_MAP: Record<number, string> = {
   9: 'Other',
 }
 
+function formatCurrencyIdr(value: number | string | null | undefined): string {
+  if (value == null || value === '') return '-'
+  const n = Number(value)
+  if (Number.isNaN(n) || n === 0) return '-'
+  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n)
+}
+
+function paymentMethodLabel(method: string | null | undefined): string {
+  if (!method) return '-'
+  switch (method) {
+    case 'cash': return 'Cash'
+    case 'bank_transfer': return 'Bank Transfer'
+    case 'qris': return 'QRIS'
+    case 'other': return 'Other'
+    default: return method
+  }
+}
+
 const getCategoryLabel = (tenant: Tenant): string => {
   // Check if category is an object with name
   if (tenant.category && typeof tenant.category === 'object' && 'name' in tenant.category) {
@@ -123,7 +141,7 @@ export default function TenantDetailDialog({
     billing_period: defaultBillingPeriod,
     billing_amount: 0,
     payment_deadline: defaultPaymentDeadline,
-    amount: 0,
+    paid_amount: 0,
     payment_method: '',
     notes: '',
     payment_date: ''
@@ -458,7 +476,7 @@ export default function TenantDetailDialog({
       billing_period: defaultBillingPeriod,
       billing_amount: 0,
       payment_deadline: defaultPaymentDeadline,
-      amount: 0,
+      paid_amount: 0,
       payment_method: '',
       notes: '',
       payment_date: ''
@@ -469,8 +487,8 @@ export default function TenantDetailDialog({
   const handleCreatePaymentSubmit = async () => {
     if (!tenant) return
 
-    if (!createPaymentData.amount || createPaymentData.amount <= 0) {
-      toast.error('Jumlah pembayaran harus diisi dan lebih dari 0')
+    if (!createPaymentData.paid_amount || createPaymentData.paid_amount <= 0) {
+      toast.error('Jumlah dibayar harus diisi dan lebih dari 0')
       return
     }
 
@@ -488,9 +506,9 @@ export default function TenantDetailDialog({
     try {
       const response = await tenantsApi.createTenantPayment(tenant.id, {
         billing_period: createPaymentData.billing_period || defaultBillingPeriod,
-        billing_amount: createPaymentData.billing_amount ?? createPaymentData.amount,
+        billing_amount: createPaymentData.billing_amount || createPaymentData.paid_amount,
         payment_deadline: createPaymentData.payment_deadline || defaultPaymentDeadline,
-        amount: createPaymentData.amount,
+        paid_amount: createPaymentData.paid_amount,
         payment_method: createPaymentData.payment_method,
         notes: createPaymentData.notes.trim(),
         ...(createPaymentData.payment_date ? { payment_date: createPaymentData.payment_date } : {})
@@ -503,7 +521,7 @@ export default function TenantDetailDialog({
           billing_period: defaultBillingPeriod,
           billing_amount: 0,
           payment_deadline: defaultPaymentDeadline,
-          amount: 0,
+          paid_amount: 0,
           payment_method: '',
           notes: '',
           payment_date: ''
@@ -1427,45 +1445,108 @@ export default function TenantDetailDialog({
                               <Table>
                                 <TableHeader>
                                   <TableRow>
-                                    <TableHead>Batas Pembayaran</TableHead>
-                                    <TableHead>Jumlah Dibayar</TableHead>
-                                    <TableHead>Status</TableHead>
-                                    <TableHead>Tanggal Pembayaran</TableHead>
-                                    <TableHead>Metode Pembayaran</TableHead>
-                                    <TableHead>Catatan</TableHead>
+                                    <TableHead className="sticky left-0 z-30 w-12 min-w-12 max-w-12 shrink-0 border-r bg-muted text-center">
+                                      No
+                                    </TableHead>
+                                    <TableHead className="sticky left-12 z-30 w-[140px] min-w-[140px] max-w-[140px] shrink-0 border-r bg-muted text-center">
+                                      Aksi
+                                    </TableHead>
+                                    <TableHead className="sticky left-[188px] z-30 w-32 min-w-[8rem] max-w-[8rem] shrink-0 border-r bg-muted whitespace-nowrap">
+                                      No. Invoice
+                                    </TableHead>
+                                    <TableHead className="whitespace-nowrap">Status</TableHead>
+                                    <TableHead className="whitespace-nowrap">Periode Tagihan</TableHead>
+                                    <TableHead className="whitespace-nowrap">Jatuh Tempo</TableHead>
+                                    <TableHead>Jenis Tagihan</TableHead>
+                                    <TableHead>SPK</TableHead>
+                                    <TableHead>Tgl. Invoice</TableHead>
+                                    <TableHead>PPh</TableHead>
+                                    <TableHead>Jumlah Tagihan</TableHead>
+                                    <TableHead>Tanggal Bayar</TableHead>
+                                    <TableHead>Jumlah Bayar</TableHead>
+                                    <TableHead>Metode</TableHead>
+                                    <TableHead className="min-w-[140px]">Catatan</TableHead>
+                                    <TableHead>Outstanding</TableHead>
+                                    <TableHead className="whitespace-nowrap">Overdue (hari)</TableHead>
+                                    <TableHead>Rate</TableHead>
+                                    <TableHead className="whitespace-nowrap">Last Charge</TableHead>
                                     <TableHead>Diubah Oleh</TableHead>
-                                    <TableHead>Aksi</TableHead>
                                   </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                  {paymentLogs.map((log) => {
+                                  {paymentLogs.map((log, logIndex) => {
                                     const paidAmount = log.paid_amount || 0
-                                    const formattedPaidAmount = new Intl.NumberFormat('id-ID', {
-                                      style: 'currency',
-                                      currency: 'IDR',
-                                      minimumFractionDigits: 0,
-                                      maximumFractionDigits: 0,
-                                    }).format(paidAmount)
+                                    const formattedPaidAmount =
+                                      paidAmount > 0 ? formatCurrencyIdr(paidAmount) : '-'
 
                                     return (
-                                      <TableRow key={log.id}>
-                                        <TableCell>
-                                          {log.payment_deadline ? formatDate(log.payment_deadline) : '-'}
+                                      <TableRow key={log.id} className="group hover:bg-muted">
+                                        <TableCell className="sticky left-0 z-20 w-12 min-w-12 max-w-12 shrink-0 border-r bg-background group-hover:bg-muted text-center text-sm font-medium">
+                                          {((paymentPage - 1) * paymentLimit) + logIndex + 1}
                                         </TableCell>
-                                        <TableCell>
-                                          {paidAmount > 0 ? formattedPaidAmount : '-'}
+                                        <TableCell className="sticky left-12 z-20 w-[140px] min-w-[140px] max-w-[140px] shrink-0 border-r bg-background group-hover:bg-muted">
+                                          {log.status === 1 ? (
+                                            <span className="text-muted-foreground text-sm flex justify-center">-</span>
+                                          ) : (
+                                            <div className="flex justify-center">
+                                              <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => handleUpdatePayment(log)}
+                                              >
+                                                <Edit className="h-4 w-4 mr-1" />
+                                                Pelunasan
+                                              </Button>
+                                            </div>
+                                          )}
+                                        </TableCell>
+                                        <TableCell
+                                          className="sticky left-[188px] z-20 w-32 min-w-[8rem] max-w-[8rem] shrink-0 border-r bg-background group-hover:bg-muted truncate font-mono text-sm"
+                                          title={log.invoice_number || undefined}
+                                        >
+                                          {log.invoice_number || '-'}
                                         </TableCell>
                                         <TableCell>
                                           {getPaymentStatusBadge(log.status)}
                                         </TableCell>
+                                        <TableCell>{log.billing_period || '-'}</TableCell>
+                                        <TableCell>
+                                          {log.payment_deadline ? formatDate(log.payment_deadline) : '-'}
+                                        </TableCell>
+                                        <TableCell>{log.billing_type || '-'}</TableCell>
+                                        <TableCell className="whitespace-nowrap">{log.spk || '-'}</TableCell>
+                                        <TableCell>
+                                          {log.invoice_date
+                                            ? formatDate(String(log.invoice_date).slice(0, 10))
+                                            : '-'}
+                                        </TableCell>
+                                        <TableCell>
+                                          {formatCurrencyIdr(log.pph)}
+                                        </TableCell>
+                                        <TableCell>
+                                          {formatCurrencyIdr(log.billing_amount)}
+                                        </TableCell>
                                         <TableCell>
                                           {log.payment_date ? formatDate(log.payment_date) : '-'}
                                         </TableCell>
+                                        <TableCell>{formattedPaidAmount}</TableCell>
+                                        <TableCell>{paymentMethodLabel(log.payment_method)}</TableCell>
+                                        <TableCell className="max-w-[220px] align-top">
+                                          <span className="line-clamp-3 whitespace-pre-wrap break-words text-sm">
+                                            {log.notes?.trim() ? log.notes : '-'}
+                                          </span>
+                                        </TableCell>
+                                        <TableCell>{formatCurrencyIdr(log.outstanding)}</TableCell>
                                         <TableCell>
-                                          {log.payment_method || '-'}
+                                          {log.overdue != null
+                                            ? `${Math.round(Number(log.overdue))} hari`
+                                            : '-'}
                                         </TableCell>
                                         <TableCell>
-                                          {log.notes || '-'}
+                                          {`${((log.rate ?? 0.01) * 100).toFixed(2)}%`}
+                                        </TableCell>
+                                        <TableCell>
+                                          {log.last_charge_date ? formatDate(log.last_charge_date) : '-'}
                                         </TableCell>
                                         <TableCell>
                                           {log.updatedBy ? (
@@ -1475,20 +1556,6 @@ export default function TenantDetailDialog({
                                             </div>
                                           ) : (
                                             <span className="text-muted-foreground">-</span>
-                                          )}
-                                        </TableCell>
-                                        <TableCell>
-                                          {log.status === 1 ? (
-                                            <span className="text-muted-foreground text-sm">-</span>
-                                          ) : (
-                                            <Button
-                                              variant="outline"
-                                              size="sm"
-                                              onClick={() => handleUpdatePayment(log)}
-                                            >
-                                              <Edit className="h-4 w-4 mr-1" />
-                                              Pelunasan
-                                            </Button>
                                           )}
                                         </TableCell>
                                       </TableRow>
@@ -1558,11 +1625,11 @@ export default function TenantDetailDialog({
           <DialogHeader>
             <DialogTitle>Pelunasan Pembayaran</DialogTitle>
             <DialogDescription>
-              Perbarui status pembayaran untuk {selectedPayment?.amount ? new Intl.NumberFormat('id-ID', {
+              Perbarui status pembayaran untuk {selectedPayment?.paid_amount ? new Intl.NumberFormat('id-ID', {
                 style: 'currency',
                 currency: 'IDR',
                 minimumFractionDigits: 0,
-              }).format(selectedPayment.amount) : 'pembayaran ini'}
+              }).format(selectedPayment.paid_amount) : 'pembayaran ini'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -1652,20 +1719,20 @@ export default function TenantDetailDialog({
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="create_amount">
-                Jumlah Pembayaran <span className="text-red-500">*</span>
+              <Label htmlFor="create_paid_amount">
+                Jumlah Dibayar <span className="text-red-500">*</span>
               </Label>
               <div className="relative">
                 <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
                 <Input
-                  id="create_amount"
+                  id="create_paid_amount"
                   type="text"
-                  value={formatPrice(createPaymentData.amount || 0)}
+                  value={formatPrice(createPaymentData.paid_amount || 0)}
                   onChange={(e) => {
                     const parsedValue = parsePrice(e.target.value)
-                    setCreatePaymentData(prev => ({ 
-                      ...prev, 
-                      amount: parsedValue
+                    setCreatePaymentData(prev => ({
+                      ...prev,
+                      paid_amount: parsedValue
                     }))
                   }}
                   placeholder="0"

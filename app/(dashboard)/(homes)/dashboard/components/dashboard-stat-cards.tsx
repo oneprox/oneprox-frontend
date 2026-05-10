@@ -126,7 +126,10 @@ export default function DashboardStatCards({ selectedAssetId = 'all' }: Dashboar
             const paymentsData = paymentsResponse.data as any
             const payments = Array.isArray(paymentsData.data) ? paymentsData.data : (Array.isArray(paymentsData) ? paymentsData : [])
             const paidPayments = payments.filter((p: TenantPaymentLog) => p.status === 1)
-            totalRevenue += paidPayments.reduce((sum: number, p: TenantPaymentLog) => sum + (p.amount || 0), 0)
+            totalRevenue += paidPayments.reduce(
+              (sum: number, p: TenantPaymentLog) => sum + (p.paid_amount ?? p.amount ?? 0),
+              0
+            )
           }
         } catch (err) {
           console.error(`Error loading payments for tenant ${tenant.id}:`, err)

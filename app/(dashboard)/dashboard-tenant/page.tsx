@@ -266,7 +266,10 @@ export default function DashboardTenantPage() {
 
   const totalBills = allPayments
     .filter(p => p.status !== 'lunas')
-    .reduce((sum, p) => sum + (p.amount || 0), 0)
+    .reduce(
+      (sum, p) => sum + (p.billing_amount ?? p.paid_amount ?? p.amount ?? 0),
+      0
+    )
 
   // Create property cards
   const propertyCards: PropertyCard[] = tenants.flatMap(tenant => {
@@ -376,7 +379,11 @@ export default function DashboardTenantPage() {
                 const { tenant, unit, asset, payment, status } = property
                 const totalContract = tenant.rent_price || 0
                 const contractDuration = calculateContractDuration(tenant)
-                const monthlyBill = payment?.amount || unit.rent_price || 0
+                const monthlyBill =
+                  payment?.billing_amount ??
+                  payment?.paid_amount ??
+                  unit.rent_price ??
+                  0
 
                 return (
                   <Card key={`${tenant.id}-${unit.id}-${index}`} className="relative">
