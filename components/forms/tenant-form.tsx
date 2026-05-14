@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Tenant, CreateTenantData, UpdateTenantData, usersApi, unitsApi, tenantsApi, rolesApi, assetsApi, User, Unit, Asset, DURATION_UNITS, DURATION_UNIT_LABELS, TenantPaymentLog, CreateTenantPaymentData, UpdateTenantPaymentData, TenantLegal, CreateTenantLegalData, UpdateTenantLegalData, settingsApi, Setting } from '@/lib/api'
+import { formatBillingRatePercent, storedRateToPercentInput, percentNumberToFraction } from '@/lib/billing-rate'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -1199,31 +1200,36 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
 
   return (
     <>
-    <Tabs value={activeTab} onValueChange={setActiveTab} className="gap-4">
-      <TabsList className='active-gradient bg-transparent dark:bg-transparent rounded-none h-[50px]'>
+    <Tabs value={activeTab} onValueChange={setActiveTab} className="min-w-0 gap-4">
+      <div className="min-w-0 overflow-x-auto overflow-y-hidden pb-0.5 [-webkit-overflow-scrolling:touch] touch-pan-x scroll-smooth sm:pb-0">
+        <TabsList className="active-gradient flex h-[50px] w-max min-w-0 shrink-0 flex-nowrap items-stretch justify-start gap-0 bg-transparent dark:bg-transparent rounded-none">
         <TabsTrigger 
           value="info" 
-          className='py-2.5 px-4 font-semibold text-sm inline-flex items-center gap-3 dark:bg-transparent text-neutral-600 hover:text-blue-600 dark:text-white dark:hover:text-blue-500 data-[state=active]:bg-gradient border-0 border-t-2 border-neutral-200 dark:border-neutral-500 data-[state=active]:border-blue-600 dark:data-[state=active]:border-blue-600 rounded-[0] data-[state=active]:shadow-none cursor-pointer'
+          className='shrink-0 rounded-none border-0 border-t-2 border-neutral-200 px-3 py-2.5 text-sm font-semibold text-neutral-600 hover:text-blue-600 data-[state=active]:border-blue-600 data-[state=active]:bg-gradient data-[state=active]:shadow-none dark:border-neutral-500 dark:text-white dark:hover:text-blue-500 dark:data-[state=active]:border-blue-600 sm:px-4'
         >
-          Informasi Tenant
+          <span className="sm:hidden">Info</span>
+          <span className="hidden sm:inline">Informasi Tenant</span>
         </TabsTrigger>
         <TabsTrigger 
           value="payments" 
           disabled={!tenant?.id}
-          className='py-2.5 px-4 font-semibold text-sm inline-flex items-center gap-3 dark:bg-transparent text-neutral-600 hover:text-blue-600 dark:text-white dark:hover:text-blue-500 data-[state=active]:bg-gradient border-0 border-t-2 border-neutral-200 dark:border-neutral-500 data-[state=active]:border-blue-600 dark:data-[state=active]:border-blue-600 rounded-[0] data-[state=active]:shadow-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed'
+          className='shrink-0 rounded-none border-0 border-t-2 border-neutral-200 px-3 py-2.5 text-sm font-semibold text-neutral-600 hover:text-blue-600 data-[state=active]:border-blue-600 data-[state=active]:bg-gradient data-[state=active]:shadow-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-500 dark:text-white dark:hover:text-blue-500 dark:data-[state=active]:border-blue-600 sm:px-4'
         >
-          Penagihan {tenant?.id && `(${paymentLogs.length})`}
+          <span className="sm:hidden">Tagihan{tenant?.id ? ` (${paymentLogs.length})` : ''}</span>
+          <span className="hidden sm:inline">Penagihan{tenant?.id ? ` (${paymentLogs.length})` : ''}</span>
         </TabsTrigger>
         <TabsTrigger 
           value="legals" 
           disabled={!tenant?.id}
-          className='py-2.5 px-4 font-semibold text-sm inline-flex items-center gap-3 dark:bg-transparent text-neutral-600 hover:text-blue-600 dark:text-white dark:hover:text-blue-500 data-[state=active]:bg-gradient border-0 border-t-2 border-neutral-200 dark:border-neutral-500 data-[state=active]:border-blue-600 dark:data-[state=active]:border-blue-600 rounded-[0] data-[state=active]:shadow-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed'
+          className='shrink-0 rounded-none border-0 border-t-2 border-neutral-200 px-3 py-2.5 text-sm font-semibold text-neutral-600 hover:text-blue-600 data-[state=active]:border-blue-600 data-[state=active]:bg-gradient data-[state=active]:shadow-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-500 dark:text-white dark:hover:text-blue-500 dark:data-[state=active]:border-blue-600 sm:px-4'
         >
-          Legal Documents {tenant?.id && `(${legalDocuments.length})`}
+          <span className="sm:hidden">Legal{tenant?.id ? ` (${legalDocuments.length})` : ''}</span>
+          <span className="hidden sm:inline">Legal Documents{tenant?.id ? ` (${legalDocuments.length})` : ''}</span>
         </TabsTrigger>
-      </TabsList>
+        </TabsList>
+      </div>
 
-      <TabsContent value="info" className="px-6 py-4">
+      <TabsContent value="info" className="min-w-0 px-6 py-4">
         <form onSubmit={handleSubmit} className="space-y-6">
       {/* Informasi Dasar */}
       <Card>
@@ -2136,11 +2142,15 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
         </form>
       </TabsContent>
 
-      <TabsContent value="payments" className="px-6 py-4">
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h3 className="text-lg font-semibold">Penagihan</h3>
-            <Button onClick={handleCreatePayment} size="sm">
+      <TabsContent value="payments" className="min-w-0 px-4 py-4 sm:px-6">
+        <div className="min-w-0 space-y-4">
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h3 className="text-lg font-semibold tracking-tight">Penagihan</h3>
+            <Button
+              onClick={handleCreatePayment}
+              size="sm"
+              className="h-9 w-full shrink-0 sm:w-auto sm:self-center"
+            >
               <Plus className="mr-2 h-4 w-4" />
               Tambah Penagihan
             </Button>
@@ -2151,17 +2161,20 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
               <Loader2 className="h-6 w-6 animate-spin" />
             </div>
           ) : (
-            <div className="rounded-md border overflow-x-auto">
-              <Table>
+            <div className="max-w-full min-w-0 rounded-md border bg-card shadow-sm">
+              <p className="border-b bg-muted/40 px-3 py-2 text-xs text-muted-foreground md:hidden">
+                Geser ke samping untuk melihat semua kolom.
+              </p>
+              <Table className="min-w-[1180px] w-max">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="sticky left-0 z-30 w-12 min-w-12 max-w-12 shrink-0 border-r bg-muted text-center">
+                    <TableHead className="z-30 w-12 min-w-12 max-w-12 shrink-0 bg-muted text-center md:sticky md:left-0 md:border-r">
                       No
                     </TableHead>
-                    <TableHead className="sticky left-12 z-30 w-[140px] min-w-[140px] max-w-[140px] shrink-0 border-r bg-muted text-center">
+                    <TableHead className="z-30 w-[140px] min-w-[140px] max-w-[140px] shrink-0 bg-muted text-center md:sticky md:left-12 md:border-r">
                       Aksi
                     </TableHead>
-                    <TableHead className="sticky left-[188px] z-30 w-32 min-w-[8rem] max-w-[8rem] shrink-0 border-r bg-muted whitespace-nowrap">
+                    <TableHead className="z-30 w-32 min-w-[8rem] max-w-[8rem] shrink-0 bg-muted whitespace-nowrap md:sticky md:left-[188px] md:border-r">
                       No. Invoice
                     </TableHead>
                     <TableHead className="w-[7%] whitespace-nowrap">Status</TableHead>
@@ -2192,10 +2205,10 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                   ) : (
                     paymentLogs.map((payment, index) => (
                       <TableRow key={payment.id} className="group hover:bg-muted">
-                        <TableCell className="sticky left-0 z-20 w-12 min-w-12 max-w-12 shrink-0 border-r bg-background group-hover:bg-muted font-medium text-center">
+                        <TableCell className="z-20 w-12 min-w-12 max-w-12 shrink-0 bg-background font-medium text-center group-hover:bg-muted md:sticky md:left-0 md:border-r">
                           {index + 1}
                         </TableCell>
-                        <TableCell className="sticky left-12 z-20 w-[140px] min-w-[140px] max-w-[140px] shrink-0 border-r bg-background group-hover:bg-muted">
+                        <TableCell className="z-20 w-[140px] min-w-[140px] max-w-[140px] shrink-0 bg-background group-hover:bg-muted md:sticky md:left-12 md:border-r">
                           <div className="flex justify-center gap-2">
                             <Button
                               size="icon"
@@ -2215,7 +2228,10 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                             </Button>
                           </div>
                         </TableCell>
-                        <TableCell className="sticky left-[188px] z-20 w-32 min-w-[8rem] max-w-[8rem] shrink-0 border-r bg-background group-hover:bg-muted truncate font-mono text-sm" title={payment.invoice_number || undefined}>
+                        <TableCell
+                          className="z-20 w-32 min-w-[8rem] max-w-[8rem] shrink-0 truncate bg-background font-mono text-sm group-hover:bg-muted md:sticky md:left-[188px] md:border-r"
+                          title={payment.invoice_number || undefined}
+                        >
                           {payment.invoice_number || '-'}
                         </TableCell>
                         <TableCell>
@@ -2290,7 +2306,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                             : '-'}
                         </TableCell>
                         <TableCell>
-                          {`${((payment.rate ?? 0.01) * 100).toFixed(2)}%`}
+                          {formatBillingRatePercent(payment.rate)}
                         </TableCell>
                         <TableCell>
                           {payment.last_charge_date 
@@ -2307,7 +2323,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
         </div>
       </TabsContent>
 
-      <TabsContent value="legals" className="px-6 py-4">
+      <TabsContent value="legals" className="min-w-0 px-6 py-4">
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold">Legal Documents</h3>
@@ -2318,8 +2334,8 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
               <Loader2 className="h-6 w-6 animate-spin" />
             </div>
           ) : (
-            <div className="rounded-md border overflow-x-auto">
-              <Table>
+            <div className="max-w-full min-w-0 rounded-md border">
+              <Table className="min-w-[720px] w-max">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[5%]">No</TableHead>
@@ -2399,7 +2415,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
 
     {/* Payment Dialog */}
     <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="flex max-h-[90vh] w-[calc(100vw-1.25rem)] max-w-[min(1320px,calc(100vw-1.25rem))] flex-col gap-6 overflow-y-auto p-6 sm:max-w-[min(1320px,calc(100vw-1.25rem))]">
         <DialogHeader>
           <DialogTitle>{editingPayment ? 'Edit Penagihan' : 'Tambah Penagihan Baru'}</DialogTitle>
           <DialogDescription>
@@ -2524,7 +2540,7 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
     billing_amount: '',
     outstanding: '',
     overdue: '',
-    rate: '0.01',
+    rate: '1',
     last_charge_date: '',
     spk: '',
     invoice_number: '',
@@ -2546,7 +2562,7 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
         billing_amount: payment.billing_amount?.toString() || '',
         outstanding: payment.outstanding?.toString() || '',
         overdue: payment.overdue != null ? String(Math.round(Number(payment.overdue))) : '',
-        rate: payment.rate?.toString() || '0.01',
+        rate: storedRateToPercentInput(payment.rate),
         last_charge_date: payment.last_charge_date ? new Date(payment.last_charge_date).toISOString().split('T')[0] : '',
         spk: payment.spk || '',
         invoice_number: payment.invoice_number || '',
@@ -2572,7 +2588,7 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
         billing_amount: '',
         outstanding: '',
         overdue: '',
-        rate: '0.01',
+        rate: '1',
         last_charge_date: '',
         spk: '',
         invoice_number: '',
@@ -2704,9 +2720,8 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
       if (formData.payment_date) {
         updateData.payment_date = new Date(formData.payment_date).toISOString()
       }
-      if (formData.paid_amount !== '') {
-        updateData.paid_amount = parsePrice(formData.paid_amount)
-      }
+      // Selalu kirim paid_amount saat edit agar 0 / kosong memicu unpaid di backend
+      updateData.paid_amount = parsePrice(formData.paid_amount)
       if (formData.billing_type) {
         updateData.billing_type = formData.billing_type
       }
@@ -2725,9 +2740,14 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
       if (formData.overdue !== '') {
         updateData.overdue = Number(formData.overdue)
       }
-      if (formData.rate) {
-        const parsed = parseRate(formData.rate)
-        if (parsed !== undefined) updateData.rate = parsed
+      {
+        const rateTrim = (formData.rate ?? '').trim()
+        if (rateTrim !== '') {
+          const parsed = parseRate(formData.rate)
+          if (parsed !== undefined) {
+            updateData.rate = percentNumberToFraction(parsed)
+          }
+        }
       }
       if (formData.last_charge_date) {
         updateData.last_charge_date = new Date(formData.last_charge_date).toISOString()
@@ -2778,9 +2798,14 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
       if (formData.overdue !== '') {
         createData.overdue = Number(formData.overdue)
       }
-      if (formData.rate) {
-        const parsed = parseRate(formData.rate)
-        if (parsed !== undefined) createData.rate = parsed
+      {
+        const rateTrim = (formData.rate ?? '').trim()
+        if (rateTrim !== '') {
+          const parsed = parseRate(formData.rate)
+          if (parsed !== undefined) {
+            createData.rate = percentNumberToFraction(parsed)
+          }
+        }
       }
       if (formData.last_charge_date) {
         createData.last_charge_date = new Date(formData.last_charge_date).toISOString()
@@ -2802,8 +2827,8 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
+    <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
+      <div className="grid grid-cols-1 gap-4 sm:gap-4 md:grid-cols-2 xl:grid-cols-3 xl:gap-5">
         <div className="space-y-2">
           <Label htmlFor="billing_period">
             Periode Tagihan {!payment && <span className="text-red-500">*</span>}
@@ -2840,9 +2865,7 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
             <p className="text-sm text-red-500">{errors.billing_amount}</p>
           )}
         </div>
-      </div>
 
-      <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="spk">Nomor SPK</Label>
           <Input
@@ -2853,6 +2876,7 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
             placeholder="Nomor SPK"
           />
         </div>
+
         <div className="space-y-2">
           <Label htmlFor="invoice_number">No. Invoice</Label>
           <Input
@@ -2863,9 +2887,7 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
             placeholder="Nomor invoice"
           />
         </div>
-      </div>
 
-      <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="invoice_date">Tanggal Invoice</Label>
           <Input
@@ -2875,6 +2897,7 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
             onChange={(e) => handleInputChange('invoice_date', e.target.value)}
           />
         </div>
+
         <div className="space-y-2">
           <Label htmlFor="payment_deadline">
             Jatuh Tempo {!payment && <span className="text-red-500">*</span>}
@@ -2890,9 +2913,7 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
             <p className="text-sm text-red-500">{errors.payment_deadline}</p>
           )}
         </div>
-      </div>
 
-      <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="billing_type">Jenis Tagihan</Label>
           <Input
@@ -2903,6 +2924,7 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
             placeholder="Masukkan jenis tagihan"
           />
         </div>
+
         <div className="space-y-2">
           <Label htmlFor="payment_method">Metode Pembayaran</Label>
           <Select
@@ -2923,9 +2945,7 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
             <p className="text-sm text-red-500">{errors.payment_method}</p>
           )}
         </div>
-      </div>
 
-      <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="payment_date">Tanggal Pembayaran</Label>
           <Input
@@ -2950,13 +2970,7 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
             />
           </div>
         </div>
-      </div>
 
-      
-
-      
-
-      <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="outstanding">Outstanding</Label>
           <div className="relative">
@@ -2983,20 +2997,19 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
             placeholder="0"
           />
         </div>
-      </div>
 
-      <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="rate">Rate</Label>
+          <Label htmlFor="rate">Rate (%)</Label>
           <Input
             id="rate"
             type="text"
             inputMode="decimal"
             value={formData.rate}
             onChange={(e) => handleInputChange('rate', e.target.value)}
-            placeholder="0.01"
+            placeholder="1"
           />
         </div>
+
         <div className="space-y-2">
           <Label htmlFor="pph">PPh</Label>
           <div className="relative">
@@ -3011,30 +3024,31 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
             />
           </div>
         </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="last_charge_date">Last Charge</Label>
+          <Input
+            id="last_charge_date"
+            type="date"
+            value={formData.last_charge_date}
+            onChange={(e) => handleInputChange('last_charge_date', e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-2 md:col-span-2 xl:col-span-3">
+          <Label htmlFor="notes">Catatan</Label>
+          <Textarea
+            id="notes"
+            value={formData.notes}
+            onChange={(e) => handleInputChange('notes', e.target.value)}
+            placeholder="Masukkan catatan (opsional)"
+            rows={3}
+            className="min-h-[5.5rem] resize-y"
+          />
+        </div>
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="last_charge_date">Last Charge</Label>
-        <Input
-          id="last_charge_date"
-          type="date"
-          value={formData.last_charge_date}
-          onChange={(e) => handleInputChange('last_charge_date', e.target.value)}
-        />
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="notes">Catatan</Label>
-        <Textarea
-          id="notes"
-          value={formData.notes}
-          onChange={(e) => handleInputChange('notes', e.target.value)}
-          placeholder="Masukkan catatan (opsional)"
-          rows={3}
-        />
-      </div>
-
-      <DialogFooter>
+      <DialogFooter className="gap-2 pt-2 sm:pt-0">
         <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
           Batal
         </Button>

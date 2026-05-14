@@ -167,7 +167,7 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
   }
 
   /** Kolom tabel utama = ringkasan per tenant */
-  const parentColCount = 10
+  const parentColCount = 12
 
   if (loading) {
     return <LoadingSkeleton height="h-64" text="Memuat data financial..." />
@@ -187,24 +187,30 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
           className="h-[380px] overflow-auto overscroll-contain rounded-lg border border-slate-100"
           onScroll={handleScroll}
         >
-          <Table className="w-full min-w-[960px] table-fixed">
+          <Table className="w-full min-w-[1280px] table-auto">
             <TableHeader className="sticky top-0 z-10 bg-white">
               <TableRow className="border-b border-slate-100 hover:bg-transparent">
-                <TableHead className="w-10 px-2" />
-                <TableHead className="w-11 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <TableHead className="w-10 shrink-0 px-2" />
+                <TableHead className="w-11 shrink-0 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                   No
                 </TableHead>
-                <TableHead className="min-w-0 w-[22%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <TableHead className="min-w-[140px] max-w-[220px] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Nama
                 </TableHead>
-                <TableHead className="w-24 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <TableHead className="w-[9.5rem] min-w-[9.5rem] shrink-0 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Status
                 </TableHead>
-                <TableHead className="min-w-0 w-[18%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <TableHead className="min-w-[11rem] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Aset
                 </TableHead>
-                <TableHead className="min-w-0 w-[16%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <TableHead className="min-w-[8rem] max-w-[200px] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Unit
+                </TableHead>
+                <TableHead className="min-w-[8rem] max-w-[180px] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  No. invoice
+                </TableHead>
+                <TableHead className="w-[8.5rem] min-w-[8.5rem] shrink-0 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  Tgl. invoice
                 </TableHead>
                 <TableHead className="w-24 whitespace-nowrap text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Jumlah tagihan
@@ -230,6 +236,12 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
               ) : (
                 visibleTenantGroups.map((group, groupIndex) => {
                   const isOpen = expandedKeys.has(group.key)
+                  const sortedByDue = [...group.logs].sort((a, b) => {
+                    const ta = a.dueDateIso ? new Date(a.dueDateIso).getTime() : Infinity
+                    const tb = b.dueDateIso ? new Date(b.dueDateIso).getTime() : Infinity
+                    return ta - tb
+                  })
+                  const primaryLog = sortedByDue[0]
                   const totalNilai = group.logs.some((r) => r.sisaNilai !== undefined)
                     ? (group.logs.find((r) => r.sisaNilai !== undefined)?.sisaNilai ?? 0)
                     : group.logs.reduce((s, r) => s + (Number(r.nilaiInvoice) || 0), 0)
@@ -242,7 +254,7 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                       <TableRow
                         className="border-b border-slate-100 bg-slate-50/80 last:border-0"
                       >
-                        <TableCell className="w-10 px-2 align-middle">
+                        <TableCell className="w-10 shrink-0 px-2 align-middle">
                           <Button
                             type="button"
                             variant="ghost"
@@ -257,28 +269,39 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                             />
                           </Button>
                         </TableCell>
-                        <TableCell className="text-center text-base font-medium text-slate-700">
+                        <TableCell className="w-11 shrink-0 text-center text-base font-medium text-slate-700">
                           {groupIndex + 1}
                         </TableCell>
-                        <TableCell className="min-w-0 break-words align-middle text-base font-bold whitespace-normal text-slate-900">
+                        <TableCell className="min-w-0 max-w-[220px] break-words align-middle text-base font-bold whitespace-normal text-slate-900">
                           {group.nama}
                         </TableCell>
-                        <TableCell className="align-middle">
+                        <TableCell className="w-[9.5rem] min-w-[9.5rem] shrink-0 align-middle">
                           {groupStatusLabel === 'Overdue' ? (
-                            <span className="inline-flex rounded-full border border-red-100 bg-red-50 px-2.5 py-0.5 text-sm font-medium text-red-700">
+                            <span className="inline-flex max-w-full rounded-full border border-red-100 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 sm:px-2.5 sm:text-sm">
                               Overdue
                             </span>
                           ) : (
-                            <span className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-2.5 py-0.5 text-sm font-medium text-blue-700">
+                            <span className="inline-flex max-w-full rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 sm:px-2.5 sm:text-sm">
                               On Process
                             </span>
                           )}
                         </TableCell>
-                        <TableCell className="min-w-0 break-words align-middle text-base whitespace-normal text-slate-700">
+                        <TableCell className="min-w-[11rem] break-words align-middle border-l border-slate-200/80 pl-3 text-base whitespace-normal text-slate-700">
                           {group.aset}
                         </TableCell>
                         <TableCell className="min-w-0 break-words align-middle text-base whitespace-normal text-slate-700">
                           {group.unit}
+                        </TableCell>
+                        <TableCell
+                          className="min-w-0 break-words align-middle font-mono text-sm text-slate-800"
+                          title={primaryLog?.nomorInvoice || undefined}
+                        >
+                          {primaryLog?.nomorInvoice?.trim() ? primaryLog.nomorInvoice : '—'}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap align-middle text-sm text-slate-700">
+                          {primaryLog?.tanggalInvoice && primaryLog.tanggalInvoice !== '-'
+                            ? primaryLog.tanggalInvoice
+                            : '—'}
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-right text-base font-medium tabular-nums text-slate-700">
                           {group.logs.length}
@@ -314,29 +337,38 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                           <TableCell colSpan={parentColCount} className="p-0 align-middle">
                             <div className="border-t border-slate-200 bg-slate-50/90 px-3 py-3 sm:px-4">
                               <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
-                                Detail tenant_payment_logs
+                                Detail
                               </p>
                               <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
-                                <Table className="min-w-[720px] table-fixed">
+                                <Table className="min-w-[1040px] w-max">
                                   <TableHeader>
                                     <TableRow className="border-b border-slate-100 hover:bg-transparent">
                                       <TableHead className="w-10 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                                         No
                                       </TableHead>
-                                      <TableHead className="min-w-0 w-[18%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                      <TableHead className="min-w-[7rem] whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                                         Nomor invoice
+                                      </TableHead>
+                                      <TableHead className="min-w-[8rem] whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                        Periode tagihan
+                                      </TableHead>
+                                      <TableHead className="w-32 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                        Tanggal invoice
+                                      </TableHead>
+                                      <TableHead className="min-w-[6rem] whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                        No. SPK
+                                      </TableHead>
+                                      <TableHead className="min-w-[8rem] whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                        Jatuh tempo
                                       </TableHead>
                                       <TableHead className="w-28 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                                         Status tagihan
                                       </TableHead>
-                                      <TableHead className="min-w-0 w-[30%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
-                                        Deskripsi
+                                      <TableHead className="min-w-[10rem] max-w-[14rem] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                        Catatan
                                       </TableHead>
                                       <TableHead className="w-32 whitespace-nowrap text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
                                         Nilai invoice
-                                      </TableHead>
-                                      <TableHead className="w-32 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
-                                        Tanggal invoice
                                       </TableHead>
                                       <TableHead className="w-24 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
                                         Aging
@@ -346,8 +378,14 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                                   <TableBody>
                                     {group.logs.map((row, logIdx) => {
                                       const displayStatus = financialInvoiceDisplayStatus(row)
-                                      const deskripsiTampil =
-                                        row.deskripsi && row.deskripsi.trim() !== '' ? row.deskripsi : '—'
+                                      const catatanTampil =
+                                        row.catatan && row.catatan.trim() !== '' && row.catatan !== '-'
+                                          ? row.catatan
+                                          : '—'
+                                      const periode =
+                                        row.periodeTagihan && row.periodeTagihan !== '-' ? row.periodeTagihan : '—'
+                                      const spk = row.nomorSpk && row.nomorSpk !== '-' ? row.nomorSpk : '—'
+                                      const jt = row.jatuhTempo && row.jatuhTempo !== '-' ? row.jatuhTempo : '—'
                                       return (
                                         <TableRow
                                           key={`fin-${group.key}-${row.id}`}
@@ -357,7 +395,19 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                                             {logIdx + 1}
                                           </TableCell>
                                           <TableCell className="min-w-0 break-words align-middle text-base whitespace-normal text-slate-800">
-                                            {row.nomorInvoice}
+                                            {row.nomorInvoice?.trim() ? row.nomorInvoice : '—'}
+                                          </TableCell>
+                                          <TableCell className="min-w-0 break-words align-middle text-base whitespace-normal text-slate-700">
+                                            {periode}
+                                          </TableCell>
+                                          <TableCell className="min-w-0 break-words align-middle text-base whitespace-normal text-slate-700">
+                                            {row.tanggalInvoice && row.tanggalInvoice !== '-' ? row.tanggalInvoice : '—'}
+                                          </TableCell>
+                                          <TableCell className="whitespace-nowrap align-middle font-mono text-sm text-slate-800">
+                                            {spk}
+                                          </TableCell>
+                                          <TableCell className="min-w-0 whitespace-nowrap align-middle text-sm text-slate-700">
+                                            {jt}
                                           </TableCell>
                                           <TableCell className="align-middle">
                                             {displayStatus === 'Overdue' ? (
@@ -371,13 +421,10 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                                             )}
                                           </TableCell>
                                           <TableCell className="min-w-0 break-words align-middle text-base whitespace-normal text-slate-600">
-                                            {deskripsiTampil}
+                                            {catatanTampil}
                                           </TableCell>
                                           <TableCell className="whitespace-nowrap text-right text-base font-bold tabular-nums text-slate-900">
                                             {formatInvoiceRupiah(row.nilaiInvoice)}
-                                          </TableCell>
-                                          <TableCell className="min-w-0 break-words align-middle text-base whitespace-normal text-slate-700">
-                                            {row.tanggalInvoice}
                                           </TableCell>
                                           <TableCell className="text-base font-bold tabular-nums">
                                             {row.aging > 0 ? (

@@ -141,7 +141,7 @@ export default function EditTenantPage() {
         <CardHeader>
           <CardTitle>Form Edit Tenant</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="min-w-0">
           <TenantForm 
             tenant={tenant} 
             onSubmit={handleSubmit} 

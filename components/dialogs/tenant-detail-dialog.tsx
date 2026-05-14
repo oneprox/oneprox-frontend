@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { Tenant, DURATION_UNIT_LABELS, DURATION_UNITS, TenantDepositLog, TenantPaymentLog, tenantsApi, UpdateTenantPaymentData, CreateTenantPaymentData } from '@/lib/api'
+import { formatBillingRatePercent } from '@/lib/billing-rate'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -418,6 +419,8 @@ export default function TenantDetailDialog({
     try {
       const sanitizedUpdatePaymentData: UpdateTenantPaymentData = {
         ...updatePaymentData,
+        // Pastikan 0 terkirim agar backend set status unpaid (undefined bisa ter-strip saat serialize)
+        paid_amount: updatePaymentData.paid_amount ?? 0,
         payment_method: updatePaymentData.payment_method || undefined,
       }
       const response = await tenantsApi.updateTenantPayment(tenant.id, selectedPayment.id, sanitizedUpdatePaymentData)
@@ -679,7 +682,7 @@ export default function TenantDetailDialog({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
       onClick={handleBackdropClick}
     >
-      <div className="bg-white rounded-lg shadow-2xl max-w-7xl w-[95vw] max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-white rounded-lg shadow-2xl max-w-7xl w-[95vw] max-h-[90vh] overflow-hidden flex flex-col min-w-0">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div>
@@ -702,7 +705,7 @@ export default function TenantDetailDialog({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 min-w-0 overflow-y-auto p-6">
           <div className="space-y-6">
             {/* Header Actions */}
             <div className="flex items-center justify-end">
@@ -1244,7 +1247,7 @@ export default function TenantDetailDialog({
                 )}
 
                 {activeTab === 'deposit' && (
-                  <div className="space-y-6">
+                  <div className="min-w-0 space-y-6">
                     <Card>
                       <CardHeader>
                         <CardTitle className="flex items-center gap-2">
@@ -1252,10 +1255,10 @@ export default function TenantDetailDialog({
                           History Deposito
                         </CardTitle>
                       </CardHeader>
-                      <CardContent>
+                      <CardContent className="min-w-0">
                         {depositLogs.length > 0 ? (
-                          <div className="overflow-x-auto">
-                            <Table>
+                          <div className="max-w-full min-w-0">
+                            <Table className="min-w-[560px] w-max">
                               <TableHeader>
                                 <TableRow>
                                   <TableHead>Tanggal</TableHead>
@@ -1332,7 +1335,7 @@ export default function TenantDetailDialog({
                 )}
 
                 {activeTab === 'payment' && (
-                  <div className="space-y-6">
+                  <div className="min-w-0 space-y-6">
                     {/* Payment Summary Card */}
                     <Card>
                       <CardHeader>
@@ -1433,7 +1436,7 @@ export default function TenantDetailDialog({
                           </div>
                         </div>
                       </CardHeader>
-                      <CardContent>
+                      <CardContent className="min-w-0">
                         {paymentLoading ? (
                           <div className="flex items-center justify-center py-8">
                             <Loader2 className="h-6 w-6 animate-spin mr-2" />
@@ -1441,17 +1444,20 @@ export default function TenantDetailDialog({
                           </div>
                         ) : paymentLogs.length > 0 ? (
                           <>
-                            <div className="overflow-x-auto">
-                              <Table>
+                            <div className="max-w-full min-w-0 rounded-md border bg-card shadow-sm">
+                              <p className="border-b bg-muted/40 px-3 py-2 text-xs text-muted-foreground md:hidden">
+                                Geser ke samping untuk melihat semua kolom.
+                              </p>
+                              <Table className="min-w-[1200px] w-max">
                                 <TableHeader>
                                   <TableRow>
-                                    <TableHead className="sticky left-0 z-30 w-12 min-w-12 max-w-12 shrink-0 border-r bg-muted text-center">
+                                    <TableHead className="z-30 w-12 min-w-12 max-w-12 shrink-0 bg-muted text-center md:sticky md:left-0 md:border-r">
                                       No
                                     </TableHead>
-                                    <TableHead className="sticky left-12 z-30 w-[140px] min-w-[140px] max-w-[140px] shrink-0 border-r bg-muted text-center">
+                                    <TableHead className="z-30 w-[140px] min-w-[140px] max-w-[140px] shrink-0 bg-muted text-center md:sticky md:left-12 md:border-r">
                                       Aksi
                                     </TableHead>
-                                    <TableHead className="sticky left-[188px] z-30 w-32 min-w-[8rem] max-w-[8rem] shrink-0 border-r bg-muted whitespace-nowrap">
+                                    <TableHead className="z-30 w-32 min-w-[8rem] max-w-[8rem] shrink-0 bg-muted whitespace-nowrap md:sticky md:left-[188px] md:border-r">
                                       No. Invoice
                                     </TableHead>
                                     <TableHead className="whitespace-nowrap">Status</TableHead>
@@ -1481,10 +1487,10 @@ export default function TenantDetailDialog({
 
                                     return (
                                       <TableRow key={log.id} className="group hover:bg-muted">
-                                        <TableCell className="sticky left-0 z-20 w-12 min-w-12 max-w-12 shrink-0 border-r bg-background group-hover:bg-muted text-center text-sm font-medium">
+                                        <TableCell className="z-20 w-12 min-w-12 max-w-12 shrink-0 bg-background text-center text-sm font-medium group-hover:bg-muted md:sticky md:left-0 md:border-r">
                                           {((paymentPage - 1) * paymentLimit) + logIndex + 1}
                                         </TableCell>
-                                        <TableCell className="sticky left-12 z-20 w-[140px] min-w-[140px] max-w-[140px] shrink-0 border-r bg-background group-hover:bg-muted">
+                                        <TableCell className="z-20 w-[140px] min-w-[140px] max-w-[140px] shrink-0 bg-background group-hover:bg-muted md:sticky md:left-12 md:border-r">
                                           {log.status === 1 ? (
                                             <span className="text-muted-foreground text-sm flex justify-center">-</span>
                                           ) : (
@@ -1501,7 +1507,7 @@ export default function TenantDetailDialog({
                                           )}
                                         </TableCell>
                                         <TableCell
-                                          className="sticky left-[188px] z-20 w-32 min-w-[8rem] max-w-[8rem] shrink-0 border-r bg-background group-hover:bg-muted truncate font-mono text-sm"
+                                          className="z-20 w-32 min-w-[8rem] max-w-[8rem] shrink-0 truncate bg-background font-mono text-sm group-hover:bg-muted md:sticky md:left-[188px] md:border-r"
                                           title={log.invoice_number || undefined}
                                         >
                                           {log.invoice_number || '-'}
@@ -1543,7 +1549,7 @@ export default function TenantDetailDialog({
                                             : '-'}
                                         </TableCell>
                                         <TableCell>
-                                          {`${((log.rate ?? 0.01) * 100).toFixed(2)}%`}
+                                          {formatBillingRatePercent(log.rate)}
                                         </TableCell>
                                         <TableCell>
                                           {log.last_charge_date ? formatDate(log.last_charge_date) : '-'}

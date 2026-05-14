@@ -462,7 +462,7 @@ export interface TenantPaymentLog {
   billing_amount?: number // jumlah tagihan
   outstanding?: number
   overdue?: number
-  rate?: number // default 0.01
+  rate?: number // fraksi per hari/periode: 0.02 = 2%, default 0.01 = 1%
   last_charge_date?: string // ISO date
   spk?: string
   invoice_number?: string
@@ -490,6 +490,7 @@ export interface CreateTenantPaymentData {
   billing_type?: string
   outstanding?: number
   overdue?: number
+  /** Fraksi (0.02 = 2%); default backend 0.01 = 1% */
   rate?: number
   last_charge_date?: string // ISO date
   spk?: string
@@ -510,6 +511,7 @@ export interface UpdateTenantPaymentData {
   billing_amount?: number
   outstanding?: number
   overdue?: number
+  /** Fraksi (0.02 = 2%) */
   rate?: number
   last_charge_date?: string // ISO date
   spk?: string | null
@@ -2185,6 +2187,12 @@ export interface FinancialTableData {
   aset: string
   unit: string
   jatuhTempo: string
+  /** Periode tagihan (billing_period) */
+  periodeTagihan?: string
+  /** Nomor SPK */
+  nomorSpk?: string
+  /** Catatan (notes) tagihan */
+  catatan?: string
   deskripsi: string
   nomorInvoice: string
   nilaiInvoice: number
