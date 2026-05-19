@@ -64,11 +64,14 @@ export default function EditTenantPage() {
         toast.success('Tenant berhasil diperbarui')
         router.push('/tenants')
       } else {
-        toast.error(response.error || 'Gagal memperbarui tenant')
+        toast.error(response.error || response.message || 'Gagal memperbarui tenant', {
+          duration: 8000,
+        })
       }
     } catch (error) {
       console.error('Update tenant error:', error)
-      toast.error('Terjadi kesalahan saat memperbarui tenant')
+      const errMsg = error instanceof Error ? error.message : 'Terjadi kesalahan saat memperbarui tenant'
+      toast.error(errMsg, { duration: 8000 })
     } finally {
       setLoading(false)
     }
