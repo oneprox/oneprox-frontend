@@ -268,12 +268,10 @@ export default function AssetOverviewDashboard({
     return `Rp ${value.toLocaleString('id-ID')}`
   }
 
-  const formatCompactNumber = (value: number) => {
-    const abs = Math.abs(value)
-    if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`
-    if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
-    if (abs >= 1_000) return `${(value / 1_000).toFixed(1)}K`
-    return value.toLocaleString('id-ID')
+  /** Luas lahan/bangunan: angka penuh dengan pemisah ribuan (tanpa K/M/B). */
+  const formatAreaNumber = (value: number) => {
+    if (!Number.isFinite(value)) return '0'
+    return Number(value).toLocaleString('id-ID', { maximumFractionDigits: 2 })
   }
 
   /** Total KPI header: Jt jika &lt; 1 M, supaya angka kecil tetap terbaca. */
@@ -666,7 +664,7 @@ export default function AssetOverviewDashboard({
               <div className="space-y-3">
                 <p className="text-lg font-bold tracking-wide text-white uppercase">Total Lahan</p>
                 <p className="text-5xl font-bold leading-none tracking-tight sm:text-2xl">
-                  {formatCompactNumber(overviewData.totalLandArea)}{' '}
+                  {formatAreaNumber(overviewData.totalLandArea)}{' '}
                   <span className="text-2xl font-semibold text-white/55 sm:text-2xl">m²</span>
                 </p>
               </div>
@@ -686,7 +684,7 @@ export default function AssetOverviewDashboard({
               <div className="space-y-3">
                 <p className="text-lg font-bold tracking-wide text-white uppercase">Luas Bangunan</p>
                 <p className="text-5xl font-bold leading-none tracking-tight sm:text-2xl">
-                  {formatCompactNumber(overviewData.totalBuildingArea)}{' '}
+                  {formatAreaNumber(overviewData.totalBuildingArea)}{' '}
                   <span className="text-2xl font-semibold text-white/55 sm:text-2xl">m²</span>
                 </p>
               </div>

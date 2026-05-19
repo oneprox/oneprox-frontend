@@ -79,6 +79,57 @@ const STATUS_OPTIONS = [
   { value: 'blacklisted', label: 'Blacklisted' },
 ]
 
+function isUnitStatusAvailable(status: string | number | undefined): boolean {
+  if (status === undefined || status === null) return true
+  const s = String(status).toLowerCase()
+  return s === '0' || s === 'available'
+}
+
+function getUnitStatusLabel(status: string | number | undefined): string {
+  if (status === undefined || status === null) return 'tidak diketahui'
+  const labels: Record<string, string> = {
+    '0': 'available',
+    '1': 'occupied',
+    '2': 'maintenance',
+    '3': 'reserved',
+    '4': 'inactive',
+    '5': 'out_of_order',
+    available: 'available',
+    occupied: 'occupied',
+    maintenance: 'maintenance',
+    reserved: 'reserved',
+    inactive: 'inactive',
+    out_of_order: 'out_of_order',
+  }
+  return labels[String(status).toLowerCase()] ?? String(status)
+}
+
+/** Peringatan sebelum aktivasi: unit harus available. */
+function collectActiveActivationUnitIssues(
+  status: string,
+  tenant: Tenant | undefined,
+  unitIds: string[],
+  unitsList: { id: string; name?: string; status?: string | number }[]
+): string[] {
+  if (status !== 'active') return []
+  const issues: string[] = []
+  if (tenant?.units?.length) {
+    for (const u of tenant.units) {
+      if (!isUnitStatusAvailable(u.status)) {
+        issues.push(`${u.name || u.id} (status: ${getUnitStatusLabel(u.status)})`)
+      }
+    }
+  } else if (unitIds.length > 0) {
+    for (const id of unitIds) {
+      const u = unitsList.find((x) => x.id === id)
+      if (u && !isUnitStatusAvailable(u.status)) {
+        issues.push(`${u.name || id} (status: ${getUnitStatusLabel(u.status)})`)
+      }
+    }
+  }
+  return issues
+}
+
 export default function TenantForm({ tenant, onSubmit, loading = false }: TenantFormProps) {
   const searchParams = useSearchParams()
   const [formData, setFormData] = useState({
@@ -907,9 +958,26 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
         throw new Error('All contract URLs must be strings')
       }
 
+      const unitActivationIssues = collectActiveActivationUnitIssues(
+        formData.status,
+        tenant ?? undefined,
+        formData.unit_ids,
+        units
+      )
+      if (unitActivationIssues.length > 0) {
+        const msg = `Unit masih occupied / belum available: ${unitActivationIssues.join(', ')}. Bebaskan unit terlebih dahulu.`
+        toast.error(msg, { duration: 8000 })
+        setUploading(false)
+        return
+      }
+
       await onSubmit(submitData)
     } catch (error) {
-      toast.error('Gagal membuat tenant. ' + error)
+      const errMsg = error instanceof Error ? error.message : String(error)
+      toast.error(
+        (tenant ? 'Gagal memperbarui tenant. ' : 'Gagal membuat tenant. ') + errMsg,
+        { duration: 8000 }
+      )
     } finally {
       setUploading(false)
     }
@@ -1583,6 +1651,33 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
               {errors.status && (
                 <p className="text-sm text-red-500">{errors.status}</p>
               )}
+              {formData.status === 'active' &&
+                collectActiveActivationUnitIssues(
+                  formData.status,
+                  tenant ?? undefined,
+                  formData.unit_ids,
+                  units
+                ).length > 0 && (
+                  <div
+                    role="alert"
+                    className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950"
+                  >
+                    <p className="font-semibold">Unit belum dapat diaktifkan</p>
+                    <p className="mt-1">
+                      Unit masih occupied / belum available:{' '}
+                      {collectActiveActivationUnitIssues(
+                        formData.status,
+                        tenant ?? undefined,
+                        formData.unit_ids,
+                        units
+                      ).join(', ')}
+                    </p>
+                    <p className="mt-1 text-amber-800">
+                      Nonaktifkan tenant lain yang memakai unit ini, atau ubah status unit menjadi
+                      available sebelum mengaktifkan tenant.
+                    </p>
+                  </div>
+                )}
             </div>
           </div>
 
