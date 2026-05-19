@@ -875,6 +875,9 @@ export default function AssetOverviewDashboard({
         </Card>
       </div>
 
+      {/* Financial Table */}
+      <FinancialTable selectedAssetId={selectedAssetId} />
+
       {/* Status Legalitas Aset */}
       <Card className="border border-gray-200 shadow-sm">
         <CardHeader className="space-y-1 pb-4">
@@ -1129,9 +1132,6 @@ export default function AssetOverviewDashboard({
           </div>
         </CardContent>
       </Card>
-
-      {/* Financial Table */}
-      <FinancialTable selectedAssetId={selectedAssetId} />
     </div>
   )
 }
