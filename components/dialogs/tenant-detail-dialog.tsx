@@ -140,6 +140,9 @@ export default function TenantDetailDialog({
 
   const [createPaymentData, setCreatePaymentData] = useState<CreateTenantPaymentData & { payment_date?: string }>({
     billing_period: defaultBillingPeriod,
+    amount: 0,
+    ppn: 0,
+    ppn_percent: 0,
     billing_amount: 0,
     payment_deadline: defaultPaymentDeadline,
     paid_amount: 0,
@@ -477,6 +480,9 @@ export default function TenantDetailDialog({
   const handleCreatePayment = () => {
     setCreatePaymentData({
       billing_period: defaultBillingPeriod,
+      amount: 0,
+      ppn: 0,
+      ppn_percent: 0,
       billing_amount: 0,
       payment_deadline: defaultPaymentDeadline,
       paid_amount: 0,
@@ -507,21 +513,28 @@ export default function TenantDetailDialog({
 
     setCreatingPayment(true)
     try {
+      const billAmt = createPaymentData.billing_amount || createPaymentData.paid_amount || 0
       const response = await tenantsApi.createTenantPayment(tenant.id, {
         billing_period: createPaymentData.billing_period || defaultBillingPeriod,
-        billing_amount: createPaymentData.billing_amount || createPaymentData.paid_amount,
+        amount: billAmt,
+        ppn_percent: 0,
+        ppn: 0,
+        billing_amount: billAmt,
         payment_deadline: createPaymentData.payment_deadline || defaultPaymentDeadline,
         paid_amount: createPaymentData.paid_amount,
         payment_method: createPaymentData.payment_method,
         notes: createPaymentData.notes.trim(),
         ...(createPaymentData.payment_date ? { payment_date: createPaymentData.payment_date } : {})
-      } as CreateTenantPaymentData & { payment_date?: string })
+      })
       
       if (response.success) {
         toast.success('Pembayaran berhasil ditambahkan')
         setCreatePaymentDialogOpen(false)
         setCreatePaymentData({
           billing_period: defaultBillingPeriod,
+          amount: 0,
+          ppn: 0,
+          ppn_percent: 0,
           billing_amount: 0,
           payment_deadline: defaultPaymentDeadline,
           paid_amount: 0,

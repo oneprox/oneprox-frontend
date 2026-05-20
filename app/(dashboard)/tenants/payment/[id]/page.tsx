@@ -127,8 +127,12 @@ export default function UpdateTenantPaymentPage() {
       const billingPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
       const paymentDeadline = now.toISOString().slice(0, 10)
 
+      // Catat pembayaran: total tagihan = jumlah dibayar, tanpa rincian PPN terpisah
       const paymentData: CreateTenantPaymentData = {
         billing_period: billingPeriod,
+        amount: paid,
+        ppn_percent: 0,
+        ppn: 0,
         billing_amount: paid,
         payment_deadline: paymentDeadline,
         paid_amount: paid,
