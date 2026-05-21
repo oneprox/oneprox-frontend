@@ -1072,6 +1072,8 @@ export const unitsApi = {
     asset_id?: string
     is_deleted?: boolean
     status?: number
+    assignable?: boolean | number | string
+    for_tenant_id?: string
     size_min?: number
     size_max?: number
     order?: string
@@ -1083,6 +1085,14 @@ export const unitsApi = {
     if (params?.asset_id) queryParams.append('asset_id', params.asset_id)
     if (params?.is_deleted !== undefined) queryParams.append('is_deleted', params.is_deleted.toString())
     if (params?.status !== undefined && params?.status !== null) queryParams.append('status', params.status.toString())
+    if (params?.assignable !== undefined && params?.assignable !== null) {
+      const v = params.assignable
+      queryParams.append(
+        'assignable',
+        v === true || v === 1 || v === '1' || v === 'true' ? '1' : '0'
+      )
+    }
+    if (params?.for_tenant_id) queryParams.append('for_tenant_id', params.for_tenant_id)
     if (params?.size_min) queryParams.append('size_min', params.size_min.toString())
     if (params?.size_max) queryParams.append('size_max', params.size_max.toString())
     if (params?.order) queryParams.append('order', params.order)

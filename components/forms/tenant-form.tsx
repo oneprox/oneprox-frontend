@@ -92,6 +92,13 @@ function isUnitStatusAvailable(status: string | number | undefined): boolean {
   return s === '0' || s === 'available'
 }
 
+/** Unit milik tenant yang sama boleh diaktifkan meski masih reserved. */
+function isUnitStatusActivatable(status: string | number | undefined): boolean {
+  if (status === undefined || status === null) return true
+  const s = String(status).toLowerCase()
+  return isUnitStatusAvailable(status) || s === '3' || s === 'reserved'
+}
+
 function getUnitStatusLabel(status: string | number | undefined): string {
   if (status === undefined || status === null) return 'tidak diketahui'
   const labels: Record<string, string> = {
@@ -122,14 +129,14 @@ function collectActiveActivationUnitIssues(
   const issues: string[] = []
   if (tenant?.units?.length) {
     for (const u of tenant.units) {
-      if (!isUnitStatusAvailable(u.status)) {
+      if (!isUnitStatusActivatable(u.status)) {
         issues.push(`${u.name || u.id} (status: ${getUnitStatusLabel(u.status)})`)
       }
     }
   } else if (unitIds.length > 0) {
     for (const id of unitIds) {
       const u = unitsList.find((x) => x.id === id)
-      if (u && !isUnitStatusAvailable(u.status)) {
+      if (u && !isUnitStatusActivatable(u.status)) {
         issues.push(`${u.name || id} (status: ${getUnitStatusLabel(u.status)})`)
       }
     }
@@ -159,22 +166,34 @@ type PaymentSortField =
   | 'rate'
   | 'last_charge_date'
 
+/** Parse GET /payments — api client mengembalikan body penuh di response.data bila tidak ada field success */
 function parsePaymentLogsResponse(response: {
   success?: boolean
   data?: unknown
-  pagination?: { total: number }
+  pagination?: { total?: number; limit?: number; offset?: number }
 }) {
-  const logsData = response.data as Record<string, unknown> | TenantPaymentLog[] | undefined
-  const logs = Array.isArray((logsData as { data?: unknown })?.data)
-    ? ((logsData as { data: TenantPaymentLog[] }).data)
-    : Array.isArray(logsData)
-      ? logsData
+  const envelope = response.data as Record<string, unknown> | TenantPaymentLog[] | undefined
+
+  const logs = Array.isArray(envelope)
+    ? envelope
+    : Array.isArray(envelope?.data)
+      ? (envelope.data as TenantPaymentLog[])
       : []
-  let total: number | null = response.pagination?.total ?? null
-  if (total == null && logsData && typeof logsData === 'object' && !Array.isArray(logsData)) {
-    if (typeof logsData.total === 'number') total = logsData.total
-    else if (typeof logsData.count === 'number') total = logsData.count
+
+  let total: number | null =
+    response.pagination?.total != null ? Number(response.pagination.total) : null
+
+  if (total == null && envelope && typeof envelope === 'object' && !Array.isArray(envelope)) {
+    const pag = envelope.pagination as { total?: number } | undefined
+    if (pag?.total != null) {
+      total = Number(pag.total)
+    } else if (typeof envelope.total === 'number') {
+      total = envelope.total as number
+    } else if (typeof envelope.count === 'number') {
+      total = envelope.count as number
+    }
   }
+
   return { logs, total }
 }
 
@@ -381,8 +400,12 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
       try {
         const [usersResponse, unitsResponse, assetsResponse, rolesResponse] = await Promise.all([
           usersApi.getUsers({ limit: 100 }),
-          // When editing, load all units to show selected ones; when creating, only load available units
-          tenant ? unitsApi.getUnits() : unitsApi.getUnits({ status: 0 }),
+          // Hanya unit yang belum ditahan tenant lain (pending/aktif/dll.)
+          unitsApi.getUnits({
+            assignable: 1,
+            limit: 1000,
+            ...(tenant?.id ? { for_tenant_id: tenant.id } : {}),
+          }),
           // Load available assets
           assetsApi.getAssets({ status: 1, limit: 1000 }),
           rolesApi.getRoles()
@@ -442,7 +465,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
     }
 
     loadData()
-  }, [])
+  }, [tenant?.id])
 
   // Initialize form data when tenant prop changes
   useEffect(() => {
@@ -535,16 +558,19 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
     }
   }, [tenant])
 
-  const prevPaymentTenantIdRef = useRef<string | undefined>(undefined)
+  const paymentLogsTenantIdRef = useRef<string | null>(null)
 
   const loadPaymentLogs = useCallback(async () => {
     if (!tenant?.id) return
 
     let page = paymentPage
-    if (prevPaymentTenantIdRef.current !== tenant.id) {
-      prevPaymentTenantIdRef.current = tenant.id
+    if (paymentLogsTenantIdRef.current !== tenant.id) {
+      paymentLogsTenantIdRef.current = tenant.id
       page = 1
-      if (paymentPage !== 1) setPaymentPage(1)
+      if (paymentPage !== 1) {
+        setPaymentPage(1)
+        return
+      }
     }
 
     setPaymentLogsLoading(true)
@@ -560,7 +586,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
       if (response.success) {
         const { logs, total } = parsePaymentLogsResponse(response)
         setPaymentLogs(logs)
-        if (total != null && total >= 0) {
+        if (total != null && !Number.isNaN(total) && total >= 0) {
           setPaymentTotal(total)
         } else if (page === 1) {
           setPaymentTotal(logs.length)
@@ -614,7 +640,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
     if (tenant?.id) {
       loadLegalDocuments()
     } else {
-      prevPaymentTenantIdRef.current = undefined
+      paymentLogsTenantIdRef.current = null
       setPaymentLogs([])
       setPaymentTotal(0)
       setPaymentPage(1)
@@ -2555,7 +2581,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                   )}
                 </TableBody>
               </Table>
-              {(paymentTotal > 0 || paymentLogs.length > 0) && (
+              {(paymentTotal > PAYMENT_PAGE_SIZE || paymentPage > 1 || paymentLogs.length > 0) && (
                 <div className="flex flex-col gap-3 border-t px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-sm text-muted-foreground">
                     {paymentTotal > 0 ? (
@@ -2590,8 +2616,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                       onClick={() => setPaymentPage((prev) => Math.min(totalPaymentPages, prev + 1))}
                       disabled={
                         paymentLogsLoading ||
-                        paymentPage >= totalPaymentPages ||
-                        (paymentLogs.length < PAYMENT_PAGE_SIZE && paymentPage > 1)
+                        paymentPage >= totalPaymentPages
                       }
                     >
                       <ChevronRight className="h-4 w-4" />
@@ -2696,7 +2721,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
 
     {/* Payment Dialog */}
     <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
-      <DialogContent className="flex max-h-[90vh] w-[calc(100vw-1.25rem)] max-w-[min(1320px,calc(100vw-1.25rem))] flex-col gap-6 overflow-y-auto p-6 sm:max-w-[min(1320px,calc(100vw-1.25rem))]">
+      <DialogContent className="flex max-h-[90vh] w-[calc(100vw-1.25rem)] max-w-[min(1320px,calc(100vw-1.25rem))] flex-col gap-3 overflow-y-auto p-5 sm:max-w-[min(1320px,calc(100vw-1.25rem))] sm:p-6">
         <DialogHeader>
           <DialogTitle>{editingPayment ? 'Edit Penagihan' : 'Tambah Penagihan Baru'}</DialogTitle>
           <DialogDescription>
@@ -3220,281 +3245,325 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
     }
   }
 
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
-      <div className="grid grid-cols-1 gap-4 sm:gap-4 md:grid-cols-2 xl:grid-cols-3 xl:gap-5">
-        <div className="space-y-2">
-          <Label htmlFor="billing_period">
-            Periode Tagihan {!payment && <span className="text-red-500">*</span>}
-          </Label>
-          <Input
-            id="billing_period"
-            type="text"
-            value={formData.billing_period}
-            onChange={(e) => handleInputChange('billing_period', e.target.value)}
-            placeholder="Contoh: Januari 2024"
-            className={errors.billing_period ? 'border-red-500' : ''}
-          />
-          {errors.billing_period && (
-            <p className="text-sm text-red-500">{errors.billing_period}</p>
-          )}
-        </div>
+  const paymentFieldClass = 'space-y-1.5 min-w-0'
+  const paymentGridClass = 'grid grid-cols-1 gap-x-3 gap-y-3 sm:grid-cols-2'
+  const paymentSectionTitle = (textColor: string) =>
+    `flex items-center gap-2 text-xs font-semibold uppercase tracking-wide ${textColor}`
+  const paymentSections = {
+    billing:
+      'space-y-3 rounded-md border border-sky-200/70 bg-sky-50/60 px-3 py-3 dark:border-sky-800/50 dark:bg-sky-950/25',
+    invoice:
+      'space-y-3 rounded-md border border-violet-200/70 bg-violet-50/50 px-3 py-3 dark:border-violet-800/50 dark:bg-violet-950/25',
+    payment:
+      'space-y-3 rounded-md border border-emerald-200/70 bg-emerald-50/50 px-3 py-3 dark:border-emerald-800/50 dark:bg-emerald-950/25',
+    notes:
+      'space-y-3 rounded-md border border-amber-200/60 bg-amber-50/40 px-3 py-3 dark:border-amber-800/40 dark:bg-amber-950/20',
+  }
 
-        <div className="space-y-2">
-          <Label htmlFor="amount">
-            Jumlah Tagihan {!payment && <span className="text-red-500">*</span>}
-          </Label>
-          <div className="relative">
-            <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-col">
+      <div className="space-y-3.5">
+        {/* Row 1: periode, jumlah tagihan, PPN%, PPN, total, SPK */}
+        <section className={paymentSections.billing}>
+          <p className={paymentSectionTitle('text-sky-800 dark:text-sky-200')}>
+            <span className="h-3 w-1 shrink-0 rounded-full bg-sky-500" aria-hidden />
+            Data tagihan
+          </p>
+          <div className={`${paymentGridClass} lg:grid-cols-3 xl:grid-cols-6`}>
+          <div className={paymentFieldClass}>
+            <Label htmlFor="billing_period" className="text-sm font-medium">
+              Periode Tagihan {!payment && <span className="text-red-500">*</span>}
+            </Label>
             <Input
-              id="amount"
+              id="billing_period"
               type="text"
-              value={formatPrice(parsePrice(formData.amount))}
-              onChange={(e) => handleInputChange('amount', e.target.value)}
+              value={formData.billing_period}
+              onChange={(e) => handleInputChange('billing_period', e.target.value)}
+              placeholder="Januari 2024"
+              className={errors.billing_period ? 'border-red-500' : ''}
+            />
+            {errors.billing_period && (
+              <p className="text-sm text-red-500">{errors.billing_period}</p>
+            )}
+          </div>
+
+          <div className={paymentFieldClass}>
+            <Label htmlFor="amount" className="text-sm font-medium">
+              Jumlah Tagihan {!payment && <span className="text-red-500">*</span>}
+            </Label>
+            <div className="relative">
+              <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
+              <Input
+                id="amount"
+                type="text"
+                value={formatPrice(parsePrice(formData.amount))}
+                onChange={(e) => handleInputChange('amount', e.target.value)}
+                placeholder="0"
+                className={`pl-10 ${errors.amount ? 'border-red-500' : ''}`}
+              />
+            </div>
+            {errors.amount && <p className="text-sm text-red-500">{errors.amount}</p>}
+          </div>
+
+          <div className={paymentFieldClass}>
+            <Label htmlFor="ppn_percent" className="text-sm font-medium">PPN (%)</Label>
+            <Input
+              id="ppn_percent"
+              type="text"
+              inputMode="decimal"
+              value={formData.ppn_percent}
+              onChange={(e) => handleInputChange('ppn_percent', e.target.value)}
               placeholder="0"
-              className={`pl-10 ${errors.amount ? 'border-red-500' : ''}`}
             />
           </div>
-          {errors.amount && (
-            <p className="text-sm text-red-500">{errors.amount}</p>
-          )}
-        </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="ppn_percent">PPN (%) — isi 0 jika tidak ada PPN</Label>
-          <Input
-            id="ppn_percent"
-            type="text"
-            inputMode="decimal"
-            value={formData.ppn_percent}
-            onChange={(e) => handleInputChange('ppn_percent', e.target.value)}
-            placeholder="0"
-          />
-        </div>
+          <div className={paymentFieldClass}>
+            <Label htmlFor="ppn" className="text-sm font-medium">PPN (Rp)</Label>
+            <div className="relative">
+              <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
+              <Input
+                id="ppn"
+                type="text"
+                inputMode="numeric"
+                value={
+                  formData.ppn.trim() === ''
+                    ? ''
+                    : formatRupiahInputValue(parsePrice(formData.ppn), true)
+                }
+                onChange={(e) => handleInputChange('ppn', e.target.value)}
+                placeholder="0"
+                className="pl-10"
+              />
+            </div>
+          </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="ppn">PPN (Rp)</Label>
-          <div className="relative">
-            <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
+          <div className={paymentFieldClass}>
+            <Label htmlFor="billing_amount" className="text-sm font-medium">Total Tagihan</Label>
+            <div className="relative">
+              <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
+              <Input
+                id="billing_amount"
+                type="text"
+                readOnly
+                tabIndex={-1}
+                value={formatPrice(parsePrice(formData.billing_amount))}
+                className="pl-10 border-sky-200/80 bg-sky-100/50 font-semibold text-sky-900 dark:border-sky-800/60 dark:bg-sky-950/40 dark:text-sky-100"
+              />
+            </div>
+          </div>
+
+          <div className={paymentFieldClass}>
+            <Label htmlFor="spk" className="text-sm font-medium">SPK</Label>
             <Input
-              id="ppn"
+              id="spk"
+              type="text"
+              value={formData.spk}
+              onChange={(e) => handleInputChange('spk', e.target.value)}
+              placeholder="Nomor SPK"
+            />
+          </div>
+          </div>
+        </section>
+
+        {/* Row 2: invoice, tanggal invoice, jatuh tempo, jenis tagihan */}
+        <section className={paymentSections.invoice}>
+          <p className={paymentSectionTitle('text-violet-800 dark:text-violet-200')}>
+            <span className="h-3 w-1 shrink-0 rounded-full bg-violet-500" aria-hidden />
+            Invoice & jatuh tempo
+          </p>
+          <div className={`${paymentGridClass} lg:grid-cols-4`}>
+          <div className={paymentFieldClass}>
+            <Label htmlFor="invoice_number" className="text-sm font-medium">No. Invoice</Label>
+            <Input
+              id="invoice_number"
+              type="text"
+              value={formData.invoice_number}
+              onChange={(e) => handleInputChange('invoice_number', e.target.value)}
+              placeholder="Nomor invoice"
+            />
+          </div>
+
+          <div className={paymentFieldClass}>
+            <Label htmlFor="invoice_date" className="text-sm font-medium">Tanggal Invoice</Label>
+            <Input
+              id="invoice_date"
+              type="date"
+              value={formData.invoice_date}
+              onChange={(e) => handleInputChange('invoice_date', e.target.value)}
+            />
+          </div>
+
+          <div className={paymentFieldClass}>
+            <Label htmlFor="payment_deadline" className="text-sm font-medium">
+              Jatuh Tempo {!payment && <span className="text-red-500">*</span>}
+            </Label>
+            <Input
+              id="payment_deadline"
+              type="date"
+              value={formData.payment_deadline}
+              onChange={(e) => handleInputChange('payment_deadline', e.target.value)}
+              className={errors.payment_deadline ? 'border-red-500' : ''}
+            />
+            {errors.payment_deadline && (
+              <p className="text-sm text-red-500">{errors.payment_deadline}</p>
+            )}
+          </div>
+
+          <div className={paymentFieldClass}>
+            <Label htmlFor="billing_type" className="text-sm font-medium">Jenis Tagihan</Label>
+            <Input
+              id="billing_type"
+              type="text"
+              value={formData.billing_type}
+              onChange={(e) => handleInputChange('billing_type', e.target.value)}
+              placeholder="Jenis tagihan"
+            />
+          </div>
+          </div>
+        </section>
+
+        {/* Row 3–4: pembayaran */}
+        <section className={paymentSections.payment}>
+          <p className={paymentSectionTitle('text-emerald-800 dark:text-emerald-200')}>
+            <span className="h-3 w-1 shrink-0 rounded-full bg-emerald-500" aria-hidden />
+            Pembayaran
+          </p>
+          <div className={`${paymentGridClass} lg:grid-cols-4`}>
+          <div className={paymentFieldClass}>
+            <Label htmlFor="payment_method" className="text-sm font-medium">Metode Pembayaran</Label>
+            <Select
+              value={formData.payment_method ? formData.payment_method : undefined}
+              onValueChange={(value) => handleInputChange('payment_method', value)}
+            >
+              <SelectTrigger className={`w-full min-w-0 ${errors.payment_method ? 'border-red-500' : ''}`}>
+                <SelectValue placeholder="Pilih metode" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="cash">Cash</SelectItem>
+                <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                <SelectItem value="qris">QRIS</SelectItem>
+                <SelectItem value="other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+            {errors.payment_method && (
+              <p className="text-sm text-red-500">{errors.payment_method}</p>
+            )}
+          </div>
+
+          <div className={paymentFieldClass}>
+            <Label htmlFor="payment_date" className="text-sm font-medium">Tanggal Pembayaran</Label>
+            <Input
+              id="payment_date"
+              type="date"
+              value={formData.payment_date}
+              onChange={(e) => handleInputChange('payment_date', e.target.value)}
+            />
+          </div>
+
+          <div className={paymentFieldClass}>
+            <Label htmlFor="paid_amount" className="text-sm font-medium">Jumlah Dibayar</Label>
+            <div className="relative">
+              <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
+              <Input
+                id="paid_amount"
+                type="text"
+                value={formData.paid_amount === '0' ? '0' : formatPrice(parsePrice(formData.paid_amount))}
+                onChange={(e) => handleInputChange('paid_amount', e.target.value)}
+                placeholder="0"
+                className="pl-10"
+              />
+            </div>
+          </div>
+
+          <div className={paymentFieldClass}>
+            <Label htmlFor="outstanding" className="text-sm font-medium">Outstanding</Label>
+            <div className="relative">
+              <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
+              <Input
+                id="outstanding"
+                type="text"
+                value={formatPrice(parsePrice(formData.outstanding))}
+                onChange={(e) => handleInputChange('outstanding', e.target.value)}
+                placeholder="0"
+                className="pl-10"
+              />
+            </div>
+          </div>
+          </div>
+
+          <div className={`${paymentGridClass} mt-3 lg:grid-cols-4`}>
+          <div className={paymentFieldClass}>
+            <Label htmlFor="overdue" className="text-sm font-medium">Overdue (hari)</Label>
+            <Input
+              id="overdue"
               type="text"
               inputMode="numeric"
-              value={
-                formData.ppn.trim() === ''
-                  ? ''
-                  : formatRupiahInputValue(parsePrice(formData.ppn), true)
-              }
-              onChange={(e) => handleInputChange('ppn', e.target.value)}
+              value={formData.overdue}
+              onChange={(e) => handleInputChange('overdue', e.target.value)}
               placeholder="0"
-              className="pl-10"
             />
           </div>
-          <p className="text-xs text-muted-foreground">
-            Bisa diisi manual; jika jumlah tagihan &gt; 0, persen PPN disesuaikan otomatis. Mengubah jumlah
-            tagihan atau PPN (%) akan menghitung ulang nilai ini.
+
+          <div className={paymentFieldClass}>
+            <Label htmlFor="rate" className="text-sm font-medium">Rate (%)</Label>
+            <Input
+              id="rate"
+              type="text"
+              inputMode="decimal"
+              value={formData.rate}
+              onChange={(e) => handleInputChange('rate', e.target.value)}
+              placeholder="1"
+            />
+          </div>
+
+          <div className={paymentFieldClass}>
+            <Label htmlFor="pph" className="text-sm font-medium">PPh</Label>
+            <div className="relative">
+              <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
+              <Input
+                id="pph"
+                type="text"
+                value={formatPrice(parsePrice(formData.pph))}
+                onChange={(e) => handleInputChange('pph', e.target.value)}
+                placeholder="0"
+                className="pl-10"
+              />
+            </div>
+          </div>
+
+          <div className={paymentFieldClass}>
+            <Label htmlFor="last_charge_date" className="text-sm font-medium">Last Charge</Label>
+            <Input
+              id="last_charge_date"
+              type="date"
+              value={formData.last_charge_date}
+              onChange={(e) => handleInputChange('last_charge_date', e.target.value)}
+            />
+          </div>
+          </div>
+        </section>
+
+        {/* Row 5: catatan */}
+        <section className={paymentSections.notes}>
+          <p className={paymentSectionTitle('text-amber-900 dark:text-amber-200')}>
+            <span className="h-3 w-1 shrink-0 rounded-full bg-amber-500" aria-hidden />
+            Catatan
           </p>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="billing_amount">Total Tagihan</Label>
-          <div className="relative">
-            <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
-            <Input
-              id="billing_amount"
-              type="text"
-              readOnly
-              tabIndex={-1}
-              value={formatPrice(parsePrice(formData.billing_amount))}
-              className="pl-10 bg-muted/50 font-medium"
+          <div className={paymentFieldClass}>
+            <Textarea
+              aria-label="Catatan"
+              id="notes"
+              value={formData.notes}
+              onChange={(e) => handleInputChange('notes', e.target.value)}
+              placeholder="Catatan (opsional)"
+              rows={2}
+              className="min-h-[3.25rem] resize-y border-amber-200/80 bg-white/80 focus-visible:ring-amber-400/40 dark:border-amber-800/50 dark:bg-background/60"
             />
           </div>
-          <p className="text-xs text-muted-foreground">Dihitung otomatis: jumlah tagihan + PPN</p>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="spk">Nomor SPK</Label>
-          <Input
-            id="spk"
-            type="text"
-            value={formData.spk}
-            onChange={(e) => handleInputChange('spk', e.target.value)}
-            placeholder="Nomor SPK"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="invoice_number">No. Invoice</Label>
-          <Input
-            id="invoice_number"
-            type="text"
-            value={formData.invoice_number}
-            onChange={(e) => handleInputChange('invoice_number', e.target.value)}
-            placeholder="Nomor invoice"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="invoice_date">Tanggal Invoice</Label>
-          <Input
-            id="invoice_date"
-            type="date"
-            value={formData.invoice_date}
-            onChange={(e) => handleInputChange('invoice_date', e.target.value)}
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="payment_deadline">
-            Jatuh Tempo {!payment && <span className="text-red-500">*</span>}
-          </Label>
-          <Input
-            id="payment_deadline"
-            type="date"
-            value={formData.payment_deadline}
-            onChange={(e) => handleInputChange('payment_deadline', e.target.value)}
-            className={errors.payment_deadline ? 'border-red-500' : ''}
-          />
-          {errors.payment_deadline && (
-            <p className="text-sm text-red-500">{errors.payment_deadline}</p>
-          )}
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="billing_type">Jenis Tagihan</Label>
-          <Input
-            id="billing_type"
-            type="text"
-            value={formData.billing_type}
-            onChange={(e) => handleInputChange('billing_type', e.target.value)}
-            placeholder="Masukkan jenis tagihan"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="payment_method">Metode Pembayaran</Label>
-          <Select
-            value={formData.payment_method ? formData.payment_method : undefined}
-            onValueChange={(value) => handleInputChange('payment_method', value)}
-          >
-            <SelectTrigger className={`w-full min-w-0 ${errors.payment_method ? 'border-red-500' : ''}`}>
-              <SelectValue placeholder="Pilih metode pembayaran" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="cash">Cash</SelectItem>
-              <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-              <SelectItem value="qris">QRIS</SelectItem>
-              <SelectItem value="other">Other</SelectItem>
-            </SelectContent>
-          </Select>
-          {errors.payment_method && (
-            <p className="text-sm text-red-500">{errors.payment_method}</p>
-          )}
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="payment_date">Tanggal Pembayaran</Label>
-          <Input
-            id="payment_date"
-            type="date"
-            value={formData.payment_date}
-            onChange={(e) => handleInputChange('payment_date', e.target.value)}
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="paid_amount">Jumlah Dibayar</Label>
-          <div className="relative">
-            <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
-            <Input
-              id="paid_amount"
-              type="text"
-              value={formData.paid_amount === '0' ? '0' : formatPrice(parsePrice(formData.paid_amount))}
-              onChange={(e) => handleInputChange('paid_amount', e.target.value)}
-              placeholder="0"
-              className="pl-10"
-            />
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="outstanding">Outstanding</Label>
-          <div className="relative">
-            <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
-            <Input
-              id="outstanding"
-              type="text"
-              value={formatPrice(parsePrice(formData.outstanding))}
-              onChange={(e) => handleInputChange('outstanding', e.target.value)}
-              placeholder="0"
-              className="pl-10"
-            />
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="overdue">Overdue (hari)</Label>
-          <Input
-            id="overdue"
-            type="text"
-            inputMode="numeric"
-            value={formData.overdue}
-            onChange={(e) => handleInputChange('overdue', e.target.value)}
-            placeholder="0"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="rate">Rate (%)</Label>
-          <Input
-            id="rate"
-            type="text"
-            inputMode="decimal"
-            value={formData.rate}
-            onChange={(e) => handleInputChange('rate', e.target.value)}
-            placeholder="1"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="pph">PPh</Label>
-          <div className="relative">
-            <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
-            <Input
-              id="pph"
-              type="text"
-              value={formatPrice(parsePrice(formData.pph))}
-              onChange={(e) => handleInputChange('pph', e.target.value)}
-              placeholder="0"
-              className="pl-10"
-            />
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="last_charge_date">Last Charge</Label>
-          <Input
-            id="last_charge_date"
-            type="date"
-            value={formData.last_charge_date}
-            onChange={(e) => handleInputChange('last_charge_date', e.target.value)}
-          />
-        </div>
-
-        <div className="space-y-2 md:col-span-2 xl:col-span-3">
-          <Label htmlFor="notes">Catatan</Label>
-          <Textarea
-            id="notes"
-            value={formData.notes}
-            onChange={(e) => handleInputChange('notes', e.target.value)}
-            placeholder="Masukkan catatan (opsional)"
-            rows={3}
-            className="min-h-[5.5rem] resize-y"
-          />
-        </div>
+        </section>
       </div>
 
-      <DialogFooter className="gap-2 pt-2 sm:pt-0">
+      <DialogFooter className="mt-4 gap-2 border-t border-border/50 pt-4">
         <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
           Batal
         </Button>
