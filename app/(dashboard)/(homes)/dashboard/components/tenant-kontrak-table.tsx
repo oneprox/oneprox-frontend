@@ -275,13 +275,22 @@ export default function TenantKontrakTable({ selectedAssetId = 'all' }: TenantKo
                       {formatDate(tenant.deadlineDate)}
                     </TableCell>
                     <TableCell className="text-sm text-gray-600">
-                      {tenant.unpaidPayment?.amount ? (
+                      {tenant.unpaidPayment &&
+                      (tenant.unpaidPayment.billing_amount ??
+                        tenant.unpaidPayment.paid_amount ??
+                        tenant.unpaidPayment.amount) ? (
                         new Intl.NumberFormat('id-ID', {
                           style: 'currency',
                           currency: 'IDR',
                           minimumFractionDigits: 0,
                           maximumFractionDigits: 0,
-                        }).format(tenant.unpaidPayment.amount)
+                        }).format(
+                          Number(
+                            tenant.unpaidPayment.billing_amount ??
+                              tenant.unpaidPayment.paid_amount ??
+                              tenant.unpaidPayment.amount
+                          )
+                        )
                       ) : '-'}
                     </TableCell>
                     <TableCell>

@@ -1,8 +1,16 @@
 'use client'
 
-import React, { useState, useEffect, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Tenant, CreateTenantData, UpdateTenantData, usersApi, unitsApi, tenantsApi, rolesApi, assetsApi, User, Unit, Asset, DURATION_UNITS, DURATION_UNIT_LABELS, TenantPaymentLog, CreateTenantPaymentData, UpdateTenantPaymentData, TenantLegal, CreateTenantLegalData, UpdateTenantLegalData, settingsApi, Setting } from '@/lib/api'
+import {
+  formatBillingRatePercent,
+  storedRateToPercentInput,
+  storedPpnPercentToInput,
+  parsePpnPercentInput,
+  percentNumberToFraction,
+  computePpnAndBillingAmount,
+} from '@/lib/billing-rate'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -46,7 +54,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Textarea } from '@/components/ui/textarea'
-import { Loader2, Plus, X, File, Search, UserPlus, Users, Eye, EyeOff, Calendar, Edit, Trash2, DollarSign } from 'lucide-react'
+import { Loader2, Plus, X, File, Search, UserPlus, Users, Eye, EyeOff, Calendar, Edit, Trash2, DollarSign, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 interface TenantFormProps {
@@ -77,6 +85,151 @@ const STATUS_OPTIONS = [
   { value: 'terminated', label: 'Terminated' },
   { value: 'blacklisted', label: 'Blacklisted' },
 ]
+
+function isUnitStatusAvailable(status: string | number | undefined): boolean {
+  if (status === undefined || status === null) return true
+  const s = String(status).toLowerCase()
+  return s === '0' || s === 'available'
+}
+
+/** Unit milik tenant yang sama boleh diaktifkan meski masih reserved. */
+function isUnitStatusActivatable(status: string | number | undefined): boolean {
+  if (status === undefined || status === null) return true
+  const s = String(status).toLowerCase()
+  return isUnitStatusAvailable(status) || s === '3' || s === 'reserved'
+}
+
+function getUnitStatusLabel(status: string | number | undefined): string {
+  if (status === undefined || status === null) return 'tidak diketahui'
+  const labels: Record<string, string> = {
+    '0': 'available',
+    '1': 'occupied',
+    '2': 'maintenance',
+    '3': 'reserved',
+    '4': 'inactive',
+    '5': 'out_of_order',
+    available: 'available',
+    occupied: 'occupied',
+    maintenance: 'maintenance',
+    reserved: 'reserved',
+    inactive: 'inactive',
+    out_of_order: 'out_of_order',
+  }
+  return labels[String(status).toLowerCase()] ?? String(status)
+}
+
+/** Peringatan sebelum aktivasi: unit harus available. */
+function collectActiveActivationUnitIssues(
+  status: string,
+  tenant: Tenant | undefined,
+  unitIds: string[],
+  unitsList: { id: string; name?: string; status?: string | number }[]
+): string[] {
+  if (status !== 'active') return []
+  const issues: string[] = []
+  if (tenant?.units?.length) {
+    for (const u of tenant.units) {
+      if (!isUnitStatusActivatable(u.status)) {
+        issues.push(`${u.name || u.id} (status: ${getUnitStatusLabel(u.status)})`)
+      }
+    }
+  } else if (unitIds.length > 0) {
+    for (const id of unitIds) {
+      const u = unitsList.find((x) => x.id === id)
+      if (u && !isUnitStatusActivatable(u.status)) {
+        issues.push(`${u.name || id} (status: ${getUnitStatusLabel(u.status)})`)
+      }
+    }
+  }
+  return issues
+}
+
+const PAYMENT_PAGE_SIZE = 10
+
+type PaymentSortField =
+  | 'invoice_number'
+  | 'status'
+  | 'billing_period'
+  | 'payment_deadline'
+  | 'billing_type'
+  | 'spk'
+  | 'invoice_date'
+  | 'pph'
+  | 'amount'
+  | 'ppn'
+  | 'ppn_percent'
+  | 'billing_amount'
+  | 'payment_date'
+  | 'paid_amount'
+  | 'outstanding'
+  | 'overdue'
+  | 'rate'
+  | 'last_charge_date'
+
+/** Parse GET /payments — api client mengembalikan body penuh di response.data bila tidak ada field success */
+function parsePaymentLogsResponse(response: {
+  success?: boolean
+  data?: unknown
+  pagination?: { total?: number; limit?: number; offset?: number }
+}) {
+  const envelope = response.data as Record<string, unknown> | TenantPaymentLog[] | undefined
+
+  const logs = Array.isArray(envelope)
+    ? envelope
+    : Array.isArray(envelope?.data)
+      ? (envelope.data as TenantPaymentLog[])
+      : []
+
+  let total: number | null =
+    response.pagination?.total != null ? Number(response.pagination.total) : null
+
+  if (total == null && envelope && typeof envelope === 'object' && !Array.isArray(envelope)) {
+    const pag = envelope.pagination as { total?: number } | undefined
+    if (pag?.total != null) {
+      total = Number(pag.total)
+    } else if (typeof envelope.total === 'number') {
+      total = envelope.total as number
+    } else if (typeof envelope.count === 'number') {
+      total = envelope.count as number
+    }
+  }
+
+  return { logs, total }
+}
+
+function SortablePaymentHead({
+  label,
+  field,
+  orderBy,
+  order,
+  onSort,
+  className,
+}: {
+  label: string
+  field: PaymentSortField
+  orderBy: PaymentSortField
+  order: 'ASC' | 'DESC'
+  onSort: (field: PaymentSortField) => void
+  className?: string
+}) {
+  const isActive = orderBy === field
+  return (
+    <TableHead className={className}>
+      <button
+        type="button"
+        onClick={() => onSort(field)}
+        className="inline-flex items-center gap-1 font-medium hover:text-foreground text-left whitespace-nowrap"
+      >
+        {label}
+        {isActive ? (
+          order === 'ASC' ? <ArrowUp className="h-3.5 w-3.5 shrink-0" /> : <ArrowDown className="h-3.5 w-3.5 shrink-0" />
+        ) : (
+          <ArrowUpDown className="h-3.5 w-3.5 shrink-0 opacity-40" />
+        )}
+      </button>
+    </TableHead>
+  )
+}
 
 export default function TenantForm({ tenant, onSubmit, loading = false }: TenantFormProps) {
   const searchParams = useSearchParams()
@@ -148,6 +301,10 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
   const [deletePaymentDialogOpen, setDeletePaymentDialogOpen] = useState(false)
   const [paymentToDelete, setPaymentToDelete] = useState<TenantPaymentLog | null>(null)
   const [deletingPayment, setDeletingPayment] = useState(false)
+  const [paymentPage, setPaymentPage] = useState(1)
+  const [paymentTotal, setPaymentTotal] = useState(0)
+  const [paymentOrderBy, setPaymentOrderBy] = useState<PaymentSortField>('payment_deadline')
+  const [paymentOrder, setPaymentOrder] = useState<'ASC' | 'DESC'>('DESC')
   const [activeTab, setActiveTab] = useState('info')
   const tabFromUrl = searchParams.get('tab')?.toLowerCase() ?? ''
 
@@ -243,8 +400,12 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
       try {
         const [usersResponse, unitsResponse, assetsResponse, rolesResponse] = await Promise.all([
           usersApi.getUsers({ limit: 100 }),
-          // When editing, load all units to show selected ones; when creating, only load available units
-          tenant ? unitsApi.getUnits() : unitsApi.getUnits({ status: 0 }),
+          // Hanya unit yang belum ditahan tenant lain (pending/aktif/dll.)
+          unitsApi.getUnits({
+            assignable: 1,
+            limit: 1000,
+            ...(tenant?.id ? { for_tenant_id: tenant.id } : {}),
+          }),
           // Load available assets
           assetsApi.getAssets({ status: 1, limit: 1000 }),
           rolesApi.getRoles()
@@ -304,7 +465,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
     }
 
     loadData()
-  }, [])
+  }, [tenant?.id])
 
   // Initialize form data when tenant prop changes
   useEffect(() => {
@@ -397,25 +558,69 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
     }
   }, [tenant])
 
-  // Load payment logs when tenant is available
-  useEffect(() => {
-    if (tenant?.id) {
-      loadPaymentLogs()
-      loadLegalDocuments()
-      loadLegalDocuments()
-    } else {
-      setPaymentLogs([])
-      setLegalDocuments([])
+  const paymentLogsTenantIdRef = useRef<string | null>(null)
+
+  const loadPaymentLogs = useCallback(async () => {
+    if (!tenant?.id) return
+
+    let page = paymentPage
+    if (paymentLogsTenantIdRef.current !== tenant.id) {
+      paymentLogsTenantIdRef.current = tenant.id
+      page = 1
+      if (paymentPage !== 1) {
+        setPaymentPage(1)
+        return
+      }
     }
-  }, [tenant?.id])
+
+    setPaymentLogsLoading(true)
+    try {
+      const offset = (page - 1) * PAYMENT_PAGE_SIZE
+      const response = await tenantsApi.getTenantPaymentLogs(tenant.id, {
+        limit: PAYMENT_PAGE_SIZE,
+        offset,
+        orderBy: paymentOrderBy,
+        order: paymentOrder,
+      })
+
+      if (response.success) {
+        const { logs, total } = parsePaymentLogsResponse(response)
+        setPaymentLogs(logs)
+        if (total != null && !Number.isNaN(total) && total >= 0) {
+          setPaymentTotal(total)
+        } else if (page === 1) {
+          setPaymentTotal(logs.length)
+        }
+      } else {
+        toast.error(response.error || 'Gagal memuat data payment logs')
+      }
+    } catch (error) {
+      console.error('Load payment logs error:', error)
+      toast.error('Terjadi kesalahan saat memuat data payment logs')
+    } finally {
+      setPaymentLogsLoading(false)
+    }
+  }, [tenant?.id, paymentPage, paymentOrderBy, paymentOrder])
+
+  const handlePaymentSort = (field: PaymentSortField) => {
+    if (paymentOrderBy === field) {
+      setPaymentOrder((prev) => (prev === 'ASC' ? 'DESC' : 'ASC'))
+    } else {
+      setPaymentOrderBy(field)
+      setPaymentOrder('DESC')
+    }
+    setPaymentPage(1)
+  }
+
+  const totalPaymentPages = Math.max(1, Math.ceil(paymentTotal / PAYMENT_PAGE_SIZE))
 
   const loadLegalDocuments = async () => {
     if (!tenant?.id) return
-    
+
     setLegalDocumentsLoading(true)
     try {
       const response = await tenantsApi.getTenantLegals(tenant.id)
-      
+
       if (response.success && response.data) {
         const responseData = response.data as any
         const legalsData = Array.isArray(responseData.data) ? responseData.data : (Array.isArray(responseData) ? responseData : [])
@@ -430,6 +635,24 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
       setLegalDocumentsLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (tenant?.id) {
+      loadLegalDocuments()
+    } else {
+      paymentLogsTenantIdRef.current = null
+      setPaymentLogs([])
+      setPaymentTotal(0)
+      setPaymentPage(1)
+      setLegalDocuments([])
+    }
+  }, [tenant?.id])
+
+  useEffect(() => {
+    if (tenant?.id) {
+      loadPaymentLogs()
+    }
+  }, [tenant?.id, loadPaymentLogs])
 
   const handleCreateLegal = () => {
     setEditingLegal(null)
@@ -542,28 +765,6 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
     }
   }
 
-  const loadPaymentLogs = async () => {
-    if (!tenant?.id) return
-    
-    setPaymentLogsLoading(true)
-    try {
-      const response = await tenantsApi.getTenantPaymentLogs(tenant.id)
-      
-      if (response.success && response.data) {
-        const responseData = response.data as any
-        const logsData = Array.isArray(responseData.data) ? responseData.data : (Array.isArray(responseData) ? responseData : [])
-        setPaymentLogs(logsData)
-      } else {
-        toast.error(response.error || 'Gagal memuat data payment logs')
-      }
-    } catch (error) {
-      console.error('Load payment logs error:', error)
-      toast.error('Terjadi kesalahan saat memuat data payment logs')
-    } finally {
-      setPaymentLogsLoading(false)
-    }
-  }
-
   const handleCreatePayment = () => {
     setEditingPayment(null)
     setPaymentDialogOpen(true)
@@ -596,11 +797,13 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
       } else {
         // Some environments may return a transient network error while the delete already succeeded.
         if ((response.error || '').toLowerCase().includes('network error')) {
-          const verifyResponse = await tenantsApi.getTenantPaymentLogs(tenant.id)
-          const verifyData = verifyResponse.data as any
-          const verifyLogs = Array.isArray(verifyData?.data)
-            ? verifyData.data
-            : (Array.isArray(verifyData) ? verifyData : [])
+          const verifyResponse = await tenantsApi.getTenantPaymentLogs(tenant.id, {
+            limit: PAYMENT_PAGE_SIZE,
+            offset: (paymentPage - 1) * PAYMENT_PAGE_SIZE,
+            orderBy: paymentOrderBy,
+            order: paymentOrder,
+          })
+          const { logs: verifyLogs } = parsePaymentLogsResponse(verifyResponse)
           setPaymentLogs(verifyLogs)
           const stillExists = verifyLogs.some((p: TenantPaymentLog) => p.id === deletingPaymentId)
           if (!stillExists) {
@@ -906,9 +1109,26 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
         throw new Error('All contract URLs must be strings')
       }
 
+      const unitActivationIssues = collectActiveActivationUnitIssues(
+        formData.status,
+        tenant ?? undefined,
+        formData.unit_ids,
+        units
+      )
+      if (unitActivationIssues.length > 0) {
+        const msg = `Unit masih occupied / belum available: ${unitActivationIssues.join(', ')}. Bebaskan unit terlebih dahulu.`
+        toast.error(msg, { duration: 8000 })
+        setUploading(false)
+        return
+      }
+
       await onSubmit(submitData)
     } catch (error) {
-      toast.error('Gagal membuat tenant. ' + error)
+      const errMsg = error instanceof Error ? error.message : String(error)
+      toast.error(
+        (tenant ? 'Gagal memperbarui tenant. ' : 'Gagal membuat tenant. ') + errMsg,
+        { duration: 8000 }
+      )
     } finally {
       setUploading(false)
     }
@@ -1199,31 +1419,36 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
 
   return (
     <>
-    <Tabs value={activeTab} onValueChange={setActiveTab} className="gap-4">
-      <TabsList className='active-gradient bg-transparent dark:bg-transparent rounded-none h-[50px]'>
+    <Tabs value={activeTab} onValueChange={setActiveTab} className="min-w-0 gap-4">
+      <div className="min-w-0 overflow-x-auto overflow-y-hidden pb-0.5 [-webkit-overflow-scrolling:touch] touch-pan-x scroll-smooth sm:pb-0">
+        <TabsList className="active-gradient flex h-[50px] w-max min-w-0 shrink-0 flex-nowrap items-stretch justify-start gap-0 bg-transparent dark:bg-transparent rounded-none">
         <TabsTrigger 
           value="info" 
-          className='py-2.5 px-4 font-semibold text-sm inline-flex items-center gap-3 dark:bg-transparent text-neutral-600 hover:text-blue-600 dark:text-white dark:hover:text-blue-500 data-[state=active]:bg-gradient border-0 border-t-2 border-neutral-200 dark:border-neutral-500 data-[state=active]:border-blue-600 dark:data-[state=active]:border-blue-600 rounded-[0] data-[state=active]:shadow-none cursor-pointer'
+          className='shrink-0 rounded-none border-0 border-t-2 border-neutral-200 px-3 py-2.5 text-sm font-semibold text-neutral-600 hover:text-blue-600 data-[state=active]:border-blue-600 data-[state=active]:bg-gradient data-[state=active]:shadow-none dark:border-neutral-500 dark:text-white dark:hover:text-blue-500 dark:data-[state=active]:border-blue-600 sm:px-4'
         >
-          Informasi Tenant
+          <span className="sm:hidden">Info</span>
+          <span className="hidden sm:inline">Informasi Tenant</span>
         </TabsTrigger>
         <TabsTrigger 
           value="payments" 
           disabled={!tenant?.id}
-          className='py-2.5 px-4 font-semibold text-sm inline-flex items-center gap-3 dark:bg-transparent text-neutral-600 hover:text-blue-600 dark:text-white dark:hover:text-blue-500 data-[state=active]:bg-gradient border-0 border-t-2 border-neutral-200 dark:border-neutral-500 data-[state=active]:border-blue-600 dark:data-[state=active]:border-blue-600 rounded-[0] data-[state=active]:shadow-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed'
+          className='shrink-0 rounded-none border-0 border-t-2 border-neutral-200 px-3 py-2.5 text-sm font-semibold text-neutral-600 hover:text-blue-600 data-[state=active]:border-blue-600 data-[state=active]:bg-gradient data-[state=active]:shadow-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-500 dark:text-white dark:hover:text-blue-500 dark:data-[state=active]:border-blue-600 sm:px-4'
         >
-          Penagihan {tenant?.id && `(${paymentLogs.length})`}
+          <span className="sm:hidden">Tagihan{tenant?.id ? ` (${paymentTotal || paymentLogs.length})` : ''}</span>
+          <span className="hidden sm:inline">Penagihan{tenant?.id ? ` (${paymentTotal || paymentLogs.length})` : ''}</span>
         </TabsTrigger>
         <TabsTrigger 
           value="legals" 
           disabled={!tenant?.id}
-          className='py-2.5 px-4 font-semibold text-sm inline-flex items-center gap-3 dark:bg-transparent text-neutral-600 hover:text-blue-600 dark:text-white dark:hover:text-blue-500 data-[state=active]:bg-gradient border-0 border-t-2 border-neutral-200 dark:border-neutral-500 data-[state=active]:border-blue-600 dark:data-[state=active]:border-blue-600 rounded-[0] data-[state=active]:shadow-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed'
+          className='shrink-0 rounded-none border-0 border-t-2 border-neutral-200 px-3 py-2.5 text-sm font-semibold text-neutral-600 hover:text-blue-600 data-[state=active]:border-blue-600 data-[state=active]:bg-gradient data-[state=active]:shadow-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-500 dark:text-white dark:hover:text-blue-500 dark:data-[state=active]:border-blue-600 sm:px-4'
         >
-          Legal Documents {tenant?.id && `(${legalDocuments.length})`}
+          <span className="sm:hidden">Legal{tenant?.id ? ` (${legalDocuments.length})` : ''}</span>
+          <span className="hidden sm:inline">Legal Documents{tenant?.id ? ` (${legalDocuments.length})` : ''}</span>
         </TabsTrigger>
-      </TabsList>
+        </TabsList>
+      </div>
 
-      <TabsContent value="info" className="px-6 py-4">
+      <TabsContent value="info" className="min-w-0 px-6 py-4">
         <form onSubmit={handleSubmit} className="space-y-6">
       {/* Informasi Dasar */}
       <Card>
@@ -1577,6 +1802,33 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
               {errors.status && (
                 <p className="text-sm text-red-500">{errors.status}</p>
               )}
+              {formData.status === 'active' &&
+                collectActiveActivationUnitIssues(
+                  formData.status,
+                  tenant ?? undefined,
+                  formData.unit_ids,
+                  units
+                ).length > 0 && (
+                  <div
+                    role="alert"
+                    className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950"
+                  >
+                    <p className="font-semibold">Unit belum dapat diaktifkan</p>
+                    <p className="mt-1">
+                      Unit masih occupied / belum available:{' '}
+                      {collectActiveActivationUnitIssues(
+                        formData.status,
+                        tenant ?? undefined,
+                        formData.unit_ids,
+                        units
+                      ).join(', ')}
+                    </p>
+                    <p className="mt-1 text-amber-800">
+                      Nonaktifkan tenant lain yang memakai unit ini, atau ubah status unit menjadi
+                      available sebelum mengaktifkan tenant.
+                    </p>
+                  </div>
+                )}
             </div>
           </div>
 
@@ -2136,11 +2388,15 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
         </form>
       </TabsContent>
 
-      <TabsContent value="payments" className="px-6 py-4">
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h3 className="text-lg font-semibold">Penagihan</h3>
-            <Button onClick={handleCreatePayment} size="sm">
+      <TabsContent value="payments" className="min-w-0 px-4 py-4 sm:px-6">
+        <div className="min-w-0 space-y-4">
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h3 className="text-lg font-semibold tracking-tight">Penagihan</h3>
+            <Button
+              onClick={handleCreatePayment}
+              size="sm"
+              className="h-9 w-full shrink-0 sm:w-auto sm:self-center"
+            >
               <Plus className="mr-2 h-4 w-4" />
               Tambah Penagihan
             </Button>
@@ -2151,37 +2407,99 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
               <Loader2 className="h-6 w-6 animate-spin" />
             </div>
           ) : (
-            <div className="rounded-md border overflow-x-auto">
-              <Table>
+            <div className="max-w-full min-w-0 rounded-md border bg-card shadow-sm">
+              <p className="border-b bg-muted/40 px-3 py-2 text-xs text-muted-foreground md:hidden">
+                Geser ke samping untuk melihat semua kolom.
+              </p>
+              <Table className="min-w-[1180px] w-max">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[3%]">No</TableHead>
-                    <TableHead className="w-[8%]">Periode Tagihan</TableHead>
-                    <TableHead className="w-[8%]">Jatuh Tempo</TableHead>
-                    <TableHead className="w-[7%]">Jenis Tagihan</TableHead>
-                    <TableHead className="w-[8%]">Jumlah Tagihan</TableHead>
-                    <TableHead className="w-[8%]">Tanggal Bayar</TableHead>
-                    <TableHead className="w-[8%]">Jumlah Bayar</TableHead>
+                    <TableHead className="z-30 w-12 min-w-12 max-w-12 shrink-0 bg-muted text-center md:sticky md:left-0 md:border-r">
+                      No
+                    </TableHead>
+                    <TableHead className="z-30 w-[140px] min-w-[140px] max-w-[140px] shrink-0 bg-muted text-center md:sticky md:left-12 md:border-r">
+                      Aksi
+                    </TableHead>
+                    <SortablePaymentHead
+                      label="No. Invoice"
+                      field="invoice_number"
+                      orderBy={paymentOrderBy}
+                      order={paymentOrder}
+                      onSort={handlePaymentSort}
+                      className="z-30 w-32 min-w-[8rem] max-w-[8rem] shrink-0 bg-muted whitespace-nowrap md:sticky md:left-[188px] md:border-r"
+                    />
+                    <SortablePaymentHead label="Status" field="status" orderBy={paymentOrderBy} order={paymentOrder} onSort={handlePaymentSort} className="w-[7%] whitespace-nowrap" />
+                    <SortablePaymentHead label="Periode Tagihan" field="billing_period" orderBy={paymentOrderBy} order={paymentOrder} onSort={handlePaymentSort} className="w-[8%]" />
+                    <SortablePaymentHead label="Jatuh Tempo" field="payment_deadline" orderBy={paymentOrderBy} order={paymentOrder} onSort={handlePaymentSort} className="w-[8%]" />
+                    <SortablePaymentHead label="Jenis Tagihan" field="billing_type" orderBy={paymentOrderBy} order={paymentOrder} onSort={handlePaymentSort} className="w-[7%]" />
+                    <SortablePaymentHead label="SPK" field="spk" orderBy={paymentOrderBy} order={paymentOrder} onSort={handlePaymentSort} className="w-[7%]" />
+                    <SortablePaymentHead label="Tgl. Invoice" field="invoice_date" orderBy={paymentOrderBy} order={paymentOrder} onSort={handlePaymentSort} className="w-[6%]" />
+                    <SortablePaymentHead label="PPh" field="pph" orderBy={paymentOrderBy} order={paymentOrder} onSort={handlePaymentSort} className="w-[6%]" />
+                    <SortablePaymentHead label="Jumlah Tagihan" field="amount" orderBy={paymentOrderBy} order={paymentOrder} onSort={handlePaymentSort} className="w-[8%]" />
+                    <SortablePaymentHead label="PPN" field="ppn" orderBy={paymentOrderBy} order={paymentOrder} onSort={handlePaymentSort} className="w-[7%]" />
+                    <SortablePaymentHead label="Total Tagihan" field="billing_amount" orderBy={paymentOrderBy} order={paymentOrder} onSort={handlePaymentSort} className="w-[8%]" />
+                    <SortablePaymentHead label="Tanggal Bayar" field="payment_date" orderBy={paymentOrderBy} order={paymentOrder} onSort={handlePaymentSort} className="w-[8%]" />
+                    <SortablePaymentHead label="Jumlah Bayar" field="paid_amount" orderBy={paymentOrderBy} order={paymentOrder} onSort={handlePaymentSort} className="w-[8%]" />
                     <TableHead className="w-[7%]">Metode</TableHead>
-                    <TableHead className="w-[8%]">Outstanding</TableHead>
-                    <TableHead className="w-[8%]">Overdue (hari)</TableHead>
-                    <TableHead className="w-[5%]">Rate</TableHead>
-                    <TableHead className="w-[8%]">Last Charge</TableHead>
-                    <TableHead className="w-[6%]">Status</TableHead>
-                    <TableHead className="w-[8%] text-center">Aksi</TableHead>
+                    <TableHead className="w-[14%] min-w-[120px]">Catatan</TableHead>
+                    <SortablePaymentHead label="Outstanding" field="outstanding" orderBy={paymentOrderBy} order={paymentOrder} onSort={handlePaymentSort} className="w-[8%]" />
+                    <SortablePaymentHead label="Overdue (hari)" field="overdue" orderBy={paymentOrderBy} order={paymentOrder} onSort={handlePaymentSort} className="w-[8%]" />
+                    <SortablePaymentHead label="Rate" field="rate" orderBy={paymentOrderBy} order={paymentOrder} onSort={handlePaymentSort} className="w-[5%]" />
+                    <SortablePaymentHead label="Last Charge" field="last_charge_date" orderBy={paymentOrderBy} order={paymentOrder} onSort={handlePaymentSort} className="w-[8%]" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {paymentLogs.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={14} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={21} className="text-center py-8 text-muted-foreground">
                         Tidak ada data payment
                       </TableCell>
                     </TableRow>
                   ) : (
                     paymentLogs.map((payment, index) => (
-                      <TableRow key={payment.id}>
-                        <TableCell className="font-medium text-center">{index + 1}</TableCell>
+                      <TableRow key={payment.id} className="group hover:bg-muted">
+                        <TableCell className="z-20 w-12 min-w-12 max-w-12 shrink-0 bg-background font-medium text-center group-hover:bg-muted md:sticky md:left-0 md:border-r">
+                          {(paymentPage - 1) * PAYMENT_PAGE_SIZE + index + 1}
+                        </TableCell>
+                        <TableCell className="z-20 w-[140px] min-w-[140px] max-w-[140px] shrink-0 bg-background group-hover:bg-muted md:sticky md:left-12 md:border-r">
+                          <div className="flex justify-center gap-2">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => handleEditPayment(payment)}
+                              className="h-8 w-8 rounded-full text-green-600 bg-green-600/10 hover:bg-green-600/20"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => handleDeletePayment(payment)}
+                              className="h-8 w-8 rounded-full text-red-500 bg-red-500/10 hover:bg-red-500/20"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                        <TableCell
+                          className="z-20 w-32 min-w-[8rem] max-w-[8rem] shrink-0 truncate bg-background font-mono text-sm group-hover:bg-muted md:sticky md:left-[188px] md:border-r"
+                          title={payment.invoice_number || undefined}
+                        >
+                          {payment.invoice_number || '-'}
+                        </TableCell>
+                        <TableCell>
+                          <span
+                            className={`px-2 py-1 rounded text-xs font-medium border ${
+                              payment.status === 1
+                                ? 'bg-green-600/15 text-green-600 border-green-600'
+                                : payment.status === 2
+                                ? 'bg-red-600/15 text-red-600 border-red-600'
+                                : 'bg-yellow-600/15 text-yellow-600 border-yellow-600'
+                            }`}
+                          >
+                            {payment.status === 1 ? 'Paid' : payment.status === 2 ? 'Expired' : 'Unpaid'}
+                          </span>
+                        </TableCell>
                         <TableCell>
                           {payment.billing_period || '-'}
                         </TableCell>
@@ -2192,6 +2510,27 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                         </TableCell>
                         <TableCell>
                           {payment.billing_type || '-'}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">{payment.spk || '-'}</TableCell>
+                        <TableCell>
+                          {payment.invoice_date
+                            ? new Date(String(payment.invoice_date).slice(0, 10)).toLocaleDateString('id-ID')
+                            : '-'}
+                        </TableCell>
+                        <TableCell>
+                          {payment.pph != null && !Number.isNaN(Number(payment.pph))
+                            ? `Rp ${Number(payment.pph).toLocaleString('id-ID')}`
+                            : '-'}
+                        </TableCell>
+                        <TableCell>
+                          {(payment.amount ?? payment.billing_amount) != null
+                            ? `Rp ${Number(payment.amount ?? payment.billing_amount).toLocaleString('id-ID')}`
+                            : '-'}
+                        </TableCell>
+                        <TableCell>
+                          {payment.ppn != null && !Number.isNaN(Number(payment.ppn))
+                            ? `Rp ${Number(payment.ppn).toLocaleString('id-ID')}`
+                            : '-'}
                         </TableCell>
                         <TableCell>
                           {payment.billing_amount 
@@ -2214,6 +2553,11 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                            payment.payment_method === 'qris' ? 'QRIS' :
                            payment.payment_method === 'other' ? 'Other' : '-'}
                         </TableCell>
+                        <TableCell className="max-w-[200px] align-top">
+                          <span className="line-clamp-3 whitespace-pre-wrap break-words text-sm">
+                            {payment.notes?.trim() ? payment.notes : '-'}
+                          </span>
+                        </TableCell>
                         <TableCell>
                           {payment.outstanding 
                             ? `Rp ${payment.outstanding.toLocaleString('id-ID')}`
@@ -2225,57 +2569,67 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                             : '-'}
                         </TableCell>
                         <TableCell>
-                          {`${((payment.rate ?? 0.01) * 100).toFixed(2)}%`}
+                          {formatBillingRatePercent(payment.rate)}
                         </TableCell>
                         <TableCell>
                           {payment.last_charge_date 
                             ? new Date(payment.last_charge_date).toLocaleDateString('id-ID')
                             : '-'}
                         </TableCell>
-                        <TableCell>
-                          <span
-                            className={`px-2 py-1 rounded text-xs font-medium border ${
-                              payment.status === 1
-                                ? 'bg-green-600/15 text-green-600 border-green-600'
-                                : payment.status === 2
-                                ? 'bg-red-600/15 text-red-600 border-red-600'
-                                : 'bg-yellow-600/15 text-yellow-600 border-yellow-600'
-                            }`}
-                          >
-                            {payment.status === 1 ? 'Paid' : payment.status === 2 ? 'Expired' : 'Unpaid'}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex justify-center gap-2">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => handleEditPayment(payment)}
-                              className="h-8 w-8 rounded-full text-green-600 bg-green-600/10 hover:bg-green-600/20"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => handleDeletePayment(payment)}
-                              className="h-8 w-8 rounded-full text-red-500 bg-red-500/10 hover:bg-red-500/20"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
                       </TableRow>
                     ))
                   )}
                 </TableBody>
               </Table>
+              {(paymentTotal > PAYMENT_PAGE_SIZE || paymentPage > 1 || paymentLogs.length > 0) && (
+                <div className="flex flex-col gap-3 border-t px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-muted-foreground">
+                    {paymentTotal > 0 ? (
+                      <>
+                        Menampilkan {(paymentPage - 1) * PAYMENT_PAGE_SIZE + 1}–
+                        {Math.min(paymentPage * PAYMENT_PAGE_SIZE, paymentTotal)} dari {paymentTotal} penagihan
+                      </>
+                    ) : (
+                      <>
+                        Menampilkan {(paymentPage - 1) * PAYMENT_PAGE_SIZE + 1}–
+                        {(paymentPage - 1) * PAYMENT_PAGE_SIZE + paymentLogs.length} penagihan
+                      </>
+                    )}
+                  </p>
+                  <div className="flex items-center justify-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPaymentPage((prev) => Math.max(1, prev - 1))}
+                      disabled={paymentPage === 1 || paymentLogsLoading}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <span className="text-sm tabular-nums">
+                      Halaman {paymentPage} dari {totalPaymentPages}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPaymentPage((prev) => Math.min(totalPaymentPages, prev + 1))}
+                      disabled={
+                        paymentLogsLoading ||
+                        paymentPage >= totalPaymentPages
+                      }
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
       </TabsContent>
 
-      <TabsContent value="legals" className="px-6 py-4">
+      <TabsContent value="legals" className="min-w-0 px-6 py-4">
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold">Legal Documents</h3>
@@ -2286,8 +2640,8 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
               <Loader2 className="h-6 w-6 animate-spin" />
             </div>
           ) : (
-            <div className="rounded-md border overflow-x-auto">
-              <Table>
+            <div className="max-w-full min-w-0 rounded-md border">
+              <Table className="min-w-[720px] w-max">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[5%]">No</TableHead>
@@ -2367,7 +2721,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
 
     {/* Payment Dialog */}
     <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="flex max-h-[90vh] w-[calc(100vw-1.25rem)] max-w-[min(1320px,calc(100vw-1.25rem))] flex-col gap-3 overflow-y-auto p-5 sm:max-w-[min(1320px,calc(100vw-1.25rem))] sm:p-6">
         <DialogHeader>
           <DialogTitle>{editingPayment ? 'Edit Penagihan' : 'Tambah Penagihan Baru'}</DialogTitle>
           <DialogDescription>
@@ -2472,6 +2826,24 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
   )
 }
 
+function resolvePaymentAmountForForm(payment: TenantPaymentLog): number {
+  if (payment.amount != null && !Number.isNaN(Number(payment.amount))) {
+    return Number(payment.amount)
+  }
+  const billing = payment.billing_amount != null ? Number(payment.billing_amount) : 0
+  const ppn = payment.ppn != null ? Number(payment.ppn) : 0
+  if (billing > 0 && ppn > 0) return billing - ppn
+  return billing
+}
+
+function formatRupiahInputValue(value: number, allowZero = false): string {
+  if (!Number.isFinite(value)) return ''
+  if (value === 0) return allowZero ? '0' : ''
+  return Math.floor(value)
+    .toString()
+    .replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+}
+
 // Payment Form Component
 interface PaymentFormProps {
   payment?: TenantPaymentLog
@@ -2482,7 +2854,6 @@ interface PaymentFormProps {
 
 function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFormProps) {
   const [formData, setFormData] = useState({
-    amount: '',
     payment_method: '',
     payment_date: '',
     paid_amount: '',
@@ -2490,18 +2861,49 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
     notes: '',
     billing_type: '',
     billing_period: '',
+    amount: '',
+    ppn_percent: '11',
+    ppn: '',
     billing_amount: '',
     outstanding: '',
     overdue: '',
-    rate: '0.01',
+    rate: '1',
     last_charge_date: '',
+    spk: '',
+    invoice_number: '',
+    invoice_date: '',
+    pph: '',
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
 
+  const buildBillingDerivedFields = (amountStr: string, ppnPercentStr: string) => {
+    const amount = parsePrice(amountStr)
+    const pct = parsePpnPercentInput(ppnPercentStr)
+    const fraction = percentNumberToFraction(pct)
+    const { ppn, billing_amount } = computePpnAndBillingAmount(amount, fraction)
+    return {
+      ppn: formatRupiahInputValue(ppn, true),
+      billing_amount: formatRupiahInputValue(billing_amount),
+    }
+  }
+
   useEffect(() => {
     if (payment) {
+      const amountNum = resolvePaymentAmountForForm(payment)
+      const hasStoredPpnPercent =
+        payment.ppn_percent !== undefined && payment.ppn_percent !== null
+      const ppnPercentFraction = hasStoredPpnPercent
+        ? Number(payment.ppn_percent)
+        : amountNum > 0 && payment.ppn != null
+          ? Number(payment.ppn) / amountNum
+          : 0
+      const amountStr = formatRupiahInputValue(amountNum)
+      const ppnPercentStr = storedPpnPercentToInput(
+        Number.isFinite(ppnPercentFraction) ? ppnPercentFraction : 0
+      )
+      const derived = buildBillingDerivedFields(amountStr, ppnPercentStr)
+
       setFormData({
-        amount: payment.amount?.toString() || '',
         payment_method: payment.payment_method || '',
         payment_date: payment.payment_date ? new Date(payment.payment_date).toISOString().split('T')[0] : '',
         paid_amount: payment.paid_amount?.toString() || '',
@@ -2509,15 +2911,32 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
         notes: payment.notes || '',
         billing_type: payment.billing_type || '',
         billing_period: payment.billing_period || '',
-        billing_amount: payment.billing_amount?.toString() || '',
+        amount: amountStr,
+        ppn_percent: ppnPercentStr,
+        ppn:
+          payment.ppn != null && !Number.isNaN(Number(payment.ppn))
+            ? formatRupiahInputValue(Number(payment.ppn), true)
+            : derived.ppn,
+        billing_amount:
+          payment.billing_amount != null
+            ? formatRupiahInputValue(Number(payment.billing_amount))
+            : derived.billing_amount,
         outstanding: payment.outstanding?.toString() || '',
         overdue: payment.overdue != null ? String(Math.round(Number(payment.overdue))) : '',
-        rate: payment.rate?.toString() || '0.01',
+        rate: storedRateToPercentInput(payment.rate),
         last_charge_date: payment.last_charge_date ? new Date(payment.last_charge_date).toISOString().split('T')[0] : '',
+        spk: payment.spk || '',
+        invoice_number: payment.invoice_number || '',
+        invoice_date: payment.invoice_date
+          ? String(payment.invoice_date).slice(0, 10)
+          : '',
+        pph:
+          payment.pph != null && !Number.isNaN(Number(payment.pph))
+            ? formatRupiahInputValue(Number(payment.pph))
+            : '',
       })
     } else {
       setFormData({
-        amount: '',
         payment_method: '',
         payment_date: '',
         paid_amount: '',
@@ -2525,11 +2944,18 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
         notes: '',
         billing_type: '',
         billing_period: '',
+        amount: '',
+        ppn_percent: '11',
+        ppn: '',
         billing_amount: '',
         outstanding: '',
         overdue: '',
-        rate: '0.01',
+        rate: '1',
         last_charge_date: '',
+        spk: '',
+        invoice_number: '',
+        invoice_date: '',
+        pph: '',
       })
     }
   }, [payment])
@@ -2569,8 +2995,59 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
     return n
   }
 
+  const deriveBillingFromFormInputs = (): {
+    amount: number
+    ppn: number
+    billing_amount: number
+    ppn_percent_fraction: number
+  } => {
+    const amount = parsePrice(formData.amount)
+    const ppn = parsePrice(formData.ppn)
+    const billing_amount = amount + ppn
+    const ppn_percent_fraction =
+      amount > 0
+        ? ppn / amount
+        : percentNumberToFraction(parsePpnPercentInput(formData.ppn_percent))
+    return { amount, ppn, billing_amount, ppn_percent_fraction }
+  }
+
   const handleInputChange = (field: string, value: string) => {
-    if (field === 'amount' || field === 'paid_amount' || field === 'billing_amount' || field === 'outstanding') {
+    if (field === 'amount' || field === 'ppn_percent') {
+      const derived = buildBillingDerivedFields(
+        field === 'amount' ? formatPrice(parsePrice(value)) : formData.amount,
+        field === 'ppn_percent' ? value : formData.ppn_percent
+      )
+      setFormData((prev) => ({
+        ...prev,
+        ...(field === 'amount' ? { amount: formatPrice(parsePrice(value)) } : {}),
+        ...(field === 'ppn_percent' ? { ppn_percent: value } : {}),
+        ppn: derived.ppn,
+        billing_amount: derived.billing_amount,
+      }))
+    } else if (field === 'ppn') {
+      const trimmed = value.trim()
+      setFormData((prev) => {
+        const amount = parsePrice(prev.amount)
+        const parsedPpn = trimmed === '' ? 0 : parsePrice(value)
+        const ppnStored = trimmed === '' ? '' : formatRupiahInputValue(parsedPpn, true)
+        const billingNum = amount + parsedPpn
+        let ppnPercentStr = prev.ppn_percent
+        if (amount > 0) {
+          const fraction = parsedPpn / amount
+          ppnPercentStr = storedPpnPercentToInput(fraction)
+        }
+        return {
+          ...prev,
+          ppn: ppnStored,
+          billing_amount: formatRupiahInputValue(billingNum),
+          ppn_percent: ppnPercentStr,
+        }
+      })
+    } else if (
+      field === 'paid_amount' ||
+      field === 'outstanding' ||
+      field === 'pph'
+    ) {
       const parsedValue = parsePrice(value)
       if (field === 'paid_amount') {
         const isExplicitZero = value.trim() !== '' && parsedValue === 0
@@ -2615,18 +3092,13 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
         newErrors.billing_period = 'Periode tagihan harus diisi'
       }
 
-      if (!formData.billing_amount || parsePrice(formData.billing_amount) <= 0) {
-        newErrors.billing_amount = 'Jumlah tagihan harus diisi dan lebih dari 0'
+      if (!formData.amount || parsePrice(formData.amount) <= 0) {
+        newErrors.amount = 'Jumlah tagihan harus diisi dan lebih dari 0'
       }
 
       if (!formData.payment_deadline || formData.payment_deadline.trim() === '') {
         newErrors.payment_deadline = 'Jatuh tempo harus diisi'
       }
-    }
-
-    // Field opsional untuk create, tapi tetap validasi jika diisi
-    if (formData.amount && parsePrice(formData.amount) <= 0) {
-      newErrors.amount = 'Jumlah pembayaran harus lebih dari 0'
     }
 
     if (formData.payment_method && !['cash', 'bank_transfer', 'qris', 'other'].includes(formData.payment_method)) {
@@ -2656,17 +3128,21 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
       if (formData.payment_date) {
         updateData.payment_date = new Date(formData.payment_date).toISOString()
       }
-      if (formData.paid_amount !== '') {
-        updateData.paid_amount = parsePrice(formData.paid_amount)
-      }
+      // Selalu kirim paid_amount saat edit agar 0 / kosong memicu unpaid di backend
+      updateData.paid_amount = parsePrice(formData.paid_amount)
       if (formData.billing_type) {
         updateData.billing_type = formData.billing_type
       }
       if (formData.billing_period) {
         updateData.billing_period = formData.billing_period
       }
-      if (formData.billing_amount) {
-        updateData.billing_amount = parsePrice(formData.billing_amount)
+      {
+        const { amount: amt, ppn: ppnVal, billing_amount: billAmt, ppn_percent_fraction } =
+          deriveBillingFromFormInputs()
+        updateData.amount = amt
+        updateData.ppn = ppnVal
+        updateData.billing_amount = billAmt
+        updateData.ppn_percent = ppn_percent_fraction
       }
       // Jika dikosongkan, kirim null agar data lama di-clear di backend
       if (formData.outstanding === '') {
@@ -2677,22 +3153,35 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
       if (formData.overdue !== '') {
         updateData.overdue = Number(formData.overdue)
       }
-      if (formData.rate) {
-        const parsed = parseRate(formData.rate)
-        if (parsed !== undefined) updateData.rate = parsed
+      {
+        const rateTrim = (formData.rate ?? '').trim()
+        if (rateTrim !== '') {
+          const parsed = parseRate(formData.rate)
+          if (parsed !== undefined) {
+            updateData.rate = percentNumberToFraction(parsed)
+          }
+        }
       }
       if (formData.last_charge_date) {
         updateData.last_charge_date = new Date(formData.last_charge_date).toISOString()
+      }
+      updateData.spk = formData.spk.trim() ? formData.spk.trim() : (null as any)
+      updateData.invoice_number = formData.invoice_number.trim()
+        ? formData.invoice_number.trim()
+        : (null as any)
+      updateData.invoice_date = formData.invoice_date
+        ? new Date(formData.invoice_date).toISOString()
+        : (null as any)
+      if (formData.pph === '') {
+        updateData.pph = null as any
+      } else {
+        updateData.pph = parsePrice(formData.pph)
       }
       await onSubmit(updateData)
     } else {
       // Create payment - billing_period, billing_amount, dan payment_deadline adalah mandatory
       const paidAmount =
         formData.paid_amount !== '' ? parsePrice(formData.paid_amount) : undefined
-      const amount =
-        formData.amount !== ''
-          ? parsePrice(formData.amount)
-          : (paidAmount !== undefined ? paidAmount : undefined)
 
       // Jika user isi paid_amount tapi belum isi tanggal bayar, default ke hari ini
       const paymentDateIso =
@@ -2700,11 +3189,16 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
           ? new Date(formData.payment_date).toISOString()
           : (paidAmount !== undefined && paidAmount > 0 ? new Date().toISOString() : undefined)
 
+      const { amount, ppn, billing_amount, ppn_percent_fraction: ppnPercentFraction } =
+        deriveBillingFromFormInputs()
+
       const createData: CreateTenantPaymentData = {
         billing_period: formData.billing_period.trim(),
-        billing_amount: parsePrice(formData.billing_amount),
-        payment_deadline: new Date(formData.payment_deadline).toISOString(),
         amount,
+        ppn_percent: ppnPercentFraction,
+        ppn,
+        billing_amount,
+        payment_deadline: new Date(formData.payment_deadline).toISOString(),
         payment_method: formData.payment_method || undefined,
         notes: formData.notes.trim() || undefined,
       }
@@ -2723,204 +3217,353 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
       if (formData.overdue !== '') {
         createData.overdue = Number(formData.overdue)
       }
-      if (formData.rate) {
-        const parsed = parseRate(formData.rate)
-        if (parsed !== undefined) createData.rate = parsed
+      {
+        const rateTrim = (formData.rate ?? '').trim()
+        if (rateTrim !== '') {
+          const parsed = parseRate(formData.rate)
+          if (parsed !== undefined) {
+            createData.rate = percentNumberToFraction(parsed)
+          }
+        }
       }
       if (formData.last_charge_date) {
         createData.last_charge_date = new Date(formData.last_charge_date).toISOString()
+      }
+      if (formData.spk.trim()) {
+        createData.spk = formData.spk.trim()
+      }
+      if (formData.invoice_number.trim()) {
+        createData.invoice_number = formData.invoice_number.trim()
+      }
+      if (formData.invoice_date) {
+        createData.invoice_date = new Date(formData.invoice_date).toISOString()
+      }
+      if (formData.pph !== '') {
+        createData.pph = parsePrice(formData.pph)
       }
       await onSubmit(createData)
     }
   }
 
+  const paymentFieldClass = 'space-y-1.5 min-w-0'
+  const paymentGridClass = 'grid grid-cols-1 gap-x-3 gap-y-3 sm:grid-cols-2'
+  const paymentSectionTitle = (textColor: string) =>
+    `flex items-center gap-2 text-xs font-semibold uppercase tracking-wide ${textColor}`
+  const paymentSections = {
+    billing:
+      'space-y-3 rounded-md border border-sky-200/70 bg-sky-50/60 px-3 py-3 dark:border-sky-800/50 dark:bg-sky-950/25',
+    invoice:
+      'space-y-3 rounded-md border border-violet-200/70 bg-violet-50/50 px-3 py-3 dark:border-violet-800/50 dark:bg-violet-950/25',
+    payment:
+      'space-y-3 rounded-md border border-emerald-200/70 bg-emerald-50/50 px-3 py-3 dark:border-emerald-800/50 dark:bg-emerald-950/25',
+    notes:
+      'space-y-3 rounded-md border border-amber-200/60 bg-amber-50/40 px-3 py-3 dark:border-amber-800/40 dark:bg-amber-950/20',
+  }
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="billing_period">
-            Periode Tagihan {!payment && <span className="text-red-500">*</span>}
-          </Label>
-          <Input
-            id="billing_period"
-            type="text"
-            value={formData.billing_period}
-            onChange={(e) => handleInputChange('billing_period', e.target.value)}
-            placeholder="Contoh: Januari 2024"
-            className={errors.billing_period ? 'border-red-500' : ''}
-          />
-          {errors.billing_period && (
-            <p className="text-sm text-red-500">{errors.billing_period}</p>
-          )}
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="billing_amount">
-            Jumlah Tagihan {!payment && <span className="text-red-500">*</span>}
-          </Label>
-          <div className="relative">
-            <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
+    <form onSubmit={handleSubmit} className="flex flex-col">
+      <div className="space-y-3.5">
+        {/* Row 1: periode, jumlah tagihan, PPN%, PPN, total, SPK */}
+        <section className={paymentSections.billing}>
+          <p className={paymentSectionTitle('text-sky-800 dark:text-sky-200')}>
+            <span className="h-3 w-1 shrink-0 rounded-full bg-sky-500" aria-hidden />
+            Data tagihan
+          </p>
+          <div className={`${paymentGridClass} lg:grid-cols-3 xl:grid-cols-6`}>
+          <div className={paymentFieldClass}>
+            <Label htmlFor="billing_period" className="text-sm font-medium">
+              Periode Tagihan {!payment && <span className="text-red-500">*</span>}
+            </Label>
             <Input
-              id="billing_amount"
+              id="billing_period"
               type="text"
-              value={formatPrice(parsePrice(formData.billing_amount))}
-              onChange={(e) => handleInputChange('billing_amount', e.target.value)}
+              value={formData.billing_period}
+              onChange={(e) => handleInputChange('billing_period', e.target.value)}
+              placeholder="Januari 2024"
+              className={errors.billing_period ? 'border-red-500' : ''}
+            />
+            {errors.billing_period && (
+              <p className="text-sm text-red-500">{errors.billing_period}</p>
+            )}
+          </div>
+
+          <div className={paymentFieldClass}>
+            <Label htmlFor="amount" className="text-sm font-medium">
+              Jumlah Tagihan {!payment && <span className="text-red-500">*</span>}
+            </Label>
+            <div className="relative">
+              <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
+              <Input
+                id="amount"
+                type="text"
+                value={formatPrice(parsePrice(formData.amount))}
+                onChange={(e) => handleInputChange('amount', e.target.value)}
+                placeholder="0"
+                className={`pl-10 ${errors.amount ? 'border-red-500' : ''}`}
+              />
+            </div>
+            {errors.amount && <p className="text-sm text-red-500">{errors.amount}</p>}
+          </div>
+
+          <div className={paymentFieldClass}>
+            <Label htmlFor="ppn_percent" className="text-sm font-medium">PPN (%)</Label>
+            <Input
+              id="ppn_percent"
+              type="text"
+              inputMode="decimal"
+              value={formData.ppn_percent}
+              onChange={(e) => handleInputChange('ppn_percent', e.target.value)}
               placeholder="0"
-              className={`pl-10 ${errors.billing_amount ? 'border-red-500' : ''}`}
             />
           </div>
-          {errors.billing_amount && (
-            <p className="text-sm text-red-500">{errors.billing_amount}</p>
-          )}
-        </div>
-      </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="payment_deadline">
-            Jatuh Tempo {!payment && <span className="text-red-500">*</span>}
-          </Label>
-          <Input
-            id="payment_deadline"
-            type="date"
-            value={formData.payment_deadline}
-            onChange={(e) => handleInputChange('payment_deadline', e.target.value)}
-            className={errors.payment_deadline ? 'border-red-500' : ''}
-          />
-          {errors.payment_deadline && (
-            <p className="text-sm text-red-500">{errors.payment_deadline}</p>
-          )}
-        </div>
+          <div className={paymentFieldClass}>
+            <Label htmlFor="ppn" className="text-sm font-medium">PPN (Rp)</Label>
+            <div className="relative">
+              <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
+              <Input
+                id="ppn"
+                type="text"
+                inputMode="numeric"
+                value={
+                  formData.ppn.trim() === ''
+                    ? ''
+                    : formatRupiahInputValue(parsePrice(formData.ppn), true)
+                }
+                onChange={(e) => handleInputChange('ppn', e.target.value)}
+                placeholder="0"
+                className="pl-10"
+              />
+            </div>
+          </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="billing_type">Jenis Tagihan</Label>
-          <Input
-            id="billing_type"
-            type="text"
-            value={formData.billing_type}
-            onChange={(e) => handleInputChange('billing_type', e.target.value)}
-            placeholder="Masukkan jenis tagihan"
-          />
-        </div>
+          <div className={paymentFieldClass}>
+            <Label htmlFor="billing_amount" className="text-sm font-medium">Total Tagihan</Label>
+            <div className="relative">
+              <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
+              <Input
+                id="billing_amount"
+                type="text"
+                readOnly
+                tabIndex={-1}
+                value={formatPrice(parsePrice(formData.billing_amount))}
+                className="pl-10 border-sky-200/80 bg-sky-100/50 font-semibold text-sky-900 dark:border-sky-800/60 dark:bg-sky-950/40 dark:text-sky-100"
+              />
+            </div>
+          </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="payment_method">Metode Pembayaran</Label>
-          <Select
-            value={formData.payment_method}
-            onValueChange={(value) => handleInputChange('payment_method', value)}
-          >
-            <SelectTrigger className={errors.payment_method ? 'border-red-500' : ''}>
-              <SelectValue placeholder="Pilih metode pembayaran" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="cash">Cash</SelectItem>
-              <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-              <SelectItem value="qris">QRIS</SelectItem>
-              <SelectItem value="other">Other</SelectItem>
-            </SelectContent>
-          </Select>
-          {errors.payment_method && (
-            <p className="text-sm text-red-500">{errors.payment_method}</p>
-          )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="payment_date">Tanggal Pembayaran</Label>
-          <Input
-            id="payment_date"
-            type="date"
-            value={formData.payment_date}
-            onChange={(e) => handleInputChange('payment_date', e.target.value)}
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="paid_amount">Jumlah Dibayar</Label>
-          <div className="relative">
-            <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
+          <div className={paymentFieldClass}>
+            <Label htmlFor="spk" className="text-sm font-medium">SPK</Label>
             <Input
-              id="paid_amount"
+              id="spk"
               type="text"
-              value={formData.paid_amount === '0' ? '0' : formatPrice(parsePrice(formData.paid_amount))}
-              onChange={(e) => handleInputChange('paid_amount', e.target.value)}
-              placeholder="0"
-              className="pl-10"
+              value={formData.spk}
+              onChange={(e) => handleInputChange('spk', e.target.value)}
+              placeholder="Nomor SPK"
             />
           </div>
-        </div>
-      </div>
+          </div>
+        </section>
 
-      
-
-      
-
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="outstanding">Outstanding</Label>
-          <div className="relative">
-            <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
+        {/* Row 2: invoice, tanggal invoice, jatuh tempo, jenis tagihan */}
+        <section className={paymentSections.invoice}>
+          <p className={paymentSectionTitle('text-violet-800 dark:text-violet-200')}>
+            <span className="h-3 w-1 shrink-0 rounded-full bg-violet-500" aria-hidden />
+            Invoice & jatuh tempo
+          </p>
+          <div className={`${paymentGridClass} lg:grid-cols-4`}>
+          <div className={paymentFieldClass}>
+            <Label htmlFor="invoice_number" className="text-sm font-medium">No. Invoice</Label>
             <Input
-              id="outstanding"
+              id="invoice_number"
               type="text"
-              value={formatPrice(parsePrice(formData.outstanding))}
-              onChange={(e) => handleInputChange('outstanding', e.target.value)}
-              placeholder="0"
-              className="pl-10"
+              value={formData.invoice_number}
+              onChange={(e) => handleInputChange('invoice_number', e.target.value)}
+              placeholder="Nomor invoice"
             />
           </div>
-        </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="overdue">Overdue (hari)</Label>
-          <Input
-            id="overdue"
-            type="text"
-            inputMode="numeric"
-            value={formData.overdue}
-            onChange={(e) => handleInputChange('overdue', e.target.value)}
-            placeholder="0"
-          />
-        </div>
+          <div className={paymentFieldClass}>
+            <Label htmlFor="invoice_date" className="text-sm font-medium">Tanggal Invoice</Label>
+            <Input
+              id="invoice_date"
+              type="date"
+              value={formData.invoice_date}
+              onChange={(e) => handleInputChange('invoice_date', e.target.value)}
+            />
+          </div>
+
+          <div className={paymentFieldClass}>
+            <Label htmlFor="payment_deadline" className="text-sm font-medium">
+              Jatuh Tempo {!payment && <span className="text-red-500">*</span>}
+            </Label>
+            <Input
+              id="payment_deadline"
+              type="date"
+              value={formData.payment_deadline}
+              onChange={(e) => handleInputChange('payment_deadline', e.target.value)}
+              className={errors.payment_deadline ? 'border-red-500' : ''}
+            />
+            {errors.payment_deadline && (
+              <p className="text-sm text-red-500">{errors.payment_deadline}</p>
+            )}
+          </div>
+
+          <div className={paymentFieldClass}>
+            <Label htmlFor="billing_type" className="text-sm font-medium">Jenis Tagihan</Label>
+            <Input
+              id="billing_type"
+              type="text"
+              value={formData.billing_type}
+              onChange={(e) => handleInputChange('billing_type', e.target.value)}
+              placeholder="Jenis tagihan"
+            />
+          </div>
+          </div>
+        </section>
+
+        {/* Row 3–4: pembayaran */}
+        <section className={paymentSections.payment}>
+          <p className={paymentSectionTitle('text-emerald-800 dark:text-emerald-200')}>
+            <span className="h-3 w-1 shrink-0 rounded-full bg-emerald-500" aria-hidden />
+            Pembayaran
+          </p>
+          <div className={`${paymentGridClass} lg:grid-cols-4`}>
+          <div className={paymentFieldClass}>
+            <Label htmlFor="payment_method" className="text-sm font-medium">Metode Pembayaran</Label>
+            <Select
+              value={formData.payment_method ? formData.payment_method : undefined}
+              onValueChange={(value) => handleInputChange('payment_method', value)}
+            >
+              <SelectTrigger className={`w-full min-w-0 ${errors.payment_method ? 'border-red-500' : ''}`}>
+                <SelectValue placeholder="Pilih metode" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="cash">Cash</SelectItem>
+                <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                <SelectItem value="qris">QRIS</SelectItem>
+                <SelectItem value="other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+            {errors.payment_method && (
+              <p className="text-sm text-red-500">{errors.payment_method}</p>
+            )}
+          </div>
+
+          <div className={paymentFieldClass}>
+            <Label htmlFor="payment_date" className="text-sm font-medium">Tanggal Pembayaran</Label>
+            <Input
+              id="payment_date"
+              type="date"
+              value={formData.payment_date}
+              onChange={(e) => handleInputChange('payment_date', e.target.value)}
+            />
+          </div>
+
+          <div className={paymentFieldClass}>
+            <Label htmlFor="paid_amount" className="text-sm font-medium">Jumlah Dibayar</Label>
+            <div className="relative">
+              <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
+              <Input
+                id="paid_amount"
+                type="text"
+                value={formData.paid_amount === '0' ? '0' : formatPrice(parsePrice(formData.paid_amount))}
+                onChange={(e) => handleInputChange('paid_amount', e.target.value)}
+                placeholder="0"
+                className="pl-10"
+              />
+            </div>
+          </div>
+
+          <div className={paymentFieldClass}>
+            <Label htmlFor="outstanding" className="text-sm font-medium">Outstanding</Label>
+            <div className="relative">
+              <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
+              <Input
+                id="outstanding"
+                type="text"
+                value={formatPrice(parsePrice(formData.outstanding))}
+                onChange={(e) => handleInputChange('outstanding', e.target.value)}
+                placeholder="0"
+                className="pl-10"
+              />
+            </div>
+          </div>
+          </div>
+
+          <div className={`${paymentGridClass} mt-3 lg:grid-cols-4`}>
+          <div className={paymentFieldClass}>
+            <Label htmlFor="overdue" className="text-sm font-medium">Overdue (hari)</Label>
+            <Input
+              id="overdue"
+              type="text"
+              inputMode="numeric"
+              value={formData.overdue}
+              onChange={(e) => handleInputChange('overdue', e.target.value)}
+              placeholder="0"
+            />
+          </div>
+
+          <div className={paymentFieldClass}>
+            <Label htmlFor="rate" className="text-sm font-medium">Rate (%)</Label>
+            <Input
+              id="rate"
+              type="text"
+              inputMode="decimal"
+              value={formData.rate}
+              onChange={(e) => handleInputChange('rate', e.target.value)}
+              placeholder="1"
+            />
+          </div>
+
+          <div className={paymentFieldClass}>
+            <Label htmlFor="pph" className="text-sm font-medium">PPh</Label>
+            <div className="relative">
+              <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
+              <Input
+                id="pph"
+                type="text"
+                value={formatPrice(parsePrice(formData.pph))}
+                onChange={(e) => handleInputChange('pph', e.target.value)}
+                placeholder="0"
+                className="pl-10"
+              />
+            </div>
+          </div>
+
+          <div className={paymentFieldClass}>
+            <Label htmlFor="last_charge_date" className="text-sm font-medium">Last Charge</Label>
+            <Input
+              id="last_charge_date"
+              type="date"
+              value={formData.last_charge_date}
+              onChange={(e) => handleInputChange('last_charge_date', e.target.value)}
+            />
+          </div>
+          </div>
+        </section>
+
+        {/* Row 5: catatan */}
+        <section className={paymentSections.notes}>
+          <p className={paymentSectionTitle('text-amber-900 dark:text-amber-200')}>
+            <span className="h-3 w-1 shrink-0 rounded-full bg-amber-500" aria-hidden />
+            Catatan
+          </p>
+          <div className={paymentFieldClass}>
+            <Textarea
+              aria-label="Catatan"
+              id="notes"
+              value={formData.notes}
+              onChange={(e) => handleInputChange('notes', e.target.value)}
+              placeholder="Catatan (opsional)"
+              rows={2}
+              className="min-h-[3.25rem] resize-y border-amber-200/80 bg-white/80 focus-visible:ring-amber-400/40 dark:border-amber-800/50 dark:bg-background/60"
+            />
+          </div>
+        </section>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="rate">Rate</Label>
-          <Input
-            id="rate"
-            type="text"
-            inputMode="decimal"
-            value={formData.rate}
-            onChange={(e) => handleInputChange('rate', e.target.value)}
-            placeholder="0.01"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="last_charge_date">Last Charge</Label>
-          <Input
-            id="last_charge_date"
-            type="date"
-            value={formData.last_charge_date}
-            onChange={(e) => handleInputChange('last_charge_date', e.target.value)}
-          />
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="notes">Catatan</Label>
-        <Textarea
-          id="notes"
-          value={formData.notes}
-          onChange={(e) => handleInputChange('notes', e.target.value)}
-          placeholder="Masukkan catatan (opsional)"
-          rows={3}
-        />
-      </div>
-
-      <DialogFooter>
+      <DialogFooter className="mt-4 gap-2 border-t border-border/50 pt-4">
         <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
           Batal
         </Button>

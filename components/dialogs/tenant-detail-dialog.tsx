@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { Tenant, DURATION_UNIT_LABELS, DURATION_UNITS, TenantDepositLog, TenantPaymentLog, tenantsApi, UpdateTenantPaymentData, CreateTenantPaymentData } from '@/lib/api'
+import { formatBillingRatePercent } from '@/lib/billing-rate'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -46,6 +47,24 @@ const CATEGORY_MAP: Record<number, string> = {
   7: 'Pendidikan',
   8: 'Jasa Keuangan',
   9: 'Other',
+}
+
+function formatCurrencyIdr(value: number | string | null | undefined): string {
+  if (value == null || value === '') return '-'
+  const n = Number(value)
+  if (Number.isNaN(n) || n === 0) return '-'
+  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n)
+}
+
+function paymentMethodLabel(method: string | null | undefined): string {
+  if (!method) return '-'
+  switch (method) {
+    case 'cash': return 'Cash'
+    case 'bank_transfer': return 'Bank Transfer'
+    case 'qris': return 'QRIS'
+    case 'other': return 'Other'
+    default: return method
+  }
 }
 
 const getCategoryLabel = (tenant: Tenant): string => {
@@ -121,9 +140,12 @@ export default function TenantDetailDialog({
 
   const [createPaymentData, setCreatePaymentData] = useState<CreateTenantPaymentData & { payment_date?: string }>({
     billing_period: defaultBillingPeriod,
+    amount: 0,
+    ppn: 0,
+    ppn_percent: 0,
     billing_amount: 0,
     payment_deadline: defaultPaymentDeadline,
-    amount: 0,
+    paid_amount: 0,
     payment_method: '',
     notes: '',
     payment_date: ''
@@ -208,52 +230,28 @@ export default function TenantDetailDialog({
           })
           if (response.success && response.data) {
             const logsData = response.data as any
-            const logs = Array.isArray(logsData.data) ? logsData.data : (Array.isArray(logsData) ? logsData : [])
+            const logs = Array.isArray(logsData)
+              ? logsData
+              : Array.isArray(logsData.data)
+                ? logsData.data
+                : []
             setPaymentLogs(logs)
-            
-            // Debug: Log the response structure to understand the format
-            console.log('Payment logs response:', { response, logsData, logs })
-            
-            // Try to get total from various possible response formats
-            let total: number | null = logsData.pagination.total
-            
-            // Check response.data directly first (most common format: { data: [...], total: 11 })
-            if (response.data && typeof response.data === 'object') {
-              const responseData = response.data as any
-              if (typeof responseData.total === 'number' && responseData.total > 0) {
-                total = responseData.total
-              } else if (typeof responseData.count === 'number' && responseData.count > 0) {
-                total = responseData.count
-              }
+
+            const envelope = logsData as { pagination?: { total?: number }; total?: number; count?: number }
+            let total: number | null =
+              response.pagination?.total != null ? Number(response.pagination.total) : null
+            if (total == null && envelope?.pagination?.total != null) {
+              total = Number(envelope.pagination.total)
+            } else if (total == null && typeof envelope?.total === 'number') {
+              total = envelope.total
+            } else if (total == null && typeof envelope?.count === 'number') {
+              total = envelope.count
             }
-            
-            // Check logsData (nested data structure: { data: { data: [...], total: 11 } })
-            if (total === null && logsData && typeof logsData === 'object') {
-              if (typeof logsData.total === 'number' && logsData.total > 0) {
-                total = logsData.total
-              } else if (typeof logsData.count === 'number' && logsData.count > 0) {
-                total = logsData.count
-              }
-            }
-            
-            // Check if total is in the message or other fields
-            if (total === null && response && typeof response === 'object') {
-              const responseAny = response as any
-              if (typeof responseAny.total === 'number' && responseAny.total > 0) {
-                total = responseAny.total
-              }
-            }
-            
-            // Update total if we found it, otherwise keep existing total or use current count
-            if (total !== null && total > 0) {
+
+            if (total !== null && !Number.isNaN(total) && total >= 0) {
               setPaymentTotal(total)
-              console.log('Payment total set to:', total)
-            } else {
-              console.log('No total found in response, keeping existing total or using current count')
-              // Only update if we're on first page and don't have a total yet
-              if (paymentPage === 1 && paymentTotal === 0) {
-                setPaymentTotal(logs.length)
-              }
+            } else if (paymentPage === 1) {
+              setPaymentTotal(logs.length)
             }
           }
         } catch (error) {
@@ -400,6 +398,8 @@ export default function TenantDetailDialog({
     try {
       const sanitizedUpdatePaymentData: UpdateTenantPaymentData = {
         ...updatePaymentData,
+        // Pastikan 0 terkirim agar backend set status unpaid (undefined bisa ter-strip saat serialize)
+        paid_amount: updatePaymentData.paid_amount ?? 0,
         payment_method: updatePaymentData.payment_method || undefined,
       }
       const response = await tenantsApi.updateTenantPayment(tenant.id, selectedPayment.id, sanitizedUpdatePaymentData)
@@ -456,9 +456,12 @@ export default function TenantDetailDialog({
   const handleCreatePayment = () => {
     setCreatePaymentData({
       billing_period: defaultBillingPeriod,
+      amount: 0,
+      ppn: 0,
+      ppn_percent: 0,
       billing_amount: 0,
       payment_deadline: defaultPaymentDeadline,
-      amount: 0,
+      paid_amount: 0,
       payment_method: '',
       notes: '',
       payment_date: ''
@@ -469,8 +472,8 @@ export default function TenantDetailDialog({
   const handleCreatePaymentSubmit = async () => {
     if (!tenant) return
 
-    if (!createPaymentData.amount || createPaymentData.amount <= 0) {
-      toast.error('Jumlah pembayaran harus diisi dan lebih dari 0')
+    if (!createPaymentData.paid_amount || createPaymentData.paid_amount <= 0) {
+      toast.error('Jumlah dibayar harus diisi dan lebih dari 0')
       return
     }
 
@@ -486,24 +489,31 @@ export default function TenantDetailDialog({
 
     setCreatingPayment(true)
     try {
+      const billAmt = createPaymentData.billing_amount || createPaymentData.paid_amount || 0
       const response = await tenantsApi.createTenantPayment(tenant.id, {
         billing_period: createPaymentData.billing_period || defaultBillingPeriod,
-        billing_amount: createPaymentData.billing_amount ?? createPaymentData.amount,
+        amount: billAmt,
+        ppn_percent: 0,
+        ppn: 0,
+        billing_amount: billAmt,
         payment_deadline: createPaymentData.payment_deadline || defaultPaymentDeadline,
-        amount: createPaymentData.amount,
+        paid_amount: createPaymentData.paid_amount,
         payment_method: createPaymentData.payment_method,
         notes: createPaymentData.notes.trim(),
         ...(createPaymentData.payment_date ? { payment_date: createPaymentData.payment_date } : {})
-      } as CreateTenantPaymentData & { payment_date?: string })
+      })
       
       if (response.success) {
         toast.success('Pembayaran berhasil ditambahkan')
         setCreatePaymentDialogOpen(false)
         setCreatePaymentData({
           billing_period: defaultBillingPeriod,
+          amount: 0,
+          ppn: 0,
+          ppn_percent: 0,
           billing_amount: 0,
           payment_deadline: defaultPaymentDeadline,
-          amount: 0,
+          paid_amount: 0,
           payment_method: '',
           notes: '',
           payment_date: ''
@@ -661,7 +671,7 @@ export default function TenantDetailDialog({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
       onClick={handleBackdropClick}
     >
-      <div className="bg-white rounded-lg shadow-2xl max-w-7xl w-[95vw] max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-white rounded-lg shadow-2xl max-w-7xl w-[95vw] max-h-[90vh] overflow-hidden flex flex-col min-w-0">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div>
@@ -684,7 +694,7 @@ export default function TenantDetailDialog({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 min-w-0 overflow-y-auto p-6">
           <div className="space-y-6">
             {/* Header Actions */}
             <div className="flex items-center justify-end">
@@ -1226,7 +1236,7 @@ export default function TenantDetailDialog({
                 )}
 
                 {activeTab === 'deposit' && (
-                  <div className="space-y-6">
+                  <div className="min-w-0 space-y-6">
                     <Card>
                       <CardHeader>
                         <CardTitle className="flex items-center gap-2">
@@ -1234,10 +1244,10 @@ export default function TenantDetailDialog({
                           History Deposito
                         </CardTitle>
                       </CardHeader>
-                      <CardContent>
+                      <CardContent className="min-w-0">
                         {depositLogs.length > 0 ? (
-                          <div className="overflow-x-auto">
-                            <Table>
+                          <div className="max-w-full min-w-0">
+                            <Table className="min-w-[560px] w-max">
                               <TableHeader>
                                 <TableRow>
                                   <TableHead>Tanggal</TableHead>
@@ -1314,7 +1324,7 @@ export default function TenantDetailDialog({
                 )}
 
                 {activeTab === 'payment' && (
-                  <div className="space-y-6">
+                  <div className="min-w-0 space-y-6">
                     {/* Payment Summary Card */}
                     <Card>
                       <CardHeader>
@@ -1415,7 +1425,7 @@ export default function TenantDetailDialog({
                           </div>
                         </div>
                       </CardHeader>
-                      <CardContent>
+                      <CardContent className="min-w-0">
                         {paymentLoading ? (
                           <div className="flex items-center justify-center py-8">
                             <Loader2 className="h-6 w-6 animate-spin mr-2" />
@@ -1423,49 +1433,115 @@ export default function TenantDetailDialog({
                           </div>
                         ) : paymentLogs.length > 0 ? (
                           <>
-                            <div className="overflow-x-auto">
-                              <Table>
+                            <div className="max-w-full min-w-0 rounded-md border bg-card shadow-sm">
+                              <p className="border-b bg-muted/40 px-3 py-2 text-xs text-muted-foreground md:hidden">
+                                Geser ke samping untuk melihat semua kolom.
+                              </p>
+                              <Table className="min-w-[1200px] w-max">
                                 <TableHeader>
                                   <TableRow>
-                                    <TableHead>Batas Pembayaran</TableHead>
-                                    <TableHead>Jumlah Dibayar</TableHead>
-                                    <TableHead>Status</TableHead>
-                                    <TableHead>Tanggal Pembayaran</TableHead>
-                                    <TableHead>Metode Pembayaran</TableHead>
-                                    <TableHead>Catatan</TableHead>
+                                    <TableHead className="z-30 w-12 min-w-12 max-w-12 shrink-0 bg-muted text-center md:sticky md:left-0 md:border-r">
+                                      No
+                                    </TableHead>
+                                    <TableHead className="z-30 w-[140px] min-w-[140px] max-w-[140px] shrink-0 bg-muted text-center md:sticky md:left-12 md:border-r">
+                                      Aksi
+                                    </TableHead>
+                                    <TableHead className="z-30 w-32 min-w-[8rem] max-w-[8rem] shrink-0 bg-muted whitespace-nowrap md:sticky md:left-[188px] md:border-r">
+                                      No. Invoice
+                                    </TableHead>
+                                    <TableHead className="whitespace-nowrap">Status</TableHead>
+                                    <TableHead className="whitespace-nowrap">Periode Tagihan</TableHead>
+                                    <TableHead className="whitespace-nowrap">Jatuh Tempo</TableHead>
+                                    <TableHead>Jenis Tagihan</TableHead>
+                                    <TableHead>SPK</TableHead>
+                                    <TableHead>Tgl. Invoice</TableHead>
+                                    <TableHead>PPh</TableHead>
+                                    <TableHead>Jumlah Tagihan</TableHead>
+                                    <TableHead>Tanggal Bayar</TableHead>
+                                    <TableHead>Jumlah Bayar</TableHead>
+                                    <TableHead>Metode</TableHead>
+                                    <TableHead className="min-w-[140px]">Catatan</TableHead>
+                                    <TableHead>Outstanding</TableHead>
+                                    <TableHead className="whitespace-nowrap">Overdue (hari)</TableHead>
+                                    <TableHead>Rate</TableHead>
+                                    <TableHead className="whitespace-nowrap">Last Charge</TableHead>
                                     <TableHead>Diubah Oleh</TableHead>
-                                    <TableHead>Aksi</TableHead>
                                   </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                  {paymentLogs.map((log) => {
+                                  {paymentLogs.map((log, logIndex) => {
                                     const paidAmount = log.paid_amount || 0
-                                    const formattedPaidAmount = new Intl.NumberFormat('id-ID', {
-                                      style: 'currency',
-                                      currency: 'IDR',
-                                      minimumFractionDigits: 0,
-                                      maximumFractionDigits: 0,
-                                    }).format(paidAmount)
+                                    const formattedPaidAmount =
+                                      paidAmount > 0 ? formatCurrencyIdr(paidAmount) : '-'
 
                                     return (
-                                      <TableRow key={log.id}>
-                                        <TableCell>
-                                          {log.payment_deadline ? formatDate(log.payment_deadline) : '-'}
+                                      <TableRow key={log.id} className="group hover:bg-muted">
+                                        <TableCell className="z-20 w-12 min-w-12 max-w-12 shrink-0 bg-background text-center text-sm font-medium group-hover:bg-muted md:sticky md:left-0 md:border-r">
+                                          {((paymentPage - 1) * paymentLimit) + logIndex + 1}
                                         </TableCell>
-                                        <TableCell>
-                                          {paidAmount > 0 ? formattedPaidAmount : '-'}
+                                        <TableCell className="z-20 w-[140px] min-w-[140px] max-w-[140px] shrink-0 bg-background group-hover:bg-muted md:sticky md:left-12 md:border-r">
+                                          {log.status === 1 ? (
+                                            <span className="text-muted-foreground text-sm flex justify-center">-</span>
+                                          ) : (
+                                            <div className="flex justify-center">
+                                              <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => handleUpdatePayment(log)}
+                                              >
+                                                <Edit className="h-4 w-4 mr-1" />
+                                                Pelunasan
+                                              </Button>
+                                            </div>
+                                          )}
+                                        </TableCell>
+                                        <TableCell
+                                          className="z-20 w-32 min-w-[8rem] max-w-[8rem] shrink-0 truncate bg-background font-mono text-sm group-hover:bg-muted md:sticky md:left-[188px] md:border-r"
+                                          title={log.invoice_number || undefined}
+                                        >
+                                          {log.invoice_number || '-'}
                                         </TableCell>
                                         <TableCell>
                                           {getPaymentStatusBadge(log.status)}
                                         </TableCell>
+                                        <TableCell>{log.billing_period || '-'}</TableCell>
+                                        <TableCell>
+                                          {log.payment_deadline ? formatDate(log.payment_deadline) : '-'}
+                                        </TableCell>
+                                        <TableCell>{log.billing_type || '-'}</TableCell>
+                                        <TableCell className="whitespace-nowrap">{log.spk || '-'}</TableCell>
+                                        <TableCell>
+                                          {log.invoice_date
+                                            ? formatDate(String(log.invoice_date).slice(0, 10))
+                                            : '-'}
+                                        </TableCell>
+                                        <TableCell>
+                                          {formatCurrencyIdr(log.pph)}
+                                        </TableCell>
+                                        <TableCell>
+                                          {formatCurrencyIdr(log.billing_amount)}
+                                        </TableCell>
                                         <TableCell>
                                           {log.payment_date ? formatDate(log.payment_date) : '-'}
                                         </TableCell>
+                                        <TableCell>{formattedPaidAmount}</TableCell>
+                                        <TableCell>{paymentMethodLabel(log.payment_method)}</TableCell>
+                                        <TableCell className="max-w-[220px] align-top">
+                                          <span className="line-clamp-3 whitespace-pre-wrap break-words text-sm">
+                                            {log.notes?.trim() ? log.notes : '-'}
+                                          </span>
+                                        </TableCell>
+                                        <TableCell>{formatCurrencyIdr(log.outstanding)}</TableCell>
                                         <TableCell>
-                                          {log.payment_method || '-'}
+                                          {log.overdue != null
+                                            ? `${Math.round(Number(log.overdue))} hari`
+                                            : '-'}
                                         </TableCell>
                                         <TableCell>
-                                          {log.notes || '-'}
+                                          {formatBillingRatePercent(log.rate)}
+                                        </TableCell>
+                                        <TableCell>
+                                          {log.last_charge_date ? formatDate(log.last_charge_date) : '-'}
                                         </TableCell>
                                         <TableCell>
                                           {log.updatedBy ? (
@@ -1475,20 +1551,6 @@ export default function TenantDetailDialog({
                                             </div>
                                           ) : (
                                             <span className="text-muted-foreground">-</span>
-                                          )}
-                                        </TableCell>
-                                        <TableCell>
-                                          {log.status === 1 ? (
-                                            <span className="text-muted-foreground text-sm">-</span>
-                                          ) : (
-                                            <Button
-                                              variant="outline"
-                                              size="sm"
-                                              onClick={() => handleUpdatePayment(log)}
-                                            >
-                                              <Edit className="h-4 w-4 mr-1" />
-                                              Pelunasan
-                                            </Button>
                                           )}
                                         </TableCell>
                                       </TableRow>
@@ -1558,11 +1620,11 @@ export default function TenantDetailDialog({
           <DialogHeader>
             <DialogTitle>Pelunasan Pembayaran</DialogTitle>
             <DialogDescription>
-              Perbarui status pembayaran untuk {selectedPayment?.amount ? new Intl.NumberFormat('id-ID', {
+              Perbarui status pembayaran untuk {selectedPayment?.paid_amount ? new Intl.NumberFormat('id-ID', {
                 style: 'currency',
                 currency: 'IDR',
                 minimumFractionDigits: 0,
-              }).format(selectedPayment.amount) : 'pembayaran ini'}
+              }).format(selectedPayment.paid_amount) : 'pembayaran ini'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -1652,20 +1714,20 @@ export default function TenantDetailDialog({
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="create_amount">
-                Jumlah Pembayaran <span className="text-red-500">*</span>
+              <Label htmlFor="create_paid_amount">
+                Jumlah Dibayar <span className="text-red-500">*</span>
               </Label>
               <div className="relative">
                 <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
                 <Input
-                  id="create_amount"
+                  id="create_paid_amount"
                   type="text"
-                  value={formatPrice(createPaymentData.amount || 0)}
+                  value={formatPrice(createPaymentData.paid_amount || 0)}
                   onChange={(e) => {
                     const parsedValue = parsePrice(e.target.value)
-                    setCreatePaymentData(prev => ({ 
-                      ...prev, 
-                      amount: parsedValue
+                    setCreatePaymentData(prev => ({
+                      ...prev,
+                      paid_amount: parsedValue
                     }))
                   }}
                   placeholder="0"

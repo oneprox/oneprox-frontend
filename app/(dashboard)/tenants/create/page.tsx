@@ -75,7 +75,7 @@ export default function CreateTenantPage() {
         <CardHeader>
           <CardTitle>Form Tenant</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="min-w-0">
           <TenantForm onSubmit={handleSubmit} loading={loading} />
         </CardContent>
       </Card>

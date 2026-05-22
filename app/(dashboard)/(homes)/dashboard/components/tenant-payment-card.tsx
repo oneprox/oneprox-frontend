@@ -210,9 +210,19 @@ export default function TenantPaymentCard() {
                           Terlambat {tenant.daysOverdue} hari
                         </p>
                       )}
-                      {tenant.lastPayment && tenant.lastPayment.amount && (
+                      {tenant.lastPayment &&
+                        (tenant.lastPayment.billing_amount ??
+                          tenant.lastPayment.paid_amount ??
+                          tenant.lastPayment.amount) && (
                         <p className="text-xs text-gray-600 mt-1">
-                          Tagihan: {formatCurrency(tenant.lastPayment.amount)}
+                          Tagihan:{' '}
+                          {formatCurrency(
+                            Number(
+                              tenant.lastPayment.billing_amount ??
+                                tenant.lastPayment.paid_amount ??
+                                tenant.lastPayment.amount
+                            )
+                          )}
                         </p>
                       )}
                     </div>

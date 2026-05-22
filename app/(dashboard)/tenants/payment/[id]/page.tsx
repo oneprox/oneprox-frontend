@@ -28,7 +28,7 @@ export default function UpdateTenantPaymentPage() {
   const [loading, setLoading] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
   const [formData, setFormData] = useState({
-    amount: '',
+    paid_amount: '',
     payment_method: '',
     notes: '',
   })
@@ -77,7 +77,7 @@ export default function UpdateTenantPaymentPage() {
   }
 
   const handleInputChange = (field: string, value: string) => {
-    if (field === 'amount') {
+    if (field === 'paid_amount') {
       const parsedValue = parsePrice(value)
       setFormData(prev => ({ ...prev, [field]: formatPrice(parsedValue) }))
     } else {
@@ -92,8 +92,8 @@ export default function UpdateTenantPaymentPage() {
   const validateForm = () => {
     const newErrors: Record<string, string> = {}
 
-    if (!formData.amount || parsePrice(formData.amount) <= 0) {
-      newErrors.amount = 'Jumlah pembayaran harus diisi dan lebih dari 0'
+    if (!formData.paid_amount || parsePrice(formData.paid_amount) <= 0) {
+      newErrors.paid_amount = 'Jumlah dibayar harus diisi dan lebih dari 0'
     }
 
     if (!formData.payment_method) {
@@ -122,16 +122,20 @@ export default function UpdateTenantPaymentPage() {
 
     setLoading(true)
     try {
-      const amount = parsePrice(formData.amount)
+      const paid = parsePrice(formData.paid_amount)
       const now = new Date()
       const billingPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
       const paymentDeadline = now.toISOString().slice(0, 10)
 
+      // Catat pembayaran: total tagihan = jumlah dibayar, tanpa rincian PPN terpisah
       const paymentData: CreateTenantPaymentData = {
         billing_period: billingPeriod,
-        billing_amount: amount,
+        amount: paid,
+        ppn_percent: 0,
+        ppn: 0,
+        billing_amount: paid,
         payment_deadline: paymentDeadline,
-        amount,
+        paid_amount: paid,
         payment_method: formData.payment_method,
         notes: formData.notes.trim(),
       }
@@ -223,19 +227,19 @@ export default function UpdateTenantPaymentPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="amount">
-                Jumlah Pembayaran <span className="text-red-500">*</span>
+              <Label htmlFor="paid_amount">
+                Jumlah Dibayar <span className="text-red-500">*</span>
               </Label>
               <Input
-                id="amount"
+                id="paid_amount"
                 type="text"
-                value={formData.amount}
-                onChange={(e) => handleInputChange('amount', e.target.value)}
-                placeholder="Masukkan jumlah pembayaran"
-                className={errors.amount ? 'border-red-500' : ''}
+                value={formData.paid_amount}
+                onChange={(e) => handleInputChange('paid_amount', e.target.value)}
+                placeholder="Masukkan jumlah dibayar"
+                className={errors.paid_amount ? 'border-red-500' : ''}
               />
-              {errors.amount && (
-                <p className="text-sm text-red-500">{errors.amount}</p>
+              {errors.paid_amount && (
+                <p className="text-sm text-red-500">{errors.paid_amount}</p>
               )}
             </div>
 

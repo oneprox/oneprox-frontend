@@ -459,11 +459,17 @@ export interface TenantPaymentLog {
   status?: number // 0 for unpaid, 1 for paid, 2 for expired
   billing_type?: string // jenis tagihan
   billing_period?: string // periode tagihan
-  billing_amount?: number // jumlah tagihan
+  billing_amount?: number // total tagihan (amount + ppn)
+  ppn?: number
+  ppn_percent?: number // fraksi desimal (0.11 = 11%)
   outstanding?: number
   overdue?: number
-  rate?: number // default 0.01
+  rate?: number // fraksi per hari/periode: 0.02 = 2%, default 0.01 = 1%
   last_charge_date?: string // ISO date
+  spk?: string
+  invoice_number?: string
+  invoice_date?: string
+  pph?: number
   updatedBy?: {
     id: string
     name: string
@@ -475,10 +481,12 @@ export interface TenantPaymentLog {
 // Create Tenant Payment Data interface
 export interface CreateTenantPaymentData {
   billing_period: string // mandatory
-  billing_amount: number // mandatory
+  amount: number // mandatory — jumlah tagihan dasar
+  billing_amount: number // mandatory — total (amount + ppn)
+  ppn?: number
+  ppn_percent?: number // fraksi desimal
   payment_deadline: string // mandatory
-  amount?: number
-  /** Jika diisi (atau payment_date diisi), penagihan langsung tercatat sebagai dibayar */
+  /** Nilai yang dibayar; jika lebih dari 0 penagihan tercatat sebagai dibayar */
   paid_amount?: number
   /** ISO date string; jika diisi saat create maka status otomatis paid */
   payment_date?: string
@@ -487,8 +495,13 @@ export interface CreateTenantPaymentData {
   billing_type?: string
   outstanding?: number
   overdue?: number
+  /** Fraksi (0.02 = 2%); default backend 0.01 = 1% */
   rate?: number
   last_charge_date?: string // ISO date
+  spk?: string
+  invoice_number?: string
+  invoice_date?: string
+  pph?: number
 }
 
 // Update Tenant Payment Data interface
@@ -500,11 +513,19 @@ export interface UpdateTenantPaymentData {
   paid_amount?: number
   billing_type?: string
   billing_period?: string
+  amount?: number
   billing_amount?: number
+  ppn?: number | null
+  ppn_percent?: number | null
   outstanding?: number
   overdue?: number
+  /** Fraksi (0.02 = 2%) */
   rate?: number
   last_charge_date?: string // ISO date
+  spk?: string | null
+  invoice_number?: string | null
+  invoice_date?: string | null
+  pph?: number | null
 }
 
 // Tenant Legal interface
@@ -1051,6 +1072,8 @@ export const unitsApi = {
     asset_id?: string
     is_deleted?: boolean
     status?: number
+    assignable?: boolean | number | string
+    for_tenant_id?: string
     size_min?: number
     size_max?: number
     order?: string
@@ -1062,6 +1085,14 @@ export const unitsApi = {
     if (params?.asset_id) queryParams.append('asset_id', params.asset_id)
     if (params?.is_deleted !== undefined) queryParams.append('is_deleted', params.is_deleted.toString())
     if (params?.status !== undefined && params?.status !== null) queryParams.append('status', params.status.toString())
+    if (params?.assignable !== undefined && params?.assignable !== null) {
+      const v = params.assignable
+      queryParams.append(
+        'assignable',
+        v === true || v === 1 || v === '1' || v === 'true' ? '1' : '0'
+      )
+    }
+    if (params?.for_tenant_id) queryParams.append('for_tenant_id', params.for_tenant_id)
     if (params?.size_min) queryParams.append('size_min', params.size_min.toString())
     if (params?.size_max) queryParams.append('size_max', params.size_max.toString())
     if (params?.order) queryParams.append('order', params.order)
@@ -1255,12 +1286,16 @@ export const tenantsApi = {
     limit?: number
     offset?: number
     status?: number
+    orderBy?: string
+    order?: 'ASC' | 'DESC'
   }): Promise<ApiResponse<TenantPaymentLog[]>> {
     const queryParams = new URLSearchParams()
-    if (params?.limit) queryParams.append('limit', params.limit.toString())
-    if (params?.offset) queryParams.append('offset', params.offset.toString())
+    if (params?.limit != null) queryParams.append('limit', params.limit.toString())
+    if (params?.offset != null) queryParams.append('offset', params.offset.toString())
     if (params?.status !== undefined && params?.status !== null) queryParams.append('status', params.status.toString())
-    
+    if (params?.orderBy) queryParams.append('orderBy', params.orderBy)
+    if (params?.order) queryParams.append('order', params.order)
+
     const endpoint = `/api/tenants/${tenantId}/payments${queryParams.toString() ? `?${queryParams.toString()}` : ''}`
     return apiClient.get<TenantPaymentLog[]>(endpoint)
   },
@@ -2174,6 +2209,12 @@ export interface FinancialTableData {
   aset: string
   unit: string
   jatuhTempo: string
+  /** Periode tagihan (billing_period) */
+  periodeTagihan?: string
+  /** Nomor SPK */
+  nomorSpk?: string
+  /** Catatan (notes) tagihan */
+  catatan?: string
   deskripsi: string
   nomorInvoice: string
   nilaiInvoice: number
