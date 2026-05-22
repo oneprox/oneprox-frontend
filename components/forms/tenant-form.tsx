@@ -244,6 +244,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
     category: '',
     sub_category: '',
     rent_price: 0,
+    ppn: 0,
     payment_term: '',
     building_area: 0,
     land_area: 0,
@@ -526,6 +527,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
         category: categoryName,
         sub_category: subCategoryName,
         rent_price: tenant.rent_price || 0,
+        ppn: tenant.ppn != null ? Number(tenant.ppn) : 0,
         payment_term: tenant.payment_term ? (() => {
           // Convert payment_term from number (0 or 1) to string ('year' or 'month')
           // Database: 0 = year, 1 = month
@@ -1071,6 +1073,8 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
           submitData.sub_category = formData.sub_category.trim()
         }
         submitData.rent_price = formData.rent_price
+        submitData.ppn = formData.ppn ?? 0
+        submitData.total_price = (formData.rent_price || 0) + (formData.ppn ?? 0)
         if (paymentTermValue !== undefined) {
           submitData.payment_term = paymentTermValue
         }
@@ -1088,6 +1092,9 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
         if (formData.electricity_power > 0) {
           submitData.electricity_power = formData.electricity_power
         }
+        submitData.ppn = formData.ppn ?? 0
+        submitData.total_price =
+          (tenant?.rent_price ?? formData.rent_price ?? 0) + (formData.ppn ?? 0)
       }
 
       // Validate that URLs are arrays of strings
@@ -1166,10 +1173,13 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
   }
 
   // Handle price input change with formatting
-  const handlePriceChange = (field: 'rent_price', value: string) => {
+  const handlePriceChange = (field: 'rent_price' | 'ppn', value: string) => {
     const parsedValue = parsePrice(value)
     handleInputChange(field, parsedValue)
   }
+
+  const computedTotalPrice =
+    (tenant?.rent_price ?? formData.rent_price ?? 0) + (formData.ppn ?? 0)
 
   // Format number with thousand separators (for area and power)
   const formatNumber = (value: number | string): string => {
@@ -2057,7 +2067,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
           <CardTitle>Harga Sewa Kontrak</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Harga Sewa */}
             <div className="space-y-2">
               <Label htmlFor="rent_price">
@@ -2086,6 +2096,35 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
               {errors.rent_price && (
                 <p className="text-sm text-red-500">{errors.rent_price}</p>
               )}
+            </div>
+
+            {/* PPN — input manual, boleh 0 */}
+            <div className="space-y-2">
+              <Label htmlFor="ppn">PPN (Rp)</Label>
+              <div className="relative">
+                <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
+                <Input
+                  id="ppn"
+                  type="text"
+                  value={formatPrice(formData.ppn)}
+                  onChange={(e) => handlePriceChange('ppn', e.target.value)}
+                  placeholder="0"
+                  className="pl-10"
+                />
+              </div>
+            </div>
+
+            {/* Total Harga */}
+            <div className="space-y-2">
+              <Label htmlFor="total_price_display">Total Harga</Label>
+              <div className="p-3 bg-muted/50 border rounded-md">
+                <p className="font-semibold text-base">
+                  Rp {formatPrice(computedTotalPrice)}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Harga sewa + PPN
+                </p>
+              </div>
             </div>
           </div>
         </CardContent>

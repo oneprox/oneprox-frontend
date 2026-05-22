@@ -335,42 +335,43 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                       {isOpen && (
                         <TableRow className="border-b border-slate-100 hover:bg-transparent">
                           <TableCell colSpan={parentColCount} className="p-0 align-middle">
-                            <div className="border-t border-slate-200 bg-slate-50/90 px-3 py-3 sm:px-4">
-                              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
-                                Detail
+                            <div className="border-t border-emerald-200/70 bg-gradient-to-br from-emerald-50/95 via-teal-50/50 to-white py-3 pl-6 pr-3 sm:pl-8 sm:pr-4 dark:border-emerald-800/50 dark:from-emerald-950/35 dark:via-teal-950/20 dark:to-transparent">
+                              <p className="mb-2.5 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-200">
+                                <span className="h-3 w-1 shrink-0 rounded-full bg-emerald-500" aria-hidden />
+                                Detail penagihan
                               </p>
-                              <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
+                              <div className="overflow-x-auto rounded-lg border border-emerald-200/60 bg-white/95 shadow-sm ring-1 ring-emerald-100/80 dark:border-emerald-800/40 dark:bg-slate-950/40 dark:ring-emerald-900/30">
                                 <Table className="min-w-[1040px] w-max">
                                   <TableHeader>
-                                    <TableRow className="border-b border-slate-100 hover:bg-transparent">
-                                      <TableHead className="w-10 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                    <TableRow className="border-b border-emerald-100/80 bg-emerald-50/70 hover:bg-emerald-50/70 dark:border-emerald-900/40 dark:bg-emerald-950/30">
+                                      <TableHead className="w-10 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-emerald-900/70 dark:text-emerald-200/80">
                                         No
                                       </TableHead>
-                                      <TableHead className="min-w-[7rem] whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                      <TableHead className="min-w-[7rem] whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-emerald-900/70 dark:text-emerald-200/80">
                                         Nomor invoice
                                       </TableHead>
-                                      <TableHead className="min-w-[8rem] whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                      <TableHead className="min-w-[8rem] whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-emerald-900/70 dark:text-emerald-200/80">
                                         Periode tagihan
                                       </TableHead>
-                                      <TableHead className="w-32 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                      <TableHead className="w-32 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-emerald-900/70 dark:text-emerald-200/80">
                                         Tanggal invoice
                                       </TableHead>
-                                      <TableHead className="min-w-[6rem] whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                      <TableHead className="min-w-[6rem] whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-emerald-900/70 dark:text-emerald-200/80">
                                         No. SPK
                                       </TableHead>
-                                      <TableHead className="min-w-[8rem] whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                      <TableHead className="min-w-[8rem] whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-emerald-900/70 dark:text-emerald-200/80">
                                         Jatuh tempo
                                       </TableHead>
-                                      <TableHead className="w-28 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                      <TableHead className="w-28 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-emerald-900/70 dark:text-emerald-200/80">
                                         Status tagihan
                                       </TableHead>
-                                      <TableHead className="min-w-[10rem] max-w-[14rem] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                      <TableHead className="min-w-[10rem] max-w-[14rem] whitespace-normal text-xs font-semibold uppercase tracking-wider text-emerald-900/70 dark:text-emerald-200/80">
                                         Catatan
                                       </TableHead>
-                                      <TableHead className="w-32 whitespace-nowrap text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                      <TableHead className="w-32 whitespace-nowrap text-right text-xs font-semibold uppercase tracking-wider text-emerald-900/70 dark:text-emerald-200/80">
                                         Nilai invoice
                                       </TableHead>
-                                      <TableHead className="w-24 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                      <TableHead className="w-24 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-emerald-900/70 dark:text-emerald-200/80">
                                         Aging
                                       </TableHead>
                                     </TableRow>
@@ -389,7 +390,7 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                                       return (
                                         <TableRow
                                           key={`fin-${group.key}-${row.id}`}
-                                          className="border-b border-slate-100 last:border-0"
+                                          className="border-b border-emerald-50/80 last:border-0 hover:bg-emerald-50/30 dark:border-emerald-900/20 dark:hover:bg-emerald-950/20"
                                         >
                                           <TableCell className="text-center text-base text-slate-600">
                                             {logIdx + 1}

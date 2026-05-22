@@ -1018,30 +1018,31 @@ export default function AssetOverviewDashboard({
                         {isOpen && (
                           <TableRow className="border-b border-slate-100 hover:bg-transparent">
                             <TableCell colSpan={11} className="p-0 align-middle">
-                              <div className="border-t border-slate-200 bg-slate-50/90 px-3 py-3 sm:px-4">
-                                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                              <div className="border-t border-violet-200/70 bg-gradient-to-br from-violet-50/95 via-indigo-50/40 to-white py-3 pl-6 pr-3 sm:pl-8 sm:pr-4 dark:border-violet-800/50 dark:from-violet-950/35 dark:via-indigo-950/20 dark:to-transparent">
+                                <p className="mb-2.5 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-violet-800 dark:text-violet-200">
+                                  <span className="h-3 w-1 shrink-0 rounded-full bg-violet-500" aria-hidden />
                                   Detail legalitas
                                 </p>
-                                <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
+                                <div className="overflow-x-auto rounded-lg border border-violet-200/60 bg-white/95 shadow-sm ring-1 ring-violet-100/80 dark:border-violet-800/40 dark:bg-slate-950/40 dark:ring-violet-900/30">
                                   <Table className="min-w-[720px] table-fixed">
                                     <TableHeader>
-                                      <TableRow className="border-b border-slate-100 hover:bg-transparent">
-                                        <TableHead className="w-10 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                      <TableRow className="border-b border-violet-100/80 bg-violet-50/70 hover:bg-violet-50/70 dark:border-violet-900/40 dark:bg-violet-950/30">
+                                        <TableHead className="w-10 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-violet-900/70 dark:text-violet-200/80">
                                           No
                                         </TableHead>
-                                        <TableHead className="min-w-0 w-[11rem] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                        <TableHead className="min-w-0 w-[11rem] whitespace-normal text-xs font-semibold uppercase tracking-wider text-violet-900/70 dark:text-violet-200/80">
                                           Jatuh tempo
                                         </TableHead>
-                                        <TableHead className="min-w-0 w-[26%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                        <TableHead className="min-w-0 w-[26%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-violet-900/70 dark:text-violet-200/80">
                                           Kewajiban mitra
                                         </TableHead>
-                                        <TableHead className="min-w-0 w-[26%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                        <TableHead className="min-w-0 w-[26%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-violet-900/70 dark:text-violet-200/80">
                                           Keterangan
                                         </TableHead>
-                                        <TableHead className="w-36 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                        <TableHead className="w-36 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-violet-900/70 dark:text-violet-200/80">
                                           Status penyelesaian
                                         </TableHead>
-                                        <TableHead className="min-w-0 w-[14%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                        <TableHead className="min-w-0 w-[14%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-violet-900/70 dark:text-violet-200/80">
                                           Dokumen
                                         </TableHead>
                                       </TableRow>
@@ -1059,7 +1060,7 @@ export default function AssetOverviewDashboard({
                                         return (
                                           <TableRow
                                             key={`legal-${group.key}-${row.id}`}
-                                            className="border-b border-slate-100 last:border-0"
+                                            className="border-b border-violet-50/80 last:border-0 hover:bg-violet-50/30 dark:border-violet-900/20 dark:hover:bg-violet-950/20"
                                           >
                                             <TableCell className="text-center text-base text-slate-600">{idx + 1}</TableCell>
                                             <TableCell className="min-w-0 align-middle">

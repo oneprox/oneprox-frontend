@@ -1135,6 +1135,8 @@ export interface Tenant {
   rent_duration_unit: string
   code: string
   rent_price?: number
+  ppn?: number
+  total_price?: number
   down_payment?: number
   deposit?: number
   payment_term?: string
@@ -1170,6 +1172,8 @@ export interface CreateTenantData {
   unit_ids: string[]
   category_id: number
   rent_price?: number
+  ppn?: number
+  total_price?: number
   down_payment?: number
   deposit?: number
   payment_term?: number
@@ -1190,6 +1194,8 @@ export interface UpdateTenantData {
   unit_ids?: string[]
   categories?: number[]
   rent_price?: number
+  ppn?: number
+  total_price?: number
   down_payment?: number
   deposit?: number
   deposit_reason?: string

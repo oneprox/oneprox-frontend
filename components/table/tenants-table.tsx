@@ -164,6 +164,11 @@ export default function TenantsTable({
     })
   }
 
+  const formatRupiah = (value?: number | null) => {
+    if (value === undefined || value === null || Number.isNaN(Number(value))) return '-'
+    return `Rp ${Number(value).toLocaleString('id-ID')}`
+  }
+
   const formatDateOnly = (dateString: string) => {
     if (!mounted) return 'Loading...'
     return new Date(dateString).toLocaleDateString('id-ID', {
@@ -302,6 +307,7 @@ export default function TenantsTable({
               <TableHead>User</TableHead>
               <TableHead>Status Tenant</TableHead>
               <TableHead>Status Pembayaran</TableHead>
+              <TableHead className="text-right">Total Harga</TableHead>
               <TableHead>Kontrak</TableHead>
               {/* <TableHead>Dibuat</TableHead>
               <TableHead>Diubah pada</TableHead> */}
@@ -311,7 +317,7 @@ export default function TenantsTable({
           <TableBody>
             {filteredTenantsWithPayment.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                   {!Array.isArray(tenants) || tenants.length === 0 
                     ? 'Tidak ada data tenant' 
                     : 'Tidak ada data tenant yang sesuai dengan filter'}
@@ -371,6 +377,13 @@ export default function TenantsTable({
                   <TableCell>
                     {/* Payment status diambil langsung dari tabel tenant, tidak dihitung manual */}
                     {getPaymentStatusBadge((tenant.payment_status as 'paid' | 'scheduled' | 'reminder_needed' | 'overdue') || 'scheduled')}
+                  </TableCell>
+                  <TableCell className="text-right text-sm font-medium whitespace-nowrap">
+                    {formatRupiah(
+                      tenant.total_price != null
+                        ? tenant.total_price
+                        : (tenant.rent_price ?? 0) + (tenant.ppn ?? 0)
+                    )}
                   </TableCell>
                   <TableCell className="text-sm">
                     <div className="space-y-1">
