@@ -1371,8 +1371,8 @@ export default function TaskForm({ task, onSubmit, onCancel, loading = false }: 
           />
         )}
 
-        {/* Times - Routine only */}
-        {isRoutine && (
+        {/* Times - Routine + Main task only (disembunyikan untuk task rutin yang bukan main) */}
+        {isRoutine && isMainTask && (
           <FormField
             control={form.control}
             name="times"
