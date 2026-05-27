@@ -273,21 +273,69 @@ export default function WorkerTaskDetailDialog({
             {userTask.evidences && userTask.evidences.length > 0 && (
               <div className="border-t pt-3">
                 <p className="text-sm text-muted-foreground mb-2">Bukti Pengerjaan:</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {userTask.evidences.map((evidence: any, index: number) => (
-                    <div key={index} className="space-y-1">
-                      {evidence.photo_url && (
-                        <img
-                          src={evidence.photo_url}
-                          alt={`Evidence ${index + 1}`}
-                          className="w-full h-24 object-cover rounded"
-                        />
-                      )}
-                      {evidence.notes && (
-                        <p className="text-xs text-muted-foreground">{evidence.notes}</p>
-                      )}
-                    </div>
-                  ))}
+                <div className="grid grid-cols-2 gap-3">
+                  {userTask.evidences.map((evidence: any, index: number) => {
+                    const rawUrl =
+                      typeof evidence === 'string'
+                        ? evidence
+                        : evidence && typeof evidence === 'object' && evidence.url != null
+                          ? String(evidence.url)
+                          : ''
+                    if (!rawUrl) return null
+
+                    const type =
+                      evidence && typeof evidence === 'object' && typeof evidence.type === 'string'
+                        ? String(evidence.type).toLowerCase()
+                        : ''
+                    const typeLabel =
+                      type === 'before' ? 'Before' : type === 'after' ? 'After' : `Bukti ${index + 1}`
+                    const badgeClass =
+                      type === 'before'
+                        ? 'bg-amber-100 text-amber-800 border-amber-200'
+                        : type === 'after'
+                          ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                          : 'bg-slate-100 text-slate-700 border-slate-200'
+
+                    if (rawUrl.startsWith('text:')) {
+                      const text = rawUrl.slice(5).trim() || '(catatan)'
+                      return (
+                        <div key={index} className="space-y-1 rounded border border-slate-200 bg-slate-50 p-2">
+                          <Badge variant="outline" className={`text-[10px] ${badgeClass}`}>
+                            {typeLabel}
+                          </Badge>
+                          <p className="text-xs whitespace-pre-wrap break-words text-slate-700">{text}</p>
+                        </div>
+                      )
+                    }
+
+                    const isImage = /\.(jpe?g|png|gif|webp|bmp|svg)(\?|$)/i.test(rawUrl)
+
+                    return (
+                      <div key={index} className="space-y-1">
+                        {isImage ? (
+                          <a href={rawUrl} target="_blank" rel="noopener noreferrer">
+                            <img
+                              src={rawUrl}
+                              alt={`Evidence ${index + 1}`}
+                              className="w-full h-32 object-cover rounded border border-slate-200"
+                            />
+                          </a>
+                        ) : (
+                          <a
+                            href={rawUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block rounded border border-slate-200 bg-slate-50 p-3 text-xs font-medium text-blue-600 hover:underline break-all"
+                          >
+                            {rawUrl}
+                          </a>
+                        )}
+                        <Badge variant="outline" className={`text-[10px] ${badgeClass}`}>
+                          {typeLabel}
+                        </Badge>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
