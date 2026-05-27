@@ -877,7 +877,7 @@ function WorkerDetailContent() {
       {/* User Info Card */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
             <UserIcon className="h-5 w-5" />
             Informasi Pekerja
           </CardTitle>
@@ -954,7 +954,7 @@ function WorkerDetailContent() {
             <TabsContent value="attendance" className="mt-0">
               <div className="p-6 space-y-4">
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
+                  <CardTitle className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
                     <Calendar className="h-5 w-5" />
                     Data Attendance Harian
                   </CardTitle>
@@ -1066,7 +1066,7 @@ function WorkerDetailContent() {
             <TabsContent value="work" className="mt-0">
               <div className="p-6 space-y-6">
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
+                  <CardTitle className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
                     <Clock className="h-5 w-5" />
                     Data Kerja Harian
                   </CardTitle>

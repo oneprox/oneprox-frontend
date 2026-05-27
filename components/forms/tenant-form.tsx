@@ -773,8 +773,32 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
   }
 
   const handleEditPayment = (payment: TenantPaymentLog) => {
-    setEditingPayment(payment)
-    setPaymentDialogOpen(true)
+    ;(async () => {
+      if (!tenant?.id) return
+      setPaymentFormLoading(true)
+      try {
+        // Backend tidak punya endpoint GET detail /payments/:id (404),
+        // jadi ambil ulang dari endpoint list (sesuai backend) lalu cari by id.
+        const listRes = await tenantsApi.getTenantPaymentLogs(tenant.id, {
+          limit: 1000,
+          offset: 0,
+          orderBy: 'payment_deadline',
+          order: 'DESC',
+        })
+        const { logs } = parsePaymentLogsResponse(listRes as any)
+        const fromBackend = logs.find((p) => p.id === payment.id)
+        setEditingPayment(fromBackend || payment)
+        setPaymentDialogOpen(true)
+      } catch (error) {
+        console.error('Load payment detail error:', error)
+        toast.error('Gagal memuat detail penagihan')
+        // Fallback: buka dialog pakai data yang ada
+        setEditingPayment(payment)
+        setPaymentDialogOpen(true)
+      } finally {
+        setPaymentFormLoading(false)
+      }
+    })()
   }
 
   const handleDeletePayment = (payment: TenantPaymentLog) => {
@@ -2915,6 +2939,60 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
 
+  const extractPaymentMethodRaw = (p: unknown): unknown => {
+    const anyP = p as any
+    if (!anyP) return ''
+
+    // Common backend variants
+    const direct =
+      anyP.payment_method ??
+      anyP.paymentMethod ??
+      anyP.method ??
+      anyP.payment_method_code ??
+      anyP.paymentMethodCode
+
+    if (direct != null) return direct
+
+    // Sometimes nested objects are returned
+    const nested =
+      anyP.payment_method?.value ??
+      anyP.payment_method?.code ??
+      anyP.payment_method?.name ??
+      anyP.paymentMethod?.value ??
+      anyP.paymentMethod?.code ??
+      anyP.paymentMethod?.name
+
+    if (nested != null) return nested
+    return ''
+  }
+
+  const normalizePaymentMethod = (value: unknown): string => {
+    const raw = String(value ?? '').trim().toLowerCase()
+    if (!raw) return ''
+
+    // Buang spasi/underscore/dash supaya variasi "bank transfer" vs "bank_transfer" tetap match.
+    const compact = raw.replace(/[\s_-]/g, '')
+
+    if (compact === 'cash' || compact === 'tunai') return 'cash'
+
+    if (
+      compact === 'banktransfer' ||
+      compact === 'transferbank' ||
+      compact === 'banktf' ||
+      compact === 'transfer' ||
+      compact === 'tf'
+    )
+      return 'bank_transfer'
+
+    if (compact === 'qris' || compact === 'qr') return 'qris'
+
+    if (compact === 'other' || compact === 'lainnya') return 'other'
+
+    // Kalau value ada tapi tidak dikenali, fallback ke "other"
+    // supaya tidak terlihat kosong saat edit.
+    return 'other'
+  }
+
   const buildBillingDerivedFields = (amountStr: string, ppnPercentStr: string) => {
     const amount = parsePrice(amountStr)
     const pct = parsePpnPercentInput(ppnPercentStr)
@@ -2943,7 +3021,7 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
       const derived = buildBillingDerivedFields(amountStr, ppnPercentStr)
 
       setFormData({
-        payment_method: payment.payment_method || '',
+        payment_method: normalizePaymentMethod(extractPaymentMethodRaw(payment)),
         payment_date: payment.payment_date ? new Date(payment.payment_date).toISOString().split('T')[0] : '',
         paid_amount: payment.paid_amount?.toString() || '',
         payment_deadline: payment.payment_deadline ? new Date(payment.payment_deadline).toISOString().split('T')[0] : '',
@@ -3159,7 +3237,9 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
       // Update payment
       const updateData: UpdateTenantPaymentData = {
         payment_method: formData.payment_method || undefined,
-        notes: formData.notes.trim() || undefined,
+        // Kalau user hapus catatan, tetap kirim string kosong agar backend mengosongkan nilai lama
+        // (backend biasanya menolak null untuk field string → 400 Bad Request).
+        notes: formData.notes.trim(),
       }
       if (formData.payment_deadline) {
         updateData.payment_deadline = new Date(formData.payment_deadline).toISOString()
@@ -3471,7 +3551,8 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
           <div className={paymentFieldClass}>
             <Label htmlFor="payment_method" className="text-sm font-medium">Metode Pembayaran</Label>
             <Select
-              value={formData.payment_method ? formData.payment_method : undefined}
+              key={`payment-method-${payment?.id ?? 'new'}-${formData.payment_method || 'empty'}`}
+              defaultValue={formData.payment_method || undefined}
               onValueChange={(value) => handleInputChange('payment_method', value)}
             >
               <SelectTrigger className={`w-full min-w-0 ${errors.payment_method ? 'border-red-500' : ''}`}>

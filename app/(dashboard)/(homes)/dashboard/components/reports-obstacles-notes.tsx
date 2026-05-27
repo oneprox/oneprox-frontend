@@ -205,7 +205,7 @@ export default function ReportsObstaclesNotes({ selectedAssetId = 'all' }: Repor
   return (
     <Card>
       <CardHeader>
-        <CardTitle>LAPORAN, KENDALA, DAN CATATAN</CardTitle>
+        <CardTitle className="text-xl font-bold tracking-tight text-slate-900">LAPORAN, KENDALA, DAN CATATAN</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">

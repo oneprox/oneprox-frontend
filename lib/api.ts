@@ -1306,6 +1306,10 @@ export const tenantsApi = {
     return apiClient.get<TenantPaymentLog[]>(endpoint)
   },
 
+  async getTenantPayment(tenantId: string, paymentId: number): Promise<ApiResponse<TenantPaymentLog>> {
+    return apiClient.get<TenantPaymentLog>(`/api/tenants/${tenantId}/payments/${paymentId}`)
+  },
+
   async createTenantPayment(tenantId: string, data: CreateTenantPaymentData): Promise<ApiResponse<TenantPaymentLog>> {
     return apiClient.post<TenantPaymentLog>(`/api/tenants/${tenantId}/payments`, data)
   },

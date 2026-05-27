@@ -141,7 +141,7 @@ export default function NonRoutineWork({ selectedAssetId = 'all' }: NonRoutineWo
   return (
     <Card>
       <CardHeader>
-        <CardTitle>PEKERJAAN NON RUTIN</CardTitle>
+        <CardTitle className="text-xl font-bold tracking-tight text-slate-900">PEKERJAAN NON RUTIN</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">

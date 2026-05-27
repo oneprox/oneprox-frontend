@@ -665,7 +665,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
     return (
       <Card className="border border-gray-200 shadow-sm">
         <CardHeader className="space-y-1 pb-4">
-          <CardTitle className="text-xl font-bold tracking-tight text-slate-900">
+          <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">
             Status Pekerjaan Harian
           </CardTitle>
         </CardHeader>

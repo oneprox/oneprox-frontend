@@ -632,7 +632,7 @@ export default function AssetOverviewDashboard({
         )}
         style={{ top: appHeaderHeightPx }}
       >
-        <h1 className="pl-2 text-xl font-semibold text-gray-900 sm:pl-4 sm:text-3xl md:pl-6 md:text-4xl">{selectedAssetName}</h1>
+        <h1 className="pl-2 text-xl font-semibold text-gray-900 sm:pl-4 sm:text-2xl md:pl-6 md:text-2xl">{selectedAssetName}</h1>
         <Select value={selectedAssetId} onValueChange={handleAssetChange}>
           <SelectTrigger className="w-[250px] text-base">
             <SelectValue placeholder="Pilih Asset" />
@@ -738,7 +738,7 @@ export default function AssetOverviewDashboard({
         {/* Asset Utilization Chart */}
         <Card className="overflow-hidden">
           <CardHeader>
-            <CardTitle className="flex items-center justify-between text-2xl font-bold tracking-tight">
+            <CardTitle className="flex items-center justify-between text-xl font-bold tracking-tight">
               <span>Pemanfaatan Aset</span>
               <button type="button" className="text-muted-foreground hover:text-foreground">
                 <span className="sr-only">Menu</span>
@@ -797,7 +797,7 @@ export default function AssetOverviewDashboard({
           <CardHeader className="space-y-0 pb-2">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="space-y-1">
-                <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">
+                <CardTitle className="text-xl font-bold tracking-tight text-slate-900">
                   Kinerja Keuangan {financialYear}
                 </CardTitle>
                 <CardDescription className="text-lg font-normal text-slate-500">
@@ -879,7 +879,7 @@ export default function AssetOverviewDashboard({
       {/* Status Legalitas Aset */}
       <Card className="border border-gray-200 shadow-sm">
         <CardHeader className="space-y-1 pb-4">
-          <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">
+          <CardTitle className="text-xl font-bold tracking-tight text-slate-900">
             Status Legalitas Aset
           </CardTitle>
           <CardDescription className="text-lg text-slate-500">

@@ -258,7 +258,7 @@ export default function DashboardStatCards({ selectedAssetId = 'all' }: Dashboar
       {statCards.map((stat, index) => (
         <Card key={index} className="p-6">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-700">
+            <CardTitle className="text-2xl font-bold tracking-tight text-gray-900">
               {stat.title}
             </CardTitle>
             <stat.icon className="h-4 w-4 text-gray-500" />
