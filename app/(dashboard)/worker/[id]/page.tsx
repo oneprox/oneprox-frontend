@@ -203,6 +203,10 @@ function WorkerDetailContent() {
           }
         }
         
+        history.sort(
+          (a, b) =>
+            new Date(a.check_in_time).getTime() - new Date(b.check_in_time).getTime()
+        )
         console.log('Parsed attendance history:', history)
         setAttendanceHistory(history)
         
@@ -387,6 +391,44 @@ function WorkerDetailContent() {
     return allChildrenCompleted
   }
 
+  const getMainTaskId = (task: UserTask) => task.user_task_id ?? task.id
+
+  const getTaskRowKey = (task: UserTask): string =>
+    String(task.user_task_id ?? task.id ?? task.task_id ?? '')
+
+  const isSubTask = (task: UserTask) =>
+    task.is_main_task === false || !!task.parent_user_task_id
+
+  /** Total statistik = sub task + main task yang tidak punya sub task */
+  const mainHasSubTasksInList = (mainTask: UserTask, tasks: UserTask[]) => {
+    const mainId = getMainTaskId(mainTask)
+    return tasks.some(
+      (t) =>
+        isSubTask(t) &&
+        t.parent_user_task_id != null &&
+        (t.parent_user_task_id === mainId || t.parent_user_task_id === mainTask.id)
+    )
+  }
+
+  const isCountableForDailyStats = (task: UserTask, tasksForDate: UserTask[]) => {
+    if (isSubTask(task)) return true
+    const isMain =
+      task.is_main_task === true ||
+      (task.is_main_task !== false && !task.parent_user_task_id)
+    if (isMain) return !mainHasSubTasksInList(task, tasksForDate)
+    return false
+  }
+
+  const isCompletedForDailyStats = (task: UserTask, tasksForDate: UserTask[]) => {
+    if (isSubTask(task)) {
+      return (
+        task.status === 'completed' ||
+        (task.completed_at != null && task.completed_at !== undefined)
+      )
+    }
+    return isMainTaskCompletedByChildren(task, tasksForDate)
+  }
+
   // Group tasks by date and calculate statistics
   const getDailyWorkStatistics = () => {
     console.log('Calculating statistics from allUserTasks:', allUserTasks.length)
@@ -429,19 +471,13 @@ function WorkerDetailContent() {
         }
       }
       
-      // Get main tasks only
-      const mainTasks = tasksForDate.filter(task => {
-        return task.is_main_task === true || task.is_main_task === undefined
-      })
-      
-      // Process each main task
-      mainTasks.forEach(mainTask => {
+      const countableTasks = tasksForDate.filter((task) =>
+        isCountableForDailyStats(task, tasksForDate)
+      )
+
+      countableTasks.forEach((task) => {
         dailyStats[dateStr].total++
-        
-        // Check if completed (considering child tasks for tasks without validation/scan)
-        const isCompleted = isMainTaskCompletedByChildren(mainTask, tasksForDate)
-        
-        if (isCompleted) {
+        if (isCompletedForDailyStats(task, tasksForDate)) {
           dailyStats[dateStr].completed++
         } else {
           dailyStats[dateStr].pending++
@@ -477,9 +513,9 @@ function WorkerDetailContent() {
       stats.percentage = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0
     })
     
-    const result = Object.values(dailyStats).sort((a, b) => {
-      return new Date(b.date).getTime() - new Date(a.date).getTime()
-    })
+    const result = Object.values(dailyStats).sort((a, b) =>
+      a.date.localeCompare(b.date)
+    )
     
     console.log('Final statistics result:', result)
     return result
@@ -666,17 +702,121 @@ function WorkerDetailContent() {
     })
   }
 
-  // Get tasks for a specific date
-  const getTasksByDate = (date: string): UserTask[] => {
-    return allUserTasks.filter(task => {
+  // Get tasks for a specific date (selaras dengan penghitungan statistik)
+  const getTaskSortName = (task: UserTask) =>
+    (task.task?.name || '').trim().toLocaleLowerCase('id-ID')
+
+  const parseTimeToMinutes = (timeStr: string | undefined | null): number => {
+    if (!timeStr) return 9999
+    const parts = timeStr.split(':')
+    if (parts.length !== 2) return 9999
+    const hours = parseInt(parts[0], 10)
+    const minutes = parseInt(parts[1], 10)
+    if (isNaN(hours) || isNaN(minutes)) return 9999
+    return hours * 60 + minutes
+  }
+
+  const getTaskDisplayTime = (task: UserTask): string => {
+    const time = task.time?.trim()
+    if (time) return time
+    if (task.scheduled_at) {
+      try {
+        return new Date(task.scheduled_at).toLocaleTimeString('id-ID', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+          timeZone: 'Asia/Jakarta',
+        })
+      } catch {
+        /* ignore */
+      }
+    }
+    return '-'
+  }
+
+  const getSortTimeMinutes = (task: UserTask): number => {
+    const fromTime = parseTimeToMinutes(task.time?.trim())
+    if (fromTime !== 9999) return fromTime
+    if (task.scheduled_at) {
+      try {
+        const formatted = new Date(task.scheduled_at).toLocaleTimeString('en-GB', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+          timeZone: 'Asia/Jakarta',
+        })
+        return parseTimeToMinutes(formatted)
+      } catch {
+        /* ignore */
+      }
+    }
+    return 9999
+  }
+
+  const sortSubsByName = (tasks: UserTask[]) =>
+    [...tasks].sort((a, b) =>
+      getTaskSortName(a).localeCompare(getTaskSortName(b), 'id-ID', { sensitivity: 'base' })
+    )
+
+  type TaskDetailRow =
+    | { type: 'main-header'; task: UserTask }
+    | { type: 'task'; task: UserTask; indent?: boolean }
+
+  const getTasksForDateOnDay = (date: string): UserTask[] =>
+    allUserTasks.filter((task) => {
       if (!task.created_at) return false
       try {
-        const taskDateStr = getJakartaDateKey(task.created_at)
-        return taskDateStr === date
+        return getJakartaDateKey(task.created_at) === date
       } catch {
         return false
       }
     })
+
+  const getTaskDetailRows = (date: string): TaskDetailRow[] => {
+    const tasksForDate = getTasksForDateOnDay(date)
+    const mains = tasksForDate.filter((t) => !isSubTask(t))
+    const subs = tasksForDate.filter((t) => isSubTask(t))
+    const sortedMains = [...mains].sort(
+      (a, b) => getSortTimeMinutes(a) - getSortTimeMinutes(b)
+    )
+    const rows: TaskDetailRow[] = []
+    const usedSubIds = new Set<string>()
+
+    for (const main of sortedMains) {
+      const mainId = getMainTaskId(main)
+      const children = subs.filter((s) => {
+        const pid = s.parent_user_task_id
+        return pid != null && (pid === mainId || pid === main.id)
+      })
+      const countableChildren = children.filter((s) =>
+        isCountableForDailyStats(s, tasksForDate)
+      )
+
+      if (countableChildren.length > 0) {
+        rows.push({ type: 'main-header', task: main })
+        for (const sub of sortSubsByName(countableChildren)) {
+          usedSubIds.add(getTaskRowKey(sub))
+          rows.push({ type: 'task', task: sub, indent: true })
+        }
+      } else if (isCountableForDailyStats(main, tasksForDate)) {
+        rows.push({ type: 'task', task: main, indent: false })
+      }
+    }
+
+    for (const sub of sortSubsByName(
+      subs.filter((s) => !usedSubIds.has(getTaskRowKey(s)))
+    )) {
+      if (isCountableForDailyStats(sub, tasksForDate)) {
+        rows.push({ type: 'task', task: sub, indent: true })
+      }
+    }
+
+    return rows
+  }
+
+  const getTasksByDate = (date: string): UserTask[] => {
+    const tasksForDate = getTasksForDateOnDay(date)
+    return tasksForDate.filter((task) => isCountableForDailyStats(task, tasksForDate))
   }
 
   if (isLoadingUser) {
@@ -1017,8 +1157,8 @@ function WorkerDetailContent() {
                             ) : (
                               getDailyWorkStatistics().map((stat, index) => {
                                 const isExpanded = expandedDates.has(stat.date)
-                                const tasksForDate = getTasksByDate(stat.date)
-                                const hasTasks = tasksForDate.length > 0
+                                const taskDetailRows = getTaskDetailRows(stat.date)
+                                const hasTasks = taskDetailRows.length > 0
                                 
                                 return (
                                   <React.Fragment key={index}>
@@ -1082,7 +1222,7 @@ function WorkerDetailContent() {
                                     {isExpanded && hasTasks && (
                                       <TableRow>
                                         <TableCell colSpan={6} className="p-0 bg-muted/30">
-                                          <div className="p-4">
+                                          <div className="p-4 pl-6">
                                             <h4 className="text-sm font-semibold mb-3">Daftar Task - {formatDateShort(stat.date)}</h4>
                                             <div className="rounded-md border bg-background max-h-[200px] overflow-y-auto overflow-x-auto">
                                               <Table>
@@ -1095,20 +1235,53 @@ function WorkerDetailContent() {
                                                   </TableRow>
                                                 </TableHeader>
                                                 <TableBody>
-                                                  {tasksForDate.map((userTask) => {
-                                                    const taskId = userTask.user_task_id || userTask.id || userTask.task_id
+                                                  {taskDetailRows.map((row, rowIndex) => {
+                                                    if (row.type === 'main-header') {
+                                                      const mainTask = row.task
+                                                      const mainKey =
+                                                        mainTask.user_task_id ||
+                                                        mainTask.id ||
+                                                        `main-${rowIndex}`
+                                                      return (
+                                                        <TableRow
+                                                          key={`header-${mainKey}`}
+                                                          className="bg-muted/40"
+                                                        >
+                                                          <TableCell className="font-semibold">
+                                                            {mainTask.task?.name || 'Task'}
+                                                            <Badge variant="default" className="ml-2 text-xs">
+                                                              Main Task
+                                                            </Badge>
+                                                          </TableCell>
+                                                          <TableCell className="font-medium">
+                                                            {getTaskDisplayTime(mainTask)}
+                                                          </TableCell>
+                                                          <TableCell>-</TableCell>
+                                                          <TableCell />
+                                                        </TableRow>
+                                                      )
+                                                    }
+
+                                                    const userTask = row.task
+                                                    const taskId =
+                                                      userTask.user_task_id ||
+                                                      userTask.id ||
+                                                      userTask.task_id
+                                                    const isSub = isSubTask(userTask)
                                                     return (
                                                       <TableRow key={taskId}>
-                                                        <TableCell className="font-medium">
+                                                        <TableCell
+                                                          className={`font-medium ${row.indent ? 'pl-8' : ''}`}
+                                                        >
                                                           {userTask.task?.name || 'Task'}
-                                                          {userTask.is_main_task === false && (
+                                                          {isSub && (
                                                             <Badge variant="outline" className="ml-2 text-xs">
                                                               Sub Task
                                                             </Badge>
                                                           )}
                                                         </TableCell>
                                                         <TableCell>
-                                                          {userTask.time || '-'}
+                                                          {getTaskDisplayTime(userTask)}
                                                         </TableCell>
                                                         <TableCell>
                                                           {getTaskStatusBadge(userTask)}

@@ -191,9 +191,8 @@ export default function UnitsTable({
                 <TableHead className="w-[18%]">Nama Unit</TableHead>
                 <TableHead className="w-[17%]">Asset</TableHead>
                 <TableHead className="w-[8%]">Luas Lahan (m²)</TableHead>
-                <TableHead className="w-[9%]">Luas Bangunan (m²)</TableHead>
-                <TableHead className="w-[9%]">Daya Listrik</TableHead>
-                <TableHead className="w-[8%]">Status</TableHead>
+                <TableHead className="w-[10%]">Luas Bangunan (m²)</TableHead>
+                <TableHead className="w-[9%]">Status</TableHead>
                 <TableHead className="w-[9%]">Dibuat</TableHead>
                 <TableHead className="w-[9%]">Diperbarui</TableHead>
                 <TableHead className="w-[9%]">Aksi</TableHead>
@@ -202,7 +201,7 @@ export default function UnitsTable({
           <TableBody>
             {units.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                   Tidak ada data unit
                 </TableCell>
               </TableRow>
@@ -226,9 +225,6 @@ export default function UnitsTable({
                   </TableCell>
                   <TableCell className="text-center">
                     {unit.building_area ? `${unit.building_area} m²` : '-'}
-                  </TableCell>
-                  <TableCell className="truncate" title={unit.electrical_power ? `${unit.electrical_power} ${unit.electrical_unit || 'Watt'}` : '-'}>
-                    {unit.electrical_power ? `${unit.electrical_power} ${unit.electrical_unit || 'Watt'}` : '-'}
                   </TableCell>
                   <TableCell>
                     {(() => {

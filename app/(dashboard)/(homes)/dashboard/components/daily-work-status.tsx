@@ -512,9 +512,15 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
   const kebersihanToday = useMemo(() => {
     const out: UserTask[] = []
     for (const { main, children } of kebersihanCleaningGroups) {
-      if (isKebersihan(main)) out.push(main)
-      for (const c of children) {
-        if (isKebersihan(c)) out.push(c)
+      // Aturan kebersihan: jika main user_task punya sub_user_task, hanya sub
+      // yang dihitung; jika tidak punya sub_user_task, main yang dihitung.
+      const hasSubUserTask = Array.isArray(main.sub_user_task) && main.sub_user_task.length > 0
+      if (hasSubUserTask) {
+        for (const c of children) {
+          if (isKebersihan(c)) out.push(c)
+        }
+      } else if (isKebersihan(main)) {
+        out.push(main)
       }
     }
     return out
@@ -528,9 +534,15 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
   const keamananToday = useMemo(() => {
     const out: UserTask[] = []
     for (const { main, children } of keamananSecurityGroups) {
-      if (isKeamanan(main)) out.push(main)
-      for (const c of children) {
-        if (isKeamanan(c)) out.push(c)
+      // Aturan keamanan: jika main user_task punya sub_user_task, hanya sub
+      // yang dihitung; jika tidak punya sub_user_task, main yang dihitung.
+      const hasSubUserTask = Array.isArray(main.sub_user_task) && main.sub_user_task.length > 0
+      if (hasSubUserTask) {
+        for (const c of children) {
+          if (isKeamanan(c)) out.push(c)
+        }
+      } else if (isKeamanan(main)) {
+        out.push(main)
       }
     }
     return out
@@ -545,9 +557,15 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
   const kebersihanMonthList = useMemo(() => {
     const out: UserTask[] = []
     for (const { main, children } of kebersihanMonthGroups) {
-      if (isKebersihan(main)) out.push(main)
-      for (const c of children) {
-        if (isKebersihan(c)) out.push(c)
+      // Aturan kebersihan: jika main user_task punya sub_user_task, hanya sub
+      // yang dihitung; jika tidak punya sub_user_task, main yang dihitung.
+      const hasSubUserTask = Array.isArray(main.sub_user_task) && main.sub_user_task.length > 0
+      if (hasSubUserTask) {
+        for (const c of children) {
+          if (isKebersihan(c)) out.push(c)
+        }
+      } else if (isKebersihan(main)) {
+        out.push(main)
       }
     }
     return out
@@ -556,9 +574,15 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
   const keamananMonthList = useMemo(() => {
     const out: UserTask[] = []
     for (const { main, children } of keamananMonthGroups) {
-      if (isKeamanan(main)) out.push(main)
-      for (const c of children) {
-        if (isKeamanan(c)) out.push(c)
+      // Aturan keamanan: jika main user_task punya sub_user_task, hanya sub
+      // yang dihitung; jika tidak punya sub_user_task, main yang dihitung.
+      const hasSubUserTask = Array.isArray(main.sub_user_task) && main.sub_user_task.length > 0
+      if (hasSubUserTask) {
+        for (const c of children) {
+          if (isKeamanan(c)) out.push(c)
+        }
+      } else if (isKeamanan(main)) {
+        out.push(main)
       }
     }
     return out

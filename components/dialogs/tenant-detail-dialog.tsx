@@ -140,6 +140,9 @@ export default function TenantDetailDialog({
 
   const [createPaymentData, setCreatePaymentData] = useState<CreateTenantPaymentData & { payment_date?: string }>({
     billing_period: defaultBillingPeriod,
+    amount: 0,
+    ppn: 0,
+    ppn_percent: 0,
     billing_amount: 0,
     payment_deadline: defaultPaymentDeadline,
     paid_amount: 0,
@@ -227,52 +230,28 @@ export default function TenantDetailDialog({
           })
           if (response.success && response.data) {
             const logsData = response.data as any
-            const logs = Array.isArray(logsData.data) ? logsData.data : (Array.isArray(logsData) ? logsData : [])
+            const logs = Array.isArray(logsData)
+              ? logsData
+              : Array.isArray(logsData.data)
+                ? logsData.data
+                : []
             setPaymentLogs(logs)
-            
-            // Debug: Log the response structure to understand the format
-            console.log('Payment logs response:', { response, logsData, logs })
-            
-            // Try to get total from various possible response formats
-            let total: number | null = logsData.pagination.total
-            
-            // Check response.data directly first (most common format: { data: [...], total: 11 })
-            if (response.data && typeof response.data === 'object') {
-              const responseData = response.data as any
-              if (typeof responseData.total === 'number' && responseData.total > 0) {
-                total = responseData.total
-              } else if (typeof responseData.count === 'number' && responseData.count > 0) {
-                total = responseData.count
-              }
+
+            const envelope = logsData as { pagination?: { total?: number }; total?: number; count?: number }
+            let total: number | null =
+              response.pagination?.total != null ? Number(response.pagination.total) : null
+            if (total == null && envelope?.pagination?.total != null) {
+              total = Number(envelope.pagination.total)
+            } else if (total == null && typeof envelope?.total === 'number') {
+              total = envelope.total
+            } else if (total == null && typeof envelope?.count === 'number') {
+              total = envelope.count
             }
-            
-            // Check logsData (nested data structure: { data: { data: [...], total: 11 } })
-            if (total === null && logsData && typeof logsData === 'object') {
-              if (typeof logsData.total === 'number' && logsData.total > 0) {
-                total = logsData.total
-              } else if (typeof logsData.count === 'number' && logsData.count > 0) {
-                total = logsData.count
-              }
-            }
-            
-            // Check if total is in the message or other fields
-            if (total === null && response && typeof response === 'object') {
-              const responseAny = response as any
-              if (typeof responseAny.total === 'number' && responseAny.total > 0) {
-                total = responseAny.total
-              }
-            }
-            
-            // Update total if we found it, otherwise keep existing total or use current count
-            if (total !== null && total > 0) {
+
+            if (total !== null && !Number.isNaN(total) && total >= 0) {
               setPaymentTotal(total)
-              console.log('Payment total set to:', total)
-            } else {
-              console.log('No total found in response, keeping existing total or using current count')
-              // Only update if we're on first page and don't have a total yet
-              if (paymentPage === 1 && paymentTotal === 0) {
-                setPaymentTotal(logs.length)
-              }
+            } else if (paymentPage === 1) {
+              setPaymentTotal(logs.length)
             }
           }
         } catch (error) {
@@ -477,6 +456,9 @@ export default function TenantDetailDialog({
   const handleCreatePayment = () => {
     setCreatePaymentData({
       billing_period: defaultBillingPeriod,
+      amount: 0,
+      ppn: 0,
+      ppn_percent: 0,
       billing_amount: 0,
       payment_deadline: defaultPaymentDeadline,
       paid_amount: 0,
@@ -507,21 +489,28 @@ export default function TenantDetailDialog({
 
     setCreatingPayment(true)
     try {
+      const billAmt = createPaymentData.billing_amount || createPaymentData.paid_amount || 0
       const response = await tenantsApi.createTenantPayment(tenant.id, {
         billing_period: createPaymentData.billing_period || defaultBillingPeriod,
-        billing_amount: createPaymentData.billing_amount || createPaymentData.paid_amount,
+        amount: billAmt,
+        ppn_percent: 0,
+        ppn: 0,
+        billing_amount: billAmt,
         payment_deadline: createPaymentData.payment_deadline || defaultPaymentDeadline,
         paid_amount: createPaymentData.paid_amount,
         payment_method: createPaymentData.payment_method,
         notes: createPaymentData.notes.trim(),
         ...(createPaymentData.payment_date ? { payment_date: createPaymentData.payment_date } : {})
-      } as CreateTenantPaymentData & { payment_date?: string })
+      })
       
       if (response.success) {
         toast.success('Pembayaran berhasil ditambahkan')
         setCreatePaymentDialogOpen(false)
         setCreatePaymentData({
           billing_period: defaultBillingPeriod,
+          amount: 0,
+          ppn: 0,
+          ppn_percent: 0,
           billing_amount: 0,
           payment_deadline: defaultPaymentDeadline,
           paid_amount: 0,

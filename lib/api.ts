@@ -459,7 +459,9 @@ export interface TenantPaymentLog {
   status?: number // 0 for unpaid, 1 for paid, 2 for expired
   billing_type?: string // jenis tagihan
   billing_period?: string // periode tagihan
-  billing_amount?: number // jumlah tagihan
+  billing_amount?: number // total tagihan (amount + ppn)
+  ppn?: number
+  ppn_percent?: number // fraksi desimal (0.11 = 11%)
   outstanding?: number
   overdue?: number
   rate?: number // fraksi per hari/periode: 0.02 = 2%, default 0.01 = 1%
@@ -479,7 +481,10 @@ export interface TenantPaymentLog {
 // Create Tenant Payment Data interface
 export interface CreateTenantPaymentData {
   billing_period: string // mandatory
-  billing_amount: number // mandatory
+  amount: number // mandatory — jumlah tagihan dasar
+  billing_amount: number // mandatory — total (amount + ppn)
+  ppn?: number
+  ppn_percent?: number // fraksi desimal
   payment_deadline: string // mandatory
   /** Nilai yang dibayar; jika lebih dari 0 penagihan tercatat sebagai dibayar */
   paid_amount?: number
@@ -508,7 +513,10 @@ export interface UpdateTenantPaymentData {
   paid_amount?: number
   billing_type?: string
   billing_period?: string
+  amount?: number
   billing_amount?: number
+  ppn?: number | null
+  ppn_percent?: number | null
   outstanding?: number
   overdue?: number
   /** Fraksi (0.02 = 2%) */
@@ -1064,6 +1072,8 @@ export const unitsApi = {
     asset_id?: string
     is_deleted?: boolean
     status?: number
+    assignable?: boolean | number | string
+    for_tenant_id?: string
     size_min?: number
     size_max?: number
     order?: string
@@ -1075,6 +1085,14 @@ export const unitsApi = {
     if (params?.asset_id) queryParams.append('asset_id', params.asset_id)
     if (params?.is_deleted !== undefined) queryParams.append('is_deleted', params.is_deleted.toString())
     if (params?.status !== undefined && params?.status !== null) queryParams.append('status', params.status.toString())
+    if (params?.assignable !== undefined && params?.assignable !== null) {
+      const v = params.assignable
+      queryParams.append(
+        'assignable',
+        v === true || v === 1 || v === '1' || v === 'true' ? '1' : '0'
+      )
+    }
+    if (params?.for_tenant_id) queryParams.append('for_tenant_id', params.for_tenant_id)
     if (params?.size_min) queryParams.append('size_min', params.size_min.toString())
     if (params?.size_max) queryParams.append('size_max', params.size_max.toString())
     if (params?.order) queryParams.append('order', params.order)
@@ -1117,6 +1135,8 @@ export interface Tenant {
   rent_duration_unit: string
   code: string
   rent_price?: number
+  ppn?: number
+  total_price?: number
   down_payment?: number
   deposit?: number
   payment_term?: string
@@ -1152,6 +1172,8 @@ export interface CreateTenantData {
   unit_ids: string[]
   category_id: number
   rent_price?: number
+  ppn?: number
+  total_price?: number
   down_payment?: number
   deposit?: number
   payment_term?: number
@@ -1172,6 +1194,8 @@ export interface UpdateTenantData {
   unit_ids?: string[]
   categories?: number[]
   rent_price?: number
+  ppn?: number
+  total_price?: number
   down_payment?: number
   deposit?: number
   deposit_reason?: string
@@ -1268,12 +1292,16 @@ export const tenantsApi = {
     limit?: number
     offset?: number
     status?: number
+    orderBy?: string
+    order?: 'ASC' | 'DESC'
   }): Promise<ApiResponse<TenantPaymentLog[]>> {
     const queryParams = new URLSearchParams()
-    if (params?.limit) queryParams.append('limit', params.limit.toString())
-    if (params?.offset) queryParams.append('offset', params.offset.toString())
+    if (params?.limit != null) queryParams.append('limit', params.limit.toString())
+    if (params?.offset != null) queryParams.append('offset', params.offset.toString())
     if (params?.status !== undefined && params?.status !== null) queryParams.append('status', params.status.toString())
-    
+    if (params?.orderBy) queryParams.append('orderBy', params.orderBy)
+    if (params?.order) queryParams.append('order', params.order)
+
     const endpoint = `/api/tenants/${tenantId}/payments${queryParams.toString() ? `?${queryParams.toString()}` : ''}`
     return apiClient.get<TenantPaymentLog[]>(endpoint)
   },
