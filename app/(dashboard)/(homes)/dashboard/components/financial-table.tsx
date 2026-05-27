@@ -44,6 +44,53 @@ function financialInvoiceDisplayStatus(row: FinancialTableData): 'Overdue' | 'On
   return 'On Process'
 }
 
+function parseLooseDateToMs(value: string | undefined | null): number | null {
+  if (!value) return null
+  const v = value.trim()
+  if (!v || v === '-') return null
+
+  // Try native Date parse first (handles ISO like 2026-05-27)
+  const native = new Date(v)
+  if (!Number.isNaN(native.getTime())) return native.getTime()
+
+  // Fallback: dd/mm/yyyy or dd-mm-yyyy
+  const m = v.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/)
+  if (!m) return null
+  const dd = Number(m[1])
+  const mm = Number(m[2])
+  const yyyy = Number(m[3])
+  if (!dd || !mm || !yyyy) return null
+  const d = new Date(yyyy, mm - 1, dd)
+  return Number.isNaN(d.getTime()) ? null : d.getTime()
+}
+
+function isPastDue(row: FinancialTableData): boolean {
+  const startToday = new Date()
+  startToday.setHours(0, 0, 0, 0)
+  const todayMs = startToday.getTime()
+
+  // Prefer dueDateIso if present
+  if (row.dueDateIso) {
+    const t = new Date(row.dueDateIso).getTime()
+    if (!Number.isNaN(t)) {
+      const d = new Date(t)
+      const dueDayMs = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+      return dueDayMs < todayMs
+    }
+  }
+
+  // Fallback to formatted string "jatuhTempo"
+  const jtMs = parseLooseDateToMs(row.jatuhTempo)
+  if (jtMs != null) {
+    const d = new Date(jtMs)
+    const dueDayMs = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+    return dueDayMs < todayMs
+  }
+
+  // Last resort: keep existing derived logic (may use dueDateIso again)
+  return financialInvoiceDisplayStatus(row) === 'Overdue'
+}
+
 function tenantGroupKey(row: FinancialTableData): string {
   return row.tenantId || `${row.nama}::${row.aset}::${row.unit}`
 }
@@ -167,7 +214,7 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
   }
 
   /** Kolom tabel utama = ringkasan per tenant */
-  const parentColCount = 12
+  const parentColCount = 11
 
   if (loading) {
     return <LoadingSkeleton height="h-64" text="Memuat data financial..." />
@@ -206,17 +253,14 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                 <TableHead className="min-w-[8rem] max-w-[200px] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Unit
                 </TableHead>
-                <TableHead className="min-w-[8rem] max-w-[180px] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
-                  No. invoice
-                </TableHead>
-                <TableHead className="w-[8.5rem] min-w-[8.5rem] shrink-0 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
-                  Tgl. invoice
-                </TableHead>
                 <TableHead className="w-24 whitespace-nowrap text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Jumlah tagihan
                 </TableHead>
                 <TableHead className="w-44 whitespace-nowrap text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Total nilai
+                </TableHead>
+                <TableHead className="w-44 whitespace-nowrap text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  Nilai tunggakan
                 </TableHead>
                 <TableHead className="w-28 whitespace-nowrap text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Aging (maks.)
@@ -245,6 +289,11 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                   const totalNilai = group.logs.some((r) => r.sisaNilai !== undefined)
                     ? (group.logs.find((r) => r.sisaNilai !== undefined)?.sisaNilai ?? 0)
                     : group.logs.reduce((s, r) => s + (Number(r.nilaiInvoice) || 0), 0)
+                  const nilaiTunggakan = group.logs.reduce((sum, r) => {
+                    if (!isPastDue(r)) return sum
+                    // Nilai tunggakan = nilai invoice yang sudah overdue (lewat jatuh tempo)
+                    return sum + (Number(r.nilaiInvoice) || 0)
+                  }, 0)
                   const maxAging = Math.max(0, ...group.logs.map((r) => r.aging || 0))
                   const groupOverdue = group.logs.some((r) => financialInvoiceDisplayStatus(r) === 'Overdue')
                   const groupStatusLabel = groupOverdue ? 'Overdue' : 'On Process'
@@ -292,22 +341,14 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                         <TableCell className="min-w-0 break-words align-middle text-base whitespace-normal text-slate-700">
                           {group.unit}
                         </TableCell>
-                        <TableCell
-                          className="min-w-0 break-words align-middle font-mono text-sm text-slate-800"
-                          title={primaryLog?.nomorInvoice || undefined}
-                        >
-                          {primaryLog?.nomorInvoice?.trim() ? primaryLog.nomorInvoice : '—'}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap align-middle text-sm text-slate-700">
-                          {primaryLog?.tanggalInvoice && primaryLog.tanggalInvoice !== '-'
-                            ? primaryLog.tanggalInvoice
-                            : '—'}
-                        </TableCell>
                         <TableCell className="whitespace-nowrap text-right text-base font-medium tabular-nums text-slate-700">
                           {group.logs.length}
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-right text-base font-bold tabular-nums text-slate-900">
                           {formatInvoiceRupiah(totalNilai)}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right text-base font-bold tabular-nums text-slate-900">
+                          {formatInvoiceRupiah(nilaiTunggakan)}
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-right text-base font-bold tabular-nums">
                           {maxAging > 0 ? (
