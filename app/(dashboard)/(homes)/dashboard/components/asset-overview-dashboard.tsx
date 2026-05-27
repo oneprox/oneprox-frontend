@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
-import { assetsApi, dashboardApi, Asset } from '@/lib/api'
+import { assetsApi, dashboardApi, tenantsApi, Asset } from '@/lib/api'
 import { ChevronRight, Mountain, DraftingCompass, MapPinned, Banknote } from "lucide-react"
 import LoadingSkeleton from "@/components/loading-skeleton"
 import { useSidebar } from '@/components/ui/sidebar'
@@ -141,6 +141,39 @@ interface AssetOverviewDashboardProps {
   onAssetChange?: (assetId: string) => void
 }
 
+function parseLooseNumber(value: unknown): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0
+  if (typeof value === 'string') {
+    const v = value.trim()
+    if (!v) return 0
+    // Support "1.234,56" and "1,234.56" and "1234"
+    const normalized = v
+      .replace(/\s/g, '')
+      .replace(/[^0-9,.\-]/g, '')
+    // If comma is decimal separator (more commas than dots), swap
+    const commaCount = (normalized.match(/,/g) || []).length
+    const dotCount = (normalized.match(/\./g) || []).length
+    let numStr = normalized
+    if (commaCount > 0 && dotCount === 0) {
+      // "1234,56" -> "1234.56"
+      numStr = normalized.replace(',', '.')
+    } else if (commaCount > 0 && dotCount > 0) {
+      // Heuristic: if last comma after last dot, comma is decimal
+      if (normalized.lastIndexOf(',') > normalized.lastIndexOf('.')) {
+        numStr = normalized.replace(/\./g, '').replace(',', '.')
+      } else {
+        numStr = normalized.replace(/,/g, '')
+      }
+    } else {
+      // "1.234" could be thousands separator in id-ID; drop dots
+      numStr = normalized.replace(/\./g, '')
+    }
+    const n = Number(numStr)
+    return Number.isFinite(n) ? n : 0
+  }
+  return 0
+}
+
 export default function AssetOverviewDashboard({ 
   selectedAssetId: propSelectedAssetId, 
   onAssetChange 
@@ -168,6 +201,10 @@ export default function AssetOverviewDashboard({
     totalBuildingArea: 0,
     occupancy: 0,
     averageRate: 0
+  })
+  const [tenantAreaTotals, setTenantAreaTotals] = useState<{ land: number; building: number }>({
+    land: 0,
+    building: 0,
   })
   const [utilizationData, setUtilizationData] = useState<AssetUtilizationData[]>([])
   const [financialData, setFinancialData] = useState<FinancialPerformanceData[]>([])
@@ -234,14 +271,27 @@ export default function AssetOverviewDashboard({
     try {
       setLoading(true)
       const assetParam = selectedAssetId !== 'all' ? selectedAssetId : undefined
-      const response = await dashboardApi.getAssetOverview(assetParam)
+      const [response, tenantRes] = await Promise.all([
+        dashboardApi.getAssetOverview(assetParam),
+        tenantsApi.getTenants({
+          limit: 10000,
+          offset: 0,
+          ...(assetParam ? { asset_id: assetParam } : {}),
+        }),
+      ])
 
       if (response.success && response.data) {
         const responseData = response.data as any
         const data = responseData.data
         console.log('Dashboard Data:', data)
         if (data.overview) {
-          setOverviewData(data.overview)
+          const overview = data.overview as any
+          setOverviewData({
+            totalLandArea: parseLooseNumber(overview.totalLandArea),
+            totalBuildingArea: parseLooseNumber(overview.totalBuildingArea),
+            occupancy: parseLooseNumber(overview.occupancy),
+            averageRate: parseLooseNumber(overview.averageRate),
+          })
         }
         if (data.utilization) {
           setUtilizationData(data.utilization)
@@ -252,6 +302,23 @@ export default function AssetOverviewDashboard({
         if (data.legal) {
           setLegalData(data.legal)
         }
+      }
+
+      // Total lahan & bangunan dihitung dari data tenant (building_area & land_area).
+      if (tenantRes.success && tenantRes.data != null) {
+        const envelope = tenantRes.data as any
+        const tenants = Array.isArray(envelope?.data) ? envelope.data : Array.isArray(envelope) ? envelope : []
+        const totals = tenants.reduce(
+          (acc: { land: number; building: number }, t: any) => {
+            acc.land += parseLooseNumber(t?.land_area)
+            acc.building += parseLooseNumber(t?.building_area)
+            return acc
+          },
+          { land: 0, building: 0 }
+        )
+        setTenantAreaTotals(totals)
+      } else {
+        setTenantAreaTotals({ land: 0, building: 0 })
       }
     } catch (err) {
       console.error('Error loading dashboard data:', err)
@@ -664,7 +731,7 @@ export default function AssetOverviewDashboard({
               <div className="space-y-3">
                 <p className="text-lg font-bold tracking-wide text-white uppercase">Total Lahan</p>
                 <p className="text-5xl font-bold leading-none tracking-tight sm:text-2xl">
-                  {formatAreaNumber(overviewData.totalLandArea)}{' '}
+                  {formatAreaNumber(tenantAreaTotals.land)}{' '}
                   <span className="text-2xl font-semibold text-white/55 sm:text-2xl">m²</span>
                 </p>
               </div>
@@ -684,7 +751,7 @@ export default function AssetOverviewDashboard({
               <div className="space-y-3">
                 <p className="text-lg font-bold tracking-wide text-white uppercase">Luas Bangunan</p>
                 <p className="text-5xl font-bold leading-none tracking-tight sm:text-2xl">
-                  {formatAreaNumber(overviewData.totalBuildingArea)}{' '}
+                  {formatAreaNumber(tenantAreaTotals.building)}{' '}
                   <span className="text-2xl font-semibold text-white/55 sm:text-2xl">m²</span>
                 </p>
               </div>
