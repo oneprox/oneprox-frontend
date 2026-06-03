@@ -1076,9 +1076,16 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
 
       const submitData: any = {
         name: formData.name.trim(),
-        ...(formData.status ? { status: formData.status } : {}),
         tenant_identifications: identificationUrls,
         contract_documents: contractUrls,
+      }
+
+      if (tenant) {
+        if (formData.status) {
+          submitData.status = formData.status
+        }
+      } else {
+        submitData.status = 'active'
       }
 
       // Only include these fields when creating (not editing)
@@ -1815,7 +1822,8 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
               </div>
             </div>
 
-            {/* Status Tenant */}
+            {/* Status Tenant — hanya saat edit; tenant baru selalu aktif */}
+            {tenant && (
             <div className="space-y-2">
               <Label htmlFor="status">Status Tenant *</Label>
               <Select
@@ -1864,6 +1872,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                   </div>
                 )}
             </div>
+            )}
           </div>
 
           {tenant ? (
