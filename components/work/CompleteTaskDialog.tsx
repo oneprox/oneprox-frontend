@@ -313,7 +313,7 @@ export function CompleteTaskDialog({
           stream.getTracks().forEach((track) => track.stop())
           removeOverlayFromBody(modal)
           setIsCameraModalOpen(false)
-          setTimeout(() => unblockDialogs(), 50)
+          setTimeout(() => unblockDialogs?.(), 50)
         }
         
         // Create capture button
