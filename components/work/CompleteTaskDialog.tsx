@@ -7,6 +7,22 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Loader2, Camera } from 'lucide-react'
 import { UserTask, userTasksApi, settingsApi } from '@/lib/api'
+import {
+  compressFilesForCompleteTask,
+  compressImageFile,
+  formatFileSize,
+} from '@/lib/compressImage'
+import {
+  isFileWithinUploadLimit,
+  UPLOAD_MAX_FILE_BYTES,
+  uploadLimitErrorLabel,
+} from '@/lib/uploadLimits'
+import {
+  blockDialogsBelow,
+  createFullscreenOverlay,
+  mountOverlayOnBody,
+  removeOverlayFromBody,
+} from '@/lib/overlayAboveDialog'
 import toast from 'react-hot-toast'
 
 interface CompleteTaskDialogProps {
@@ -208,9 +224,14 @@ export function CompleteTaskDialog({
     })
   }
 
-  const handleFileChange = (field: 'fileBefore' | 'fileAfter' | 'fileScan', file: File | null) => {
+  const handleFileChange = async (field: 'fileBefore' | 'fileAfter' | 'fileScan', file: File | null) => {
     if (file) {
-      setFormData(prev => ({ ...prev, [field]: file }))
+      if (!isFileWithinUploadLimit(file)) {
+        toast.error(uploadLimitErrorLabel(file.name))
+        return
+      }
+      const compressed = await compressImageFile(file)
+      setFormData(prev => ({ ...prev, [field]: compressed }))
       
       // Read and set preview for the new file
       const reader = new FileReader()
@@ -218,7 +239,7 @@ export function CompleteTaskDialog({
         const previewKey = field === 'fileBefore' ? 'before' : field === 'fileAfter' ? 'after' : 'scan'
         setFilePreview(prev => ({ ...prev, [previewKey]: e.target?.result as string }))
       }
-      reader.readAsDataURL(file)
+      reader.readAsDataURL(compressed)
     } else {
       setFormData(prev => {
         const newData = { ...prev }
@@ -235,6 +256,7 @@ export function CompleteTaskDialog({
   }
 
   const captureFromCamera = async (field: 'fileBefore' | 'fileAfter' | 'fileScan') => {
+    let unblockDialogs: (() => void) | null = null
     try {
       // Check if getUserMedia is available
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -252,8 +274,8 @@ export function CompleteTaskDialog({
         return
       }
 
-      // Mark camera modal as open
       setIsCameraModalOpen(true)
+      unblockDialogs = blockDialogsBelow()
 
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { facingMode: 'environment' } // Prefer back camera on mobile
@@ -269,15 +291,11 @@ export function CompleteTaskDialog({
         canvas.width = video.videoWidth
         canvas.height = video.videoHeight
 
-        // Create modal overlay with very high z-index and pointer-events
-        const modal = document.createElement('div')
-        modal.id = 'camera-modal-overlay'
-        modal.style.cssText = 'position: fixed; inset: 0; background-color: rgba(0, 0, 0, 0.9); display: flex; align-items: center; justify-content: center; z-index: 10000; pointer-events: auto;'
-        
-        // Create modal content
+        const modal = createFullscreenOverlay('camera-modal-overlay')
         const modalContent = document.createElement('div')
         modalContent.id = 'camera-modal-content'
-        modalContent.style.cssText = 'background-color: white; padding: 1rem; border-radius: 0.5rem; max-width: 28rem; width: 100%; margin: 1rem; position: relative; z-index: 10001; pointer-events: auto;'
+        modalContent.style.cssText =
+          'background-color: white; padding: 1rem; border-radius: 0.5rem; max-width: 28rem; width: 100%; margin: 1rem; position: relative; z-index: 10001; pointer-events: auto;'
         
         // Create video element
         const previewVideo = document.createElement('video')
@@ -291,64 +309,11 @@ export function CompleteTaskDialog({
         const buttonContainer = document.createElement('div')
         buttonContainer.style.cssText = 'display: flex; gap: 0.5rem; pointer-events: auto;'
         
-        // Disable pointer events on all dialogs below first
-        const existingDialogs = document.querySelectorAll('[data-radix-dialog-content]')
-        const dialogOverlays = document.querySelectorAll('[data-radix-dialog-overlay]')
-        
-        existingDialogs.forEach((dialog: any) => {
-          dialog.style.pointerEvents = 'none'
-        })
-        
-        dialogOverlays.forEach((overlay: any) => {
-          overlay.style.pointerEvents = 'none'
-        })
-        
-        // Prevent Dialog from closing while camera modal is open
-        const preventDialogClose = (e: Event) => {
-          e.preventDefault()
-          e.stopPropagation()
-          e.stopImmediatePropagation()
-        }
-        
-        // Add event listeners to prevent dialog close
-        existingDialogs.forEach((dialog: any) => {
-          dialog.addEventListener('click', preventDialogClose, true)
-          dialog.addEventListener('mousedown', preventDialogClose, true)
-        })
-        
-        dialogOverlays.forEach((overlay: any) => {
-          overlay.addEventListener('click', preventDialogClose, true)
-          overlay.addEventListener('mousedown', preventDialogClose, true)
-        })
-        
-        // Re-enable pointer events and remove listeners when modal is removed
-        const cleanup = () => {
-          existingDialogs.forEach((dialog: any) => {
-            dialog.style.pointerEvents = ''
-            dialog.removeEventListener('click', preventDialogClose, true)
-            dialog.removeEventListener('mousedown', preventDialogClose, true)
-          })
-          
-          dialogOverlays.forEach((overlay: any) => {
-            overlay.style.pointerEvents = ''
-            overlay.removeEventListener('click', preventDialogClose, true)
-            overlay.removeEventListener('mousedown', preventDialogClose, true)
-          })
-        }
-        
-        // Function to close camera modal and re-enable underlying dialog
         const closeModal = () => {
-          stream.getTracks().forEach(track => track.stop())
-          if (document.body.contains(modal)) {
-            document.body.removeChild(modal)
-          }
-          // Mark camera modal as closed
+          stream.getTracks().forEach((track) => track.stop())
+          removeOverlayFromBody(modal)
           setIsCameraModalOpen(false)
-          // Re-enable pointer events on underlying dialog
-          // Use setTimeout to ensure modal removal is complete
-          setTimeout(() => {
-            cleanup()
-          }, 50)
+          setTimeout(() => unblockDialogs(), 50)
         }
         
         // Create capture button
@@ -363,10 +328,10 @@ export function CompleteTaskDialog({
           e.stopPropagation()
           e.stopImmediatePropagation()
           context?.drawImage(previewVideo, 0, 0)
-          canvas.toBlob((blob) => {
+          canvas.toBlob(async (blob) => {
             if (blob) {
-              const file = new File([blob], `capture-${Date.now()}.jpg`, { type: 'image/jpeg' })
-              handleFileChange(field, file)
+              const raw = new File([blob], `capture-${Date.now()}.jpg`, { type: 'image/jpeg' })
+              await handleFileChange(field, raw)
             }
             // Close only the camera modal, keep Complete Task dialog open
             closeModal()
@@ -428,9 +393,11 @@ export function CompleteTaskDialog({
           }
         }, true)
         
-        document.body.appendChild(modal)
+        mountOverlayOnBody(modal)
       })
     } catch (error: any) {
+      setIsCameraModalOpen(false)
+      unblockDialogs?.()
       console.error('Error accessing camera:', error)
       const errorName = error?.name || 'UnknownError'
       let errorMsg = 'Gagal mengakses kamera'
@@ -452,6 +419,16 @@ export function CompleteTaskDialog({
   }
 
   const handleScanBarcode = async () => {
+    let unblockDialogs: (() => void) | null = null
+    let statusUpdateInterval: ReturnType<typeof setInterval> | null = null
+    let scanModal: HTMLDivElement | null = null
+
+    const dismissOverlayOnly = () => {
+      if (scanModal) removeOverlayFromBody(scanModal)
+      setIsCameraModalOpen(false)
+      setTimeout(() => unblockDialogs?.(), 50)
+    }
+
     try {
       // Check if getUserMedia is available
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -473,29 +450,43 @@ export function CompleteTaskDialog({
         return
       }
 
-      // Create modal first
-      const modal = document.createElement('div')
-      modal.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50'
-      modal.innerHTML = `
-        <div class="bg-white p-4 rounded-lg max-w-md w-full">
-          <div id="qr-reader" class="w-full mb-4 rounded"></div>
-          <p id="scan-status" class="text-sm text-center text-gray-600 mb-4">Meminta izin kamera...</p>
-          <div class="flex gap-2">
-            <button id="cancel-scan-btn" class="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded">Batal</button>
-          </div>
-        </div>
-      `
-      document.body.appendChild(modal)
+      setIsCameraModalOpen(true)
+      unblockDialogs = blockDialogsBelow()
 
-      const qrReaderElement = modal.querySelector('#qr-reader') as HTMLDivElement
-      const scanStatus = modal.querySelector('#scan-status') as HTMLParagraphElement
-      const cancelBtn = modal.querySelector('#cancel-scan-btn') as HTMLButtonElement
+      scanModal = createFullscreenOverlay('qr-scan-modal-overlay')
+      const modal = scanModal
+      const modalContent = document.createElement('div')
+      modalContent.style.cssText =
+        'background-color: white; padding: 1rem; border-radius: 0.5rem; max-width: 28rem; width: calc(100% - 2rem); position: relative; z-index: 10001; pointer-events: auto;'
+
+      const qrReaderElement = document.createElement('div')
+      qrReaderElement.id = 'qr-reader'
+      qrReaderElement.className = 'w-full mb-4 rounded'
+
+      const scanStatus = document.createElement('p')
+      scanStatus.id = 'scan-status'
+      scanStatus.className = 'text-sm text-center text-gray-600 mb-4'
+      scanStatus.textContent = 'Meminta izin kamera...'
+
+      const buttonRow = document.createElement('div')
+      buttonRow.className = 'flex gap-2'
+
+      const cancelBtn = document.createElement('button')
+      cancelBtn.id = 'cancel-scan-btn'
+      cancelBtn.type = 'button'
+      cancelBtn.className = 'flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded'
+      cancelBtn.textContent = 'Batal'
+
+      buttonRow.appendChild(cancelBtn)
+      modalContent.appendChild(qrReaderElement)
+      modalContent.appendChild(scanStatus)
+      modalContent.appendChild(buttonRow)
+      modal.appendChild(modalContent)
+      mountOverlayOnBody(modal)
 
       if (!qrReaderElement || !scanStatus) {
         toast.error('Gagal membuat elemen scanner')
-        if (document.body.contains(modal)) {
-          document.body.removeChild(modal)
-        }
+        dismissOverlayOnly()
         return
       }
 
@@ -513,9 +504,7 @@ export function CompleteTaskDialog({
         tempStream = null
       } catch (permissionError: any) {
         const errorName = permissionError?.name || 'UnknownError'
-        if (document.body.contains(modal)) {
-          document.body.removeChild(modal)
-        }
+        dismissOverlayOnly()
         
         if (errorName === 'NotAllowedError' || errorName === 'PermissionDeniedError') {
           toast.error('Izin kamera diperlukan untuk scan barcode. Silakan berikan izin kamera di pengaturan browser.')
@@ -533,21 +522,21 @@ export function CompleteTaskDialog({
       let isScanning = true
       let isStopped = false
 
-      // Helper function to safely stop scanner
-      const safeStopScanner = async () => {
-        if (isStopped) {
-          return
-        }
-        isStopped = true
-        isScanning = false
-        try {
-          await html5QrCode.stop()
-        } catch (err: any) {
-          // Ignore error if scanner is already stopped
-          if (err?.message && err.message.includes('not running')) {
-          } else {
+      const dismissScanOverlay = async (stopScanner = false) => {
+        if (stopScanner && !isStopped) {
+          isStopped = true
+          isScanning = false
+          try {
+            await html5QrCode.stop()
+          } catch {
+            /* scanner may already be stopped */
           }
         }
+        if (statusUpdateInterval) {
+          clearInterval(statusUpdateInterval)
+          statusUpdateInterval = null
+        }
+        dismissOverlayOnly()
       }
 
       // Get camera configuration after permission is granted
@@ -628,11 +617,7 @@ export function CompleteTaskDialog({
             setScannedCode(scannedCodeValue)
             toast.error(`QR Code tidak sesuai! Task ini memerlukan scan code: ${taskScanCode || 'tidak ada'}`)
             
-            // Stop scanner and close modal
-            await safeStopScanner()
-            if (document.body.contains(modal)) {
-              document.body.removeChild(modal)
-            }
+            await dismissScanOverlay(true)
             return
           }
 
@@ -672,52 +657,37 @@ export function CompleteTaskDialog({
           setFormData(prev => ({ ...prev, scanCode: decodedText }))
 
           // Capture screenshot for evidence and close modal
-          setTimeout(() => {
+          setTimeout(async () => {
             const videoElement = qrReaderElement.querySelector('video') as HTMLVideoElement
             if (videoElement && videoElement.videoWidth && videoElement.videoHeight) {
               const canvas = document.createElement('canvas')
               const context = canvas.getContext('2d')
               if (context) {
-                canvas.width = videoElement.videoWidth
-                canvas.height = videoElement.videoHeight
-                context.drawImage(videoElement, 0, 0)
+                const maxDim = 1280
+                let w = videoElement.videoWidth
+                let h = videoElement.videoHeight
+                const scale = Math.min(maxDim / w, maxDim / h, 1)
+                w = Math.max(1, Math.round(w * scale))
+                h = Math.max(1, Math.round(h * scale))
+                canvas.width = w
+                canvas.height = h
+                context.drawImage(videoElement, 0, 0, w, h)
                 
-                canvas.toBlob((blob) => {
-                  if (blob) {
-                    console.log('[SCAN] Image captured:', {
-                      size: blob.size,
-                      type: blob.type
-                    })
-                    const file = new File([blob], `scan-${Date.now()}.jpg`, { type: 'image/jpeg' })
-                    setFormData(prev => ({ ...prev, fileScan: file, scanCode: decodedText }))
-                    handleFileChange('fileScan', file)
-                  }
-                  // Stop scanner and close modal after screenshot is captured
-                  safeStopScanner().then(() => {
-                    if (document.body.contains(modal)) {
-                      document.body.removeChild(modal)
+                await new Promise<void>((resolve) => {
+                  canvas.toBlob(async (blob) => {
+                    if (blob) {
+                      const raw = new File([blob], `scan-${Date.now()}.jpg`, { type: 'image/jpeg' })
+                      const file = await compressImageFile(raw, { maxBytes: UPLOAD_MAX_FILE_BYTES })
+                      setFormData(prev => ({ ...prev, fileScan: file, scanCode: decodedText }))
+                      await handleFileChange('fileScan', file)
                     }
-                    toast.success('QR Code berhasil di-scan!')
-                  })
-                }, 'image/jpeg', 0.9)
-              } else {
-                // If canvas context is not available, stop scanner and close modal immediately
-                safeStopScanner().then(() => {
-                  if (document.body.contains(modal)) {
-                    document.body.removeChild(modal)
-                  }
-                  toast.success('QR Code berhasil di-scan!')
+                    resolve()
+                  }, 'image/jpeg', 0.9)
                 })
               }
-            } else {
-              // If video element is not available, stop scanner and close modal immediately
-              safeStopScanner().then(() => {
-                if (document.body.contains(modal)) {
-                  document.body.removeChild(modal)
-                }
-                toast.success('QR Code berhasil di-scan!')
-              })
             }
+            await dismissScanOverlay(true)
+            toast.success('QR Code berhasil di-scan!')
           }, 100)
         }
       }
@@ -814,15 +784,12 @@ export function CompleteTaskDialog({
           }
           
           toast.error(errorMsg)
-          if (document.body.contains(modal)) {
-            document.body.removeChild(modal)
-          }
+          await dismissScanOverlay(true)
           return
         }
       }
 
-      // Update status periodically
-      let statusUpdateInterval = setInterval(() => {
+      statusUpdateInterval = setInterval(() => {
         if (isScanning) {
           const elapsed = Math.floor(Date.now() / 1000) % 60
           scanStatus.textContent = `Mencari QR code... (${elapsed}s)`
@@ -830,16 +797,13 @@ export function CompleteTaskDialog({
       }, 1000)
 
       cancelBtn.onclick = async () => {
-        isScanning = false
-        clearInterval(statusUpdateInterval)
-        
-        await safeStopScanner()
-        
-        if (document.body.contains(modal)) {
-          document.body.removeChild(modal)
-        }
+        await dismissScanOverlay(true)
       }
     } catch (error: any) {
+      setIsCameraModalOpen(false)
+      unblockDialogs?.()
+      const modalEl = document.getElementById('qr-scan-modal-overlay')
+      if (modalEl) removeOverlayFromBody(modalEl)
       console.error('[SCAN] Unexpected error in handleScanBarcode:', error)
       const errorMessage = error?.message || error?.toString() || 'Unknown error'
       const errorName = error?.name || 'UnknownError'
@@ -946,35 +910,50 @@ export function CompleteTaskDialog({
       }
 
       // Check if we need to upload files
-      const hasFiles = formData.fileBefore || formData.fileAfter || formData.fileScan
+      const staged: { file: File; field: 'before' | 'after' | 'scan' }[] = []
+      if (formData.fileBefore) staged.push({ file: formData.fileBefore, field: 'before' })
+      if (formData.fileAfter) staged.push({ file: formData.fileAfter, field: 'after' })
+      if (task.is_scan && formData.fileScan) {
+        staged.push({ file: formData.fileScan, field: 'scan' })
+      }
 
-      if (hasFiles) {
-        const formDataToSend = new FormData()
-        if (formData.remark) {
-          formDataToSend.append('notes', formData.remark)
-        }
-        if (formData.fileBefore) {
-          formDataToSend.append('file_before', formData.fileBefore)
-        }
-        if (formData.fileAfter) {
-          formDataToSend.append('file_after', formData.fileAfter)
-        }
-        if (formData.fileScan) {
-          formDataToSend.append('file_scan', formData.fileScan)
-        }
-        if (formData.scanCode) {
-          formDataToSend.append('scan_code', formData.scanCode)
+      if (staged.length > 0) {
+        const compressed = await compressFilesForCompleteTask(staged)
+        const evidences: { url: string; type: string }[] = []
+
+        for (const item of compressed) {
+          const uploadRes = await userTasksApi.uploadUserTaskEvidenceFile(item.file)
+          if (!uploadRes.success) {
+            throw new Error(
+              uploadRes.error ||
+                `Gagal upload ${item.field} (${formatFileSize(item.file.size)})`
+            )
+          }
+          const payload = uploadRes.data as { url?: string | string[] } | undefined
+          const url = Array.isArray(payload?.url)
+            ? payload.url[0]
+            : typeof payload?.url === 'string'
+              ? payload.url
+              : null
+          if (!url) {
+            throw new Error(`Upload ${item.field} tidak mengembalikan URL file`)
+          }
+          evidences.push({
+            url,
+            type: item.field === 'scan' ? 'after' : item.field,
+          })
         }
 
-        const response = await userTasksApi.completeUserTaskWithFiles(Number(userTaskId), formDataToSend)
+        const response = await userTasksApi.completeUserTask(Number(userTaskId), {
+          notes: formData.remark || undefined,
+          evidences,
+        })
 
         if (response.success) {
           toast.success('Task berhasil diselesaikan')
           onOpenChange(false)
           resetForm()
           onComplete()
-          
-          // Check if this is a child task and auto-complete parent if all children are done
           await checkAndCompleteParentTask(userTask)
         } else {
           throw new Error(response.error || 'Gagal menyelesaikan task')
@@ -999,7 +978,12 @@ export function CompleteTaskDialog({
       }
     } catch (error: any) {
       console.error('Error completing task:', error)
-      toast.error(error.message || 'Terjadi kesalahan saat menyelesaikan task')
+      const msg = String(error?.message || '')
+      if (msg.includes('413') || msg.toLowerCase().includes('too large') || msg.toLowerCase().includes('melebihi')) {
+        toast.error('Ukuran foto terlalu besar. Coba ambil ulang foto atau kurangi jumlah lampiran.')
+      } else {
+        toast.error(error.message || 'Terjadi kesalahan saat menyelesaikan task')
+      }
     } finally {
       setIsSubmitting(false)
     }

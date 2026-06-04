@@ -150,6 +150,17 @@ export class ApiClient {
           }
         }
         
+        if (response.status === 413) {
+          return {
+            success: false,
+            error:
+              data.message ||
+              data.error ||
+              'Ukuran upload terlalu besar. Perkecil foto lalu coba lagi.',
+            message: data.message,
+          }
+        }
+
         return {
           success: false,
           error: data.message || data.error || `HTTP ${response.status}`,
@@ -2043,10 +2054,23 @@ export const userTasksApi = {
     return apiClient.put<UserTask>(`/api/user-tasks/${id}/start`)
   },
 
-  async completeUserTask(id: number, data?: { notes?: string }): Promise<ApiResponse<UserTask>> {
+  async uploadUserTaskEvidenceFile(file: File): Promise<ApiResponse<{ url: string[] }>> {
+    const formData = new FormData()
+    formData.append('file', file)
+    return apiClient.post<{ url: string[] }>('/api/uploads/user-task-evidence', formData)
+  },
+
+  async completeUserTask(
+    id: number,
+    data?: {
+      notes?: string
+      evidences?: { url: string; type?: 'before' | 'after' | string }[]
+    }
+  ): Promise<ApiResponse<UserTask>> {
     return apiClient.put<UserTask>(`/api/user-tasks/${id}/complete`, data)
   },
 
+  /** @deprecated Prefer upload per file + completeUserTask dengan evidences (hindari 413) */
   async completeUserTaskWithFiles(id: number, formData: FormData): Promise<ApiResponse<UserTask>> {
     return apiClient.putFormData<UserTask>(`/api/user-tasks/${id}/complete`, formData)
   },

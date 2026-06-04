@@ -165,10 +165,10 @@ export default function ComplaintReportEditDialog({
         return
       }
 
-      // Validate file size (max 10MB)
-      const maxSize = 10 * 1024 * 1024 // 10MB
+      // Validate file size (max 8MB)
+      const maxSize = 8 * 1024 * 1024 // 8MB
       if (file.size > maxSize) {
-        toast.error('File size must be less than 10MB')
+        toast.error('Ukuran file maksimal 8MB')
         return
       }
 

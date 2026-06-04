@@ -1246,10 +1246,10 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
         return
       }
 
-      // Validasi ukuran file (max 10MB)
-      const maxSize = 10 * 1024 * 1024 // 10MB
+      // Validasi ukuran file (max 8MB)
+      const maxSize = 8 * 1024 * 1024 // 8MB
       if (file.size > maxSize) {
-        toast.error('Ukuran file maksimal 10MB')
+        toast.error('Ukuran file maksimal 8MB')
         return
       }
 
@@ -3793,10 +3793,10 @@ function LegalForm({
         return
       }
 
-      // Validasi ukuran file (max 10MB)
-      const maxSize = 10 * 1024 * 1024 // 10MB
+      // Validasi ukuran file (max 8MB)
+      const maxSize = 8 * 1024 * 1024 // 8MB
       if (file.size > maxSize) {
-        toast.error('Ukuran file maksimal 10MB')
+        toast.error('Ukuran file maksimal 8MB')
         return
       }
 

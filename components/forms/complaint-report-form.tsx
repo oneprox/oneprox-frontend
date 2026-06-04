@@ -188,12 +188,12 @@ export default function ComplaintReportForm({ onSubmit, onCancel, loading = fals
         return
       }
 
-      // Validate file size (max 10MB per file)
-      const maxSize = 10 * 1024 * 1024 // 10MB
+      // Validate file size (max 8MB per file)
+      const maxSize = 8 * 1024 * 1024 // 8MB
       const oversizedFiles = files.filter(file => file.size > maxSize)
       
       if (oversizedFiles.length > 0) {
-        toast.error('File size must be less than 10MB')
+        toast.error('Ukuran file maksimal 8MB')
         return
       }
 
