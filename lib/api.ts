@@ -161,10 +161,17 @@ export class ApiClient {
           }
         }
 
+        const apiError =
+          data.message ||
+          (typeof data.error === 'string'
+            ? data.error
+            : data.error?.message) ||
+          `HTTP ${response.status}`
+
         return {
           success: false,
-          error: data.message || data.error || `HTTP ${response.status}`,
-          message: data.message,
+          error: apiError,
+          message: data.message || apiError,
         }
       }
 

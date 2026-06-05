@@ -22,7 +22,7 @@ export default function CreateTenantPage() {
         toast.success('Tenant berhasil dibuat')
         router.push('/tenants')
       } else {
-        toast.error(response.error || 'Gagal membuat tenant')
+        toast.error(response.error || response.message || 'Gagal membuat tenant', { duration: 8000 })
       }
     } catch (error) {
       console.error('Create tenant error:', error)

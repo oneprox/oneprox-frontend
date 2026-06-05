@@ -118,7 +118,13 @@ function getUnitStatusLabel(status: string | number | undefined): string {
   return labels[String(status).toLowerCase()] ?? String(status)
 }
 
-/** Peringatan sebelum aktivasi: unit harus available. */
+function isTenantStatusActive(status: string | number | undefined): boolean {
+  if (status === undefined || status === null) return false
+  const s = String(status).toLowerCase()
+  return s === '1' || s === 'active'
+}
+
+/** Peringatan sebelum aktivasi: unit harus available/reserved (bukan occupied tenant lain). */
 function collectActiveActivationUnitIssues(
   status: string,
   tenant: Tenant | undefined,
@@ -126,19 +132,24 @@ function collectActiveActivationUnitIssues(
   unitsList: { id: string; name?: string; status?: string | number }[]
 ): string[] {
   if (status !== 'active') return []
+
+  // Tenant sudah aktif: unit occupied miliknya wajar; hanya cek unit baru yang ditambahkan
+  const idsToCheck =
+    tenant && isTenantStatusActive(tenant.status)
+      ? unitIds.filter(
+          (id) => !(tenant.units || []).filter(Boolean).some((u) => u.id === id)
+        )
+      : unitIds.length > 0
+        ? unitIds
+        : (tenant?.units || []).filter(Boolean).map((u) => u.id)
+
   const issues: string[] = []
-  if (tenant?.units?.length) {
-    for (const u of tenant.units) {
-      if (!isUnitStatusActivatable(u.status)) {
-        issues.push(`${u.name || u.id} (status: ${getUnitStatusLabel(u.status)})`)
-      }
-    }
-  } else if (unitIds.length > 0) {
-    for (const id of unitIds) {
-      const u = unitsList.find((x) => x.id === id)
-      if (u && !isUnitStatusActivatable(u.status)) {
-        issues.push(`${u.name || id} (status: ${getUnitStatusLabel(u.status)})`)
-      }
+  for (const id of idsToCheck) {
+    const fromList = unitsList.find((x) => x.id === id)
+    const fromTenant = (tenant?.units || []).find((u) => u?.id === id)
+    const u = fromList ?? fromTenant
+    if (u && !isUnitStatusActivatable(u.status)) {
+      issues.push(`${u.name || id} (status: ${getUnitStatusLabel(u.status)})`)
     }
   }
   return issues
@@ -474,7 +485,10 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
       // Extract unit IDs from units array or unit_ids
       let unitIds: string[] = []
       if (tenant.units && Array.isArray(tenant.units) && tenant.units.length > 0) {
-        unitIds = tenant.units.map(unit => unit.id).filter(id => id != null)
+        unitIds = tenant.units
+          .filter((unit): unit is NonNullable<typeof unit> => unit != null)
+          .map(unit => unit.id)
+          .filter(id => id != null)
       } else if (tenant.unit_ids) {
         // If unit_ids is array, use it; if string, convert to array
         unitIds = Array.isArray(tenant.unit_ids) ? tenant.unit_ids : [tenant.unit_ids]

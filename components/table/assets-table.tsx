@@ -79,7 +79,7 @@ export default function AssetsTable({
         toast.success('Asset berhasil dihapus')
         onRefresh()
       } else {
-        toast.error(response.error || 'Gagal menghapus asset')
+        toast.error(response.error || response.message || 'Gagal menghapus asset', { duration: 8000 })
       }
     } catch (error) {
       console.error('Delete asset error:', error)

@@ -79,7 +79,7 @@ export default function UnitsTable({
         toast.success('Unit berhasil dihapus')
         onRefresh()
       } else {
-        toast.error(response.error || 'Gagal menghapus unit')
+        toast.error(response.error || response.message || 'Gagal menghapus unit', { duration: 8000 })
       }
     } catch (error) {
       console.error('Delete unit error:', error)

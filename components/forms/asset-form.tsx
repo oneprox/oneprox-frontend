@@ -277,7 +277,7 @@ export default function AssetForm({ asset, onSubmit, onCancel, loading = false }
         toast.success('Unit berhasil dihapus')
         loadUnits()
       } else {
-        toast.error(response.error || 'Gagal menghapus unit')
+        toast.error(response.error || response.message || 'Gagal menghapus unit', { duration: 8000 })
       }
     } catch (error) {
       console.error('Delete unit error:', error)
