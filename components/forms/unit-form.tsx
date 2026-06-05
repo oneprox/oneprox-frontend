@@ -1,7 +1,16 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Unit, CreateUnitData, UpdateUnitData, assetsApi, Asset } from '@/lib/api'
+import {
+  Unit,
+  CreateUnitData,
+  UpdateUnitData,
+  assetsApi,
+  Asset,
+  UNIT_STATUS_OPTIONS,
+  normalizeUnitStatus,
+  UnitStatus,
+} from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -31,6 +40,7 @@ export default function UnitForm({ unit, onSubmit, loading = false, assetId }: U
     size: '',
     building_area: '',
     description: '',
+    status: 'available' as UnitStatus,
   })
   const [assets, setAssets] = useState<Asset[]>([])
   const [assetsLoading, setAssetsLoading] = useState(true)
@@ -74,6 +84,7 @@ export default function UnitForm({ unit, onSubmit, loading = false, assetId }: U
         size: unit.size?.toString() || '',
         building_area: unit.building_area?.toString() || '',
         description: unit.description || '',
+        status: normalizeUnitStatus(unit.status) ?? 'available',
       })
     } else if (assetId) {
       // Reset form when creating new unit with assetId
@@ -83,6 +94,7 @@ export default function UnitForm({ unit, onSubmit, loading = false, assetId }: U
         size: '',
         building_area: '',
         description: '',
+        status: 'available',
       })
     }
   }, [unit, assetId])
@@ -143,6 +155,7 @@ export default function UnitForm({ unit, onSubmit, loading = false, assetId }: U
       size: parseFloat(formData.size),
       building_area: parseFloat(formData.building_area),
       description: formData.description.trim() || undefined,
+      status: formData.status,
     }
 
     await onSubmit(submitData)
@@ -235,6 +248,33 @@ export default function UnitForm({ unit, onSubmit, loading = false, assetId }: U
               />
               {errors.building_area && (
                 <p className="text-sm text-red-500">{errors.building_area}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="status">Status Unit *</Label>
+              <Select
+                value={formData.status}
+                onValueChange={(value) => handleInputChange('status', value)}
+              >
+                <SelectTrigger className={`w-full ${errors.status ? 'border-red-500' : ''}`}>
+                  <SelectValue placeholder="Pilih status unit" />
+                </SelectTrigger>
+                <SelectContent>
+                  {UNIT_STATUS_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.status && (
+                <p className="text-sm text-red-500">{errors.status}</p>
+              )}
+              {unit && formData.status === 'available' && normalizeUnitStatus(unit.status) === 'occupied' && (
+                <p className="text-sm text-amber-700">
+                  Ubah ke Tersedia jika tenant sudah tidak aktif tetapi unit masih terisi.
+                </p>
               )}
             </div>
 

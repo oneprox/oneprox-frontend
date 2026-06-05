@@ -1056,6 +1056,59 @@ export interface Unit {
   asset?: Asset
 }
 
+export type UnitStatus =
+  | 'available'
+  | 'occupied'
+  | 'maintenance'
+  | 'reserved'
+  | 'inactive'
+  | 'out_of_order'
+
+export const UNIT_STATUS_LABELS: Record<UnitStatus, string> = {
+  available: 'Tersedia',
+  occupied: 'Terisi',
+  maintenance: 'Perawatan',
+  reserved: 'Dipesan',
+  inactive: 'Tidak Aktif',
+  out_of_order: 'Tidak Beroperasi',
+}
+
+const UNIT_STATUS_INT_TO_VALUE: Record<number, UnitStatus> = {
+  0: 'available',
+  1: 'occupied',
+  2: 'maintenance',
+  3: 'reserved',
+  4: 'inactive',
+  5: 'out_of_order',
+}
+
+/** Normalisasi status unit dari angka (0–5) atau string ke nilai form/tampilan */
+export function normalizeUnitStatus(
+  status: string | number | null | undefined
+): UnitStatus | undefined {
+  if (status === undefined || status === null || status === '') return undefined
+
+  const asNumber = typeof status === 'number' ? status : parseInt(String(status), 10)
+  if (!Number.isNaN(asNumber) && UNIT_STATUS_INT_TO_VALUE[asNumber] !== undefined) {
+    const raw = String(status).trim()
+    if (typeof status === 'number' || /^\d+$/.test(raw)) {
+      return UNIT_STATUS_INT_TO_VALUE[asNumber]
+    }
+  }
+
+  const s = String(status).toLowerCase() as UnitStatus
+  return UNIT_STATUS_LABELS[s] !== undefined ? s : undefined
+}
+
+export const UNIT_STATUS_OPTIONS: { value: UnitStatus; label: string }[] = [
+  { value: 'available', label: UNIT_STATUS_LABELS.available },
+  { value: 'occupied', label: UNIT_STATUS_LABELS.occupied },
+  { value: 'maintenance', label: UNIT_STATUS_LABELS.maintenance },
+  { value: 'reserved', label: UNIT_STATUS_LABELS.reserved },
+  { value: 'inactive', label: UNIT_STATUS_LABELS.inactive },
+  { value: 'out_of_order', label: UNIT_STATUS_LABELS.out_of_order },
+]
+
 export interface CreateUnitData {
   name: string
   asset_id: string
@@ -1068,6 +1121,7 @@ export interface CreateUnitData {
   electrical_unit?: string
   is_toilet_exist?: boolean
   description?: string
+  status?: UnitStatus
 }
 
 export interface UpdateUnitData {
@@ -1081,6 +1135,7 @@ export interface UpdateUnitData {
   electrical_unit?: string
   is_toilet_exist?: boolean
   description?: string
+  status?: UnitStatus
 }
 
 // Units-specific API functions
