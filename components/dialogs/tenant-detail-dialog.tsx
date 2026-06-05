@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Tenant, DURATION_UNIT_LABELS, DURATION_UNITS, TenantDepositLog, TenantPaymentLog, tenantsApi, UpdateTenantPaymentData, CreateTenantPaymentData } from '@/lib/api'
+import { Tenant, DURATION_UNIT_LABELS, DURATION_UNITS, TenantDepositLog, TenantPaymentLog, tenantsApi, UpdateTenantPaymentData, CreateTenantPaymentData, normalizeTenantStatus, TENANT_STATUS_LABELS } from '@/lib/api'
 import { formatBillingRatePercent } from '@/lib/billing-rate'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -310,22 +310,23 @@ export default function TenantDetailDialog({
     })
   }
 
-  const getTenantStatus = (status: string) => {
-    switch (status) {
+  const getTenantStatus = (status: string | number | null | undefined) => {
+    const normalized = normalizeTenantStatus(status)
+    switch (normalized) {
       case 'inactive':
-        return { label: 'Tidak Aktif', variant: 'secondary' as const }
+        return { label: TENANT_STATUS_LABELS.inactive, variant: 'secondary' as const }
       case 'active':
-        return { label: 'Aktif', variant: 'default' as const }
+        return { label: TENANT_STATUS_LABELS.active, variant: 'default' as const }
       case 'pending':
-        return { label: 'Pending', variant: 'outline' as const }
+        return { label: TENANT_STATUS_LABELS.pending, variant: 'outline' as const }
       case 'expired':
-        return { label: 'Expired', variant: 'destructive' as const }
+        return { label: TENANT_STATUS_LABELS.expired, variant: 'destructive' as const }
       case 'terminated':
-        return { label: 'Terminated', variant: 'destructive' as const }
+        return { label: TENANT_STATUS_LABELS.terminated, variant: 'destructive' as const }
       case 'blacklisted':
-        return { label: 'Blacklisted', variant: 'destructive' as const }
+        return { label: TENANT_STATUS_LABELS.blacklisted, variant: 'destructive' as const }
       default:
-        return { label: 'Unknown', variant: 'secondary' as const }
+        return { label: 'Tidak Diketahui', variant: 'secondary' as const }
     }
   }
 
@@ -811,9 +812,9 @@ export default function TenantDetailDialog({
                               {(() => {
                                 // Use status from database if available, otherwise calculate based on contract_end_at
                                 let tenantStatus: string;
-                                if (tenant.status) {
-                                  // Use status from database
-                                  tenantStatus = tenant.status;
+                                const normalizedStatus = normalizeTenantStatus(tenant.status);
+                                if (normalizedStatus) {
+                                  tenantStatus = normalizedStatus;
                                 } else {
                                   // Fallback: Calculate tenant status based on contract_end_at
                                   const today = new Date()

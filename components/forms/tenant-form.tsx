@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Tenant, CreateTenantData, UpdateTenantData, usersApi, unitsApi, tenantsApi, rolesApi, assetsApi, User, Unit, Asset, DURATION_UNITS, DURATION_UNIT_LABELS, TenantPaymentLog, CreateTenantPaymentData, UpdateTenantPaymentData, TenantLegal, CreateTenantLegalData, UpdateTenantLegalData, settingsApi, Setting } from '@/lib/api'
+import { Tenant, CreateTenantData, UpdateTenantData, usersApi, unitsApi, tenantsApi, rolesApi, assetsApi, User, Unit, Asset, DURATION_UNITS, DURATION_UNIT_LABELS, TenantPaymentLog, CreateTenantPaymentData, UpdateTenantPaymentData, TenantLegal, CreateTenantLegalData, UpdateTenantLegalData, settingsApi, Setting, normalizeTenantStatus } from '@/lib/api'
 import {
   formatBillingRatePercent,
   storedRateToPercentInput,
@@ -119,9 +119,7 @@ function getUnitStatusLabel(status: string | number | undefined): string {
 }
 
 function isTenantStatusActive(status: string | number | undefined): boolean {
-  if (status === undefined || status === null) return false
-  const s = String(status).toLowerCase()
-  return s === '1' || s === 'active'
+  return normalizeTenantStatus(status) === 'active'
 }
 
 /** Peringatan sebelum aktivasi: unit harus available/reserved (bukan occupied tenant lain). */
@@ -479,6 +477,49 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
     loadData()
   }, [tenant?.id])
 
+  const lastSyncedUnitIdsRef = useRef('')
+
+  const resolveUnitById = useCallback(
+    (unitId: string): Unit | undefined => {
+      return (
+        units.find((u) => u.id === unitId) ??
+        tenant?.units?.find((u) => u?.id === unitId)
+      )
+    },
+    [units, tenant?.units]
+  )
+
+  const calculateAreasFromUnits = useCallback(
+    (unitIds: string[]) => {
+      let building_area = 0
+      let land_area = 0
+      for (const id of unitIds) {
+        const unit = resolveUnitById(id)
+        if (!unit) continue
+        building_area += Number(unit.building_area) || 0
+        land_area += Number(unit.size) || 0
+      }
+      return { building_area, land_area }
+    },
+    [resolveUnitById]
+  )
+
+  useEffect(() => {
+    if (formData.building_type !== 'unit' || formData.unit_ids.length === 0 || unitsLoading) {
+      return
+    }
+    const key = [...formData.unit_ids].sort().join(',')
+    if (lastSyncedUnitIdsRef.current === key) return
+
+    const totals = calculateAreasFromUnits(formData.unit_ids)
+    lastSyncedUnitIdsRef.current = key
+    setFormData((prev) => ({
+      ...prev,
+      building_area: totals.building_area,
+      land_area: totals.land_area,
+    }))
+  }, [formData.building_type, formData.unit_ids, unitsLoading, calculateAreasFromUnits])
+
   // Initialize form data when tenant prop changes
   useEffect(() => {
     if (tenant) {
@@ -517,18 +558,13 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
         assetIds = Array.isArray(assetId) ? assetId : [assetId]
       } else if ((tenant as any).asset_ids) {
         buildingType = 'asset'
-        assetIds = Array.isArray((tenant as any).asset_ids) ? (tenant as any).asset_ids : [(tenant as any).asset_ids]
+        assetIds = Array.isArray((tenant as any).asset_ids)
+          ? (tenant as any).asset_ids
+          : [(tenant as any).asset_ids]
       }
       
       
-      // Convert status: backend returns string ('inactive', 'active', 'pending', etc.)
-      let statusValue = 'active' // default
-      if (tenant.status !== undefined && tenant.status !== null) {
-        const statusStr = String(tenant.status).toLowerCase()
-        // Check if status matches any STATUS_OPTIONS value
-        const validStatus = STATUS_OPTIONS.find(opt => opt.value.toLowerCase() === statusStr)
-        statusValue = validStatus ? validStatus.value : 'active'
-      }
+      const statusValue = normalizeTenantStatus(tenant.status) ?? 'active'
 
       setFormData({
         name: tenant.name || '',
@@ -569,8 +605,8 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
       setExistingIdentificationUrls(tenant.tenant_identifications || [])
       setExistingContractUrls(tenant.contract_documents || [])
       
-      // Set user selection type to existing when editing
       setUserSelectionType('existing')
+      lastSyncedUnitIdsRef.current = ''
     }
   }, [tenant])
 
@@ -929,7 +965,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
       newErrors.name = 'Nama tenant harus diisi'
     }
 
-    if (userSelectionType === 'existing') {
+    if (tenant || userSelectionType === 'existing') {
       if (!formData.user_id) {
         newErrors.user_id = 'User harus dipilih'
       }
@@ -973,6 +1009,12 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
       newErrors.rent_price = 'Harga sewa harus diisi dan lebih dari 0'
     }
 
+    if (formData.building_type === 'unit' && formData.unit_ids.length === 0) {
+      newErrors.unit_ids = 'Minimal satu unit harus dipilih'
+    }
+    if (formData.building_type === 'asset' && formData.asset_ids.length === 0) {
+      newErrors.asset_ids = 'Minimal satu asset harus dipilih'
+    }
 
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
@@ -1009,7 +1051,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
     try {
       let createdUserId: string | null = null
       // Jika mode user baru, buat user terlebih dahulu
-      if (userSelectionType === 'new' && !formData.user_id) {
+      if (!tenant && userSelectionType === 'new' && !formData.user_id) {
         // Ensure role_id is set (default to tenant role)
         let roleIdToUse = newUserData.role_id
         if (!roleIdToUse && roles.length > 0) {
@@ -1071,7 +1113,10 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
         contractUrls = [...existingContractUrls, ...newContractUrls]
       }
 
-      const effectiveUserId = userSelectionType === 'new' ? (createdUserId || formData.user_id) : formData.user_id
+      const effectiveUserId =
+        !tenant && userSelectionType === 'new'
+          ? (createdUserId || formData.user_id)
+          : formData.user_id
 
       // Validasi user_id sebelum submit
       if (!effectiveUserId || effectiveUserId === '') {
@@ -1102,45 +1147,28 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
         submitData.status = 'active'
       }
 
-      // Only include these fields when creating (not editing)
-      if (!tenant) {
-        submitData.user_id = effectiveUserId
-        submitData.contract_begin_at = formData.contract_begin_at
-        submitData.contract_end_at = formData.contract_end_at
-        submitData.building_type = formData.building_type
-        if (formData.building_type === 'unit') {
-          submitData.unit_ids = formData.unit_ids
-        } else if (formData.building_type === 'asset') {
-          submitData.asset_ids = formData.asset_ids
-        }
-        submitData.category = formData.category.trim()
-        if (formData.sub_category && formData.sub_category.trim()) {
-          submitData.sub_category = formData.sub_category.trim()
-        }
-        submitData.rent_price = formData.rent_price
-        submitData.ppn = formData.ppn ?? 0
-        submitData.total_price = (formData.rent_price || 0) + (formData.ppn ?? 0)
-        if (paymentTermValue !== undefined) {
-          submitData.payment_term = paymentTermValue
-        }
-        submitData.building_area = formData.building_area || undefined
-        submitData.land_area = formData.land_area || undefined
-        submitData.electricity_power = formData.electricity_power || undefined
-      } else {
-        // For update, include these fields if they have values
-        if (formData.building_area > 0) {
-          submitData.building_area = formData.building_area
-        }
-        if (formData.land_area > 0) {
-          submitData.land_area = formData.land_area
-        }
-        if (formData.electricity_power > 0) {
-          submitData.electricity_power = formData.electricity_power
-        }
-        submitData.ppn = formData.ppn ?? 0
-        submitData.total_price =
-          (tenant?.rent_price ?? formData.rent_price ?? 0) + (formData.ppn ?? 0)
+      submitData.user_id = effectiveUserId
+      submitData.contract_begin_at = formData.contract_begin_at
+      submitData.contract_end_at = formData.contract_end_at
+      submitData.building_type = formData.building_type
+      if (formData.building_type === 'unit') {
+        submitData.unit_ids = formData.unit_ids
+      } else if (formData.building_type === 'asset') {
+        submitData.asset_ids = formData.asset_ids
       }
+      submitData.category = formData.category.trim()
+      if (formData.sub_category && formData.sub_category.trim()) {
+        submitData.sub_category = formData.sub_category.trim()
+      }
+      submitData.rent_price = formData.rent_price
+      submitData.ppn = formData.ppn ?? 0
+      submitData.total_price = (formData.rent_price || 0) + (formData.ppn ?? 0)
+      if (paymentTermValue !== undefined) {
+        submitData.payment_term = paymentTermValue
+      }
+      submitData.building_area = formData.building_area || undefined
+      submitData.land_area = formData.land_area || undefined
+      submitData.electricity_power = formData.electricity_power || undefined
 
       // Validate that URLs are arrays of strings
       if (!Array.isArray(identificationUrls)) {
@@ -1289,6 +1317,20 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
     }
   }
 
+  const removeExistingFile = (index: number, type: 'identification' | 'contract') => {
+    if (type === 'identification') {
+      setExistingIdentificationUrls((prev) => prev.filter((_, i) => i !== index))
+      if (errors.identificationFiles) {
+        setErrors((prev) => ({ ...prev, identificationFiles: '' }))
+      }
+    } else {
+      setExistingContractUrls((prev) => prev.filter((_, i) => i !== index))
+      if (errors.contractFiles) {
+        setErrors((prev) => ({ ...prev, contractFiles: '' }))
+      }
+    }
+  }
+
   const getFileIcon = (file: File | string) => {
     const fileName = typeof file === 'string' ? file : file.name
     const extension = fileName.split('.').pop()?.toLowerCase()
@@ -1353,9 +1395,24 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
   const toggleUnit = (unitId: string) => {
     const currentIds = formData.unit_ids || []
     const newIds = currentIds.includes(unitId)
-      ? currentIds.filter(id => id !== unitId)
+      ? currentIds.filter((id) => id !== unitId)
       : [...currentIds, unitId]
-    handleInputChange('unit_ids', newIds)
+
+    const totals =
+      newIds.length > 0
+        ? calculateAreasFromUnits(newIds)
+        : { building_area: 0, land_area: 0 }
+
+    lastSyncedUnitIdsRef.current = [...newIds].sort().join(',')
+    setFormData((prev) => ({
+      ...prev,
+      unit_ids: newIds,
+      building_area: totals.building_area,
+      land_area: totals.land_area,
+    }))
+    if (errors.unit_ids) {
+      setErrors((prev) => ({ ...prev, unit_ids: '' }))
+    }
   }
 
   const toggleAsset = (assetId: string) => {
@@ -1602,17 +1659,6 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                 </RadioGroup>
               </div>
             )}
-            {tenant && (
-              <div className="space-y-2">
-                <Label>User</Label>
-                <div className="p-3 bg-gray-50 border rounded-md">
-                  <p className="font-medium">{tenant.user?.name || 'N/A'}</p>
-                  <p className="text-sm text-muted-foreground">{tenant.user?.email || ''}</p>
-                </div>
-                <p className="text-xs text-muted-foreground">User tidak dapat diubah saat edit tenant</p>
-              </div>
-            )}
-
             {!tenant && userSelectionType === 'new' && (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1702,7 +1748,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
               </div>
             )}
 
-            {!tenant && userSelectionType === 'existing' && (
+            {(tenant || userSelectionType === 'existing') && (
               <div className="space-y-3">
                 {/* Search Input */}
                 <div className="relative">
@@ -1889,62 +1935,22 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
             )}
           </div>
 
-          {tenant ? (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>Tipe Bangunan</Label>
-                <div className="p-3 bg-gray-50 border rounded-md">
-                  <p className="font-medium">
-                    {formData.building_type === 'unit' ? 'Unit' : 'Asset'}
-                  </p>
-                </div>
-              </div>
-              {formData.building_type === 'unit' && (
-                <div className="space-y-2">
-                  <Label>Unit Sewa</Label>
-                  <div className="p-3 bg-gray-50 border rounded-md">
-                    {tenant.units && tenant.units.length > 0 ? (
-                      tenant.units.map((unit, index) => (
-                        <div key={unit.id || index} className="mb-2 last:mb-0">
-                          <p className="font-medium">{unit.name || 'N/A'}</p>
-                          <p className="text-sm text-muted-foreground">
-                            <span className="font-medium">Asset:</span> {unit.asset?.name || '-'}
-                          </p>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-muted-foreground">Tidak ada unit</p>
-                    )}
-                  </div>
-                </div>
-              )}
-              {formData.building_type === 'asset' && formData.asset_ids && formData.asset_ids.length > 0 && (
-                <div className="space-y-2">
-                  <Label>Asset</Label>
-                  <div className="p-3 bg-gray-50 border rounded-md space-y-2">
-                    {formData.asset_ids.map((assetId) => {
-                      const asset = assets.find(a => a.id === assetId)
-                      return asset ? (
-                        <p key={assetId} className="font-medium">{asset.name}</p>
-                      ) : null
-                    })}
-                  </div>
-                </div>
-              )}
-              <p className="text-xs text-muted-foreground">Tipe bangunan dan pilihan tidak dapat diubah saat edit tenant</p>
-            </div>
-          ) : (
-            <>
+          <>
               {/* Tipe Bangunan */}
               <div className="space-y-2">
                 <Label htmlFor="building_type">Tipe Bangunan *</Label>
                 <Select
                   value={formData.building_type}
                   onValueChange={(value) => {
-                    handleInputChange('building_type', value)
-                    // Reset selection when switching type
-                    handleInputChange('unit_ids', [])
-                    handleInputChange('asset_ids', [])
+                    lastSyncedUnitIdsRef.current = ''
+                    setFormData((prev) => ({
+                      ...prev,
+                      building_type: value as 'unit' | 'asset',
+                      unit_ids: [],
+                      asset_ids: [],
+                      building_area: value === 'asset' ? prev.building_area : 0,
+                      land_area: value === 'asset' ? prev.land_area : 0,
+                    }))
                   }}
                 >
                   <SelectTrigger className={errors.building_type ? 'border-red-500' : ''}>
@@ -2044,8 +2050,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                   )}
                 </div>
               )}
-            </>
-          )}
+          </>
         </CardContent>
       </Card>
 
@@ -2058,30 +2063,17 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Tanggal Mulai Kontrak */}
             <div className="space-y-2">
-              <Label htmlFor="contract_begin_at">Tanggal Mulai Kontrak {tenant ? '' : '*'}</Label>
-              {tenant ? (
-                <div className="p-3 bg-gray-50 border rounded-md">
-                  <p className="font-medium">
-                    {formData.contract_begin_at ? new Date(formData.contract_begin_at).toLocaleDateString('id-ID', {
-                      day: '2-digit',
-                      month: '2-digit',
-                      year: 'numeric'
-                    }) : '-'}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">Tanggal mulai kontrak tidak dapat diubah saat edit tenant</p>
-                </div>
-              ) : (
-                <div className="relative">
-                  <Calendar className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
-                  <Input
-                    id="contract_begin_at"
-                    type="date"
-                    value={formData.contract_begin_at}
-                    onChange={(e) => handleInputChange('contract_begin_at', e.target.value)}
-                    className={`pl-8 ${errors.contract_begin_at ? 'border-red-500' : ''}`}
-                  />
-                </div>
-              )}
+              <Label htmlFor="contract_begin_at">Tanggal Mulai Kontrak *</Label>
+              <div className="relative">
+                <Calendar className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  id="contract_begin_at"
+                  type="date"
+                  value={formData.contract_begin_at}
+                  onChange={(e) => handleInputChange('contract_begin_at', e.target.value)}
+                  className={`pl-8 ${errors.contract_begin_at ? 'border-red-500' : ''}`}
+                />
+              </div>
               {errors.contract_begin_at && (
                 <p className="text-sm text-red-500">{errors.contract_begin_at}</p>
               )}
@@ -2118,28 +2110,19 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
             {/* Harga Sewa */}
             <div className="space-y-2">
               <Label htmlFor="rent_price">
-                Harga Sewa {tenant ? '' : <span className="text-red-500">*</span>}
+                Harga Sewa <span className="text-red-500">*</span>
               </Label>
-              {tenant ? (
-                <div className="p-3 bg-gray-50 border rounded-md">
-                  <p className="font-medium">
-                    Rp {formatPrice(formData.rent_price)}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">Harga sewa tidak dapat diubah saat edit tenant</p>
-                </div>
-              ) : (
-                <div className="relative">
-                  <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
-                  <Input
-                    id="rent_price"
-                    type="text"
-                    value={formatPrice(formData.rent_price)}
-                    onChange={(e) => handlePriceChange('rent_price', e.target.value)}
-                    placeholder="0"
-                    className={`pl-10 ${errors.rent_price ? 'border-red-500' : ''}`}
-                  />
-                </div>
-              )}
+              <div className="relative">
+                <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
+                <Input
+                  id="rent_price"
+                  type="text"
+                  value={formatPrice(formData.rent_price)}
+                  onChange={(e) => handlePriceChange('rent_price', e.target.value)}
+                  placeholder="0"
+                  className={`pl-10 ${errors.rent_price ? 'border-red-500' : ''}`}
+                />
+              </div>
               {errors.rent_price && (
                 <p className="text-sm text-red-500">{errors.rent_price}</p>
               )}
@@ -2259,6 +2242,11 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
           <CardTitle>Informasi Bangunan</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {formData.building_type === 'unit' && formData.unit_ids.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Luas bangunan dan luas tanah terisi otomatis dari total unit terpilih. Nilai masih bisa diubah manual.
+            </p>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Luas Bangunan */}
             <div className="space-y-2">
@@ -2339,10 +2327,25 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
             {/* Existing files */}
             {existingIdentificationUrls.map((url, index) => (
               <div key={`existing-${index}`} className="relative group">
-                {getFilePreview(url, index)}
-                <div className="absolute top-2 right-2">
-                  <Badge variant="secondary" className="text-xs">Existing</Badge>
-                </div>
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block"
+                  title="Buka dokumen"
+                >
+                  {getFilePreview(url, index)}
+                </a>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="absolute top-2 right-2 h-7 w-7 bg-white/90 opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={() => removeExistingFile(index, 'identification')}
+                  title="Hapus dokumen"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
               </div>
             ))}
             
@@ -2403,10 +2406,25 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
             {/* Existing files */}
             {existingContractUrls.map((url, index) => (
               <div key={`existing-contract-${index}`} className="relative group">
-                {getFilePreview(url, index)}
-                <div className="absolute top-2 right-2">
-                  <Badge variant="secondary" className="text-xs">Existing</Badge>
-                </div>
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block"
+                  title="Buka dokumen"
+                >
+                  {getFilePreview(url, index)}
+                </a>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="absolute top-2 right-2 h-7 w-7 bg-white/90 opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={() => removeExistingFile(index, 'contract')}
+                  title="Hapus dokumen"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
               </div>
             ))}
             

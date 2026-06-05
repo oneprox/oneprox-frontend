@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useMemo } from 'react'
-import { Tenant, tenantsApi, DURATION_UNIT_LABELS, DURATION_UNITS } from '@/lib/api'
+import { Tenant, tenantsApi, DURATION_UNIT_LABELS, DURATION_UNITS, normalizeTenantStatus, TENANT_STATUS_LABELS } from '@/lib/api'
 import {
   Table,
   TableBody,
@@ -178,22 +178,23 @@ export default function TenantsTable({
     })
   }
 
-  const getTenantStatus = (status: string) => {
-    switch (status) {
+  const getTenantStatus = (status: string | number | null | undefined) => {
+    const normalized = normalizeTenantStatus(status)
+    switch (normalized) {
       case 'inactive':
-        return { label: 'Tidak Aktif', variant: 'secondary' as const }
+        return { label: TENANT_STATUS_LABELS.inactive, variant: 'secondary' as const }
       case 'active':
-        return { label: 'Aktif', variant: 'default' as const }
+        return { label: TENANT_STATUS_LABELS.active, variant: 'default' as const }
       case 'pending':
-        return { label: 'Pending', variant: 'outline' as const }
+        return { label: TENANT_STATUS_LABELS.pending, variant: 'outline' as const }
       case 'expired':
-        return { label: 'Expired', variant: 'destructive' as const }
+        return { label: TENANT_STATUS_LABELS.expired, variant: 'destructive' as const }
       case 'terminated':
-        return { label: 'Terminated', variant: 'destructive' as const }
+        return { label: TENANT_STATUS_LABELS.terminated, variant: 'destructive' as const }
       case 'blacklisted':
-        return { label: 'Blacklisted', variant: 'destructive' as const }
+        return { label: TENANT_STATUS_LABELS.blacklisted, variant: 'destructive' as const }
       default:
-        return { label: 'Unknown', variant: 'secondary' as const }
+        return { label: 'Tidak Diketahui', variant: 'secondary' as const }
     }
   }
 
@@ -221,6 +222,12 @@ export default function TenantsTable({
         return (
           <span className="px-3 py-1.5 rounded text-xs font-medium bg-red-100 text-red-700 border border-red-300">
             Overdue
+          </span>
+        )
+      default:
+        return (
+          <span className="px-3 py-1.5 rounded text-xs font-medium bg-gray-100 text-gray-700 border border-gray-300">
+            Scheduled
           </span>
         )
     }
@@ -331,9 +338,9 @@ export default function TenantsTable({
                   : index + 1;
                 // Use status from database if available, otherwise calculate based on contract_end_at
                 let tenantStatus: string;
-                if (tenant.status) {
-                  // Use status from database
-                  tenantStatus = tenant.status;
+                const normalizedStatus = normalizeTenantStatus(tenant.status);
+                if (normalizedStatus) {
+                  tenantStatus = normalizedStatus;
                 } else {
                   // Fallback: Calculate tenant status based on contract_end_at
                   const endDate = new Date(tenant.contract_end_at);

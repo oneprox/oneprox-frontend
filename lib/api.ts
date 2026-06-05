@@ -1205,15 +1205,21 @@ export interface UpdateTenantData {
   name?: string
   user_id?: string
   contract_begin_at?: string
+  contract_end_at?: string
   rent_duration?: number
   rent_duration_unit?: string
   tenant_identifications?: string[]
   contract_documents?: string[]
+  building_type?: 'unit' | 'asset'
   unit_ids?: string[]
+  asset_ids?: string[]
+  category?: string
+  sub_category?: string
   categories?: number[]
   rent_price?: number
   ppn?: number
   total_price?: number
+  payment_term?: number
   down_payment?: number
   deposit?: number
   deposit_reason?: string
@@ -1221,6 +1227,43 @@ export interface UpdateTenantData {
   land_area?: number
   electricity_power?: number
   status?: string // 'inactive' | 'active' | 'pending' | 'expired' | 'terminated' | 'blacklisted'
+}
+
+/** Label tampilan status tenant */
+export const TENANT_STATUS_LABELS: Record<string, string> = {
+  inactive: 'Tidak Aktif',
+  active: 'Aktif',
+  pending: 'Pending',
+  expired: 'Expired',
+  terminated: 'Terminated',
+  blacklisted: 'Blacklisted',
+}
+
+const TENANT_STATUS_INT_TO_VALUE: Record<number, string> = {
+  0: 'inactive',
+  1: 'active',
+  2: 'pending',
+  3: 'expired',
+  4: 'terminated',
+  5: 'blacklisted',
+}
+
+/** Normalisasi status tenant dari angka (0–5) atau string ke nilai form/tampilan */
+export function normalizeTenantStatus(
+  status: string | number | null | undefined
+): string | undefined {
+  if (status === undefined || status === null || status === '') return undefined
+
+  const asNumber = typeof status === 'number' ? status : parseInt(String(status), 10)
+  if (!Number.isNaN(asNumber) && TENANT_STATUS_INT_TO_VALUE[asNumber] !== undefined) {
+    const raw = String(status).trim()
+    if (typeof status === 'number' || /^\d+$/.test(raw)) {
+      return TENANT_STATUS_INT_TO_VALUE[asNumber]
+    }
+  }
+
+  const s = String(status).toLowerCase()
+  return TENANT_STATUS_LABELS[s] !== undefined ? s : undefined
 }
 
 // Duration unit constants
