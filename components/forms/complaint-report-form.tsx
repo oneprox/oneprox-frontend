@@ -26,6 +26,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import { Badge } from '@/components/ui/badge'
 import toast from 'react-hot-toast'
+import { UPLOAD_MAX_FILE_BYTES, UPLOAD_MAX_FILE_MB } from '@/lib/uploadLimits'
 
 const complaintReportSchema = z.object({
   title: z.string().min(1, 'Title is required').trim(),
@@ -188,12 +189,10 @@ export default function ComplaintReportForm({ onSubmit, onCancel, loading = fals
         return
       }
 
-      // Validate file size (max 8MB per file)
-      const maxSize = 8 * 1024 * 1024 // 8MB
-      const oversizedFiles = files.filter(file => file.size > maxSize)
+      const oversizedFiles = files.filter(file => file.size > UPLOAD_MAX_FILE_BYTES)
       
       if (oversizedFiles.length > 0) {
-        toast.error('Ukuran file maksimal 8MB')
+        toast.error(`Ukuran file maksimal ${UPLOAD_MAX_FILE_MB}MB`)
         return
       }
 

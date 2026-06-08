@@ -98,10 +98,10 @@ export async function compressImageFile(
   }
 }
 
-/** Batas per file saat complete task (upload terpisah per file, masing-masing max 8MB) */
+/** Batas per file saat complete task (upload terpisah per file) */
 export const COMPLETE_TASK_SAFE_REQUEST_BYTES = UPLOAD_MAX_FILE_BYTES
 
-/** Batas kompresi per file — seragam 8MB */
+/** Batas kompresi per file */
 export function maxBytesPerFileForBatch(_fileCount: number): number {
   return UPLOAD_MAX_FILE_BYTES
 }

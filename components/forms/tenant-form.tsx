@@ -56,6 +56,12 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { Loader2, Plus, X, File, Search, UserPlus, Users, Eye, EyeOff, Calendar, Edit, Trash2, DollarSign, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { compressImageFile } from '@/lib/compressImage'
+import {
+  isFileWithinUploadLimit,
+  uploadLimitErrorLabel,
+  UPLOAD_MAX_FILE_MB,
+} from '@/lib/uploadLimits'
 
 interface TenantFormProps {
   tenant?: Tenant
@@ -767,8 +773,15 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
       let documentUrl = normalizeDocumentUrl(editingLegal?.document_url)
       
       if (legalDocumentFile) {
-        // Use uploadTenantFile with type 'contract' for legal documents
-        const uploadResponse = await tenantsApi.uploadTenantFile(legalDocumentFile, 'contract')
+        const preparedLegalFile = legalDocumentFile.type.startsWith('image/')
+          ? await compressImageFile(legalDocumentFile)
+          : legalDocumentFile
+        if (!isFileWithinUploadLimit(preparedLegalFile)) {
+          toast.error(uploadLimitErrorLabel(preparedLegalFile.name))
+          setLegalFormLoading(false)
+          return
+        }
+        const uploadResponse = await tenantsApi.uploadTenantFile(preparedLegalFile, 'contract')
         if (uploadResponse.success && uploadResponse.data) {
           documentUrl = normalizeDocumentUrl(uploadResponse.data.url)
           if (!documentUrl) {
@@ -1020,10 +1033,21 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
     return Object.keys(newErrors).length === 0
   }
 
+  const prepareTenantUploadFile = async (file: File): Promise<File> => {
+    const prepared = file.type.startsWith('image/')
+      ? await compressImageFile(file)
+      : file
+    if (!isFileWithinUploadLimit(prepared)) {
+      throw new Error(uploadLimitErrorLabel(prepared.name))
+    }
+    return prepared
+  }
+
   const uploadFiles = async (files: File[], type: 'identification' | 'contract') => {
     const uploadPromises = files.map(async (file) => {
       try {
-        const response = await tenantsApi.uploadTenantFile(file, type)
+        const prepared = await prepareTenantUploadFile(file)
+        const response = await tenantsApi.uploadTenantFile(prepared, type)
         
         if (response.success && response.data) {
           // Handle both array and string response formats
@@ -1205,8 +1229,15 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
       await onSubmit(submitData)
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error)
+      const isTooLarge =
+        errMsg.includes('413') ||
+        errMsg.toLowerCase().includes('too large') ||
+        errMsg.toLowerCase().includes('melebihi')
       toast.error(
-        (tenant ? 'Gagal memperbarui tenant. ' : 'Gagal membuat tenant. ') + errMsg,
+        (tenant ? 'Gagal memperbarui tenant. ' : 'Gagal membuat tenant. ') +
+          (isTooLarge
+            ? `Ukuran file terlalu besar (maks ${UPLOAD_MAX_FILE_MB}MB per file). Kompres PDF/gambar lalu coba lagi.`
+            : errMsg),
         { duration: 8000 }
       )
     } finally {
@@ -1279,33 +1310,32 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
     handleInputChange(field, parsedValue)
   }
 
-  const handleFileChange = (file: File | null, type: 'identification' | 'contract') => {
-    if (file) {
-      // Validasi tipe file
-      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
-      if (!allowedTypes.includes(file.type)) {
-        toast.error('Hanya file JPG, JPEG, PNG, PDF, DOC, dan DOCX yang diperbolehkan')
-        return
-      }
+  const handleFileChange = async (file: File | null, type: 'identification' | 'contract') => {
+    if (!file) return
 
-      // Validasi ukuran file (max 8MB)
-      const maxSize = 8 * 1024 * 1024 // 8MB
-      if (file.size > maxSize) {
-        toast.error('Ukuran file maksimal 8MB')
-        return
-      }
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+    if (!allowedTypes.includes(file.type)) {
+      toast.error('Hanya file JPG, JPEG, PNG, PDF, DOC, dan DOCX yang diperbolehkan')
+      return
+    }
+
+    try {
+      const prepared = await prepareTenantUploadFile(file)
 
       if (type === 'identification') {
-        setIdentificationFiles(prev => [...prev, file])
+        setIdentificationFiles(prev => [...prev, prepared])
         if (errors.identificationFiles) {
           setErrors(prev => ({ ...prev, identificationFiles: '' }))
         }
       } else {
-        setContractFiles(prev => [...prev, file])
+        setContractFiles(prev => [...prev, prepared])
         if (errors.contractFiles) {
           setErrors(prev => ({ ...prev, contractFiles: '' }))
         }
       }
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error)
+      toast.error(errMsg)
     }
   }
 
@@ -2316,6 +2346,9 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
       <Card>
         <CardHeader>
           <CardTitle>Dokumen Identitas *</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Maks {UPLOAD_MAX_FILE_MB}MB per file. Gambar dikompres otomatis; PDF/DOC harus di bawah batas.
+          </p>
         </CardHeader>
         <CardContent className="space-y-4">
           {errors.identificationFiles && (
@@ -2395,6 +2428,9 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
       <Card>
         <CardHeader>
           <CardTitle>Dokumen Kontrak *</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Maks {UPLOAD_MAX_FILE_MB}MB per file. Gambar dikompres otomatis; PDF/DOC harus di bawah batas.
+          </p>
         </CardHeader>
         <CardContent className="space-y-4">
           {errors.contractFiles && (
@@ -3815,24 +3851,28 @@ function LegalForm({
     }
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) {
-      // Validasi tipe file
-      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
-      if (!allowedTypes.includes(file.type)) {
-        toast.error('Hanya file JPG, JPEG, PNG, PDF, DOC, dan DOCX yang diperbolehkan')
+    if (!file) return
+
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+    if (!allowedTypes.includes(file.type)) {
+      toast.error('Hanya file JPG, JPEG, PNG, PDF, DOC, dan DOCX yang diperbolehkan')
+      return
+    }
+
+    try {
+      const prepared = file.type.startsWith('image/')
+        ? await compressImageFile(file)
+        : file
+      if (!isFileWithinUploadLimit(prepared)) {
+        toast.error(uploadLimitErrorLabel(prepared.name))
         return
       }
-
-      // Validasi ukuran file (max 8MB)
-      const maxSize = 8 * 1024 * 1024 // 8MB
-      if (file.size > maxSize) {
-        toast.error('Ukuran file maksimal 8MB')
-        return
-      }
-
-      onDocumentFileChange(file)
+      onDocumentFileChange(prepared)
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error)
+      toast.error(errMsg)
     }
   }
 
