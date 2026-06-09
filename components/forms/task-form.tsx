@@ -756,8 +756,10 @@ export default function TaskForm({ task, onSubmit, onCancel, loading = false }: 
             // Convert minutes to hours for display (if needed) or keep as minutes
             // Assuming duration is stored in minutes
             const minutes = field.value || 0
-            const hours = Math.min(8, Math.max(0, Math.floor(minutes / 60)))
-            const mins = Math.min(55, Math.max(0, Math.floor((minutes % 60) / 5) * 5))
+            const hours = Math.min(24, Math.max(0, Math.floor(minutes / 60)))
+            const mins = hours >= 24
+              ? 0
+              : Math.min(55, Math.max(0, Math.floor((minutes % 60) / 5) * 5))
             
             return (
               <FormItem>
@@ -769,7 +771,8 @@ export default function TaskForm({ task, onSubmit, onCancel, loading = false }: 
                       value={String(hours)}
                       onValueChange={(value) => {
                         const hrs = Number(value)
-                        const safeMinutes = hrs === 0 && mins === 0 ? 5 : mins
+                        const cappedMins = hrs >= 24 ? 0 : mins
+                        const safeMinutes = hrs === 0 && cappedMins === 0 ? 5 : cappedMins
                         const totalMinutes = hrs * 60 + safeMinutes
                         field.onChange(totalMinutes)
                       }}
@@ -780,7 +783,7 @@ export default function TaskForm({ task, onSubmit, onCancel, loading = false }: 
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {Array.from({ length: 9 }, (_, i) => (
+                        {Array.from({ length: 25 }, (_, i) => (
                           <SelectItem key={i} value={String(i)}>
                             {i}
                           </SelectItem>
@@ -797,6 +800,7 @@ export default function TaskForm({ task, onSubmit, onCancel, loading = false }: 
                         const totalMinutes = hours * 60 + mns
                         field.onChange(totalMinutes)
                       }}
+                      disabled={hours >= 24}
                     >
                       <FormControl>
                         <SelectTrigger>
@@ -806,6 +810,7 @@ export default function TaskForm({ task, onSubmit, onCancel, loading = false }: 
                       <SelectContent>
                         {Array.from({ length: 12 }, (_, i) => i * 5)
                           .filter((i) => !(hours === 0 && i === 0))
+                          .filter((i) => !(hours >= 24 && i !== 0))
                           .map((i) => (
                           <SelectItem key={i} value={String(i)}>
                             {i}
