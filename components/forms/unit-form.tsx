@@ -130,11 +130,13 @@ export default function UnitForm({ unit, onSubmit, loading = false, assetId }: U
       newErrors.asset_id = 'Asset harus dipilih'
     }
 
-    if (!formData.size || parseFloat(formData.size) <= 0) {
+    const sizeNum = parseFloat(formData.size)
+    if (!formData.size || !Number.isFinite(sizeNum) || sizeNum <= 0) {
       newErrors.size = 'Ukuran harus diisi dan lebih dari 0'
     }
 
-    if (!formData.building_area || parseFloat(formData.building_area) <= 0) {
+    const buildingAreaNum = parseFloat(formData.building_area)
+    if (!formData.building_area || !Number.isFinite(buildingAreaNum) || buildingAreaNum <= 0) {
       newErrors.building_area = 'Luas bangunan harus diisi dan lebih dari 0'
     }
 
@@ -149,16 +151,36 @@ export default function UnitForm({ unit, onSubmit, loading = false, assetId }: U
       return
     }
 
-    const submitData = {
-      name: formData.name.trim(),
-      asset_id: formData.asset_id,
-      size: parseFloat(formData.size),
-      building_area: parseFloat(formData.building_area),
-      description: formData.description.trim() || undefined,
-      status: formData.status,
+    const sizeNum = parseFloat(formData.size)
+    const buildingAreaNum = parseFloat(formData.building_area)
+    const normalizedStatus = normalizeUnitStatus(formData.status) ?? 'available'
+
+    if (unit) {
+      const updateData: UpdateUnitData = {
+        name: formData.name.trim(),
+        size: sizeNum,
+        building_area: buildingAreaNum,
+        description: formData.description.trim() || undefined,
+        status: normalizedStatus,
+      }
+      if (formData.asset_id) {
+        updateData.asset_id = formData.asset_id
+      }
+      await onSubmit(updateData)
+      return
     }
 
-    await onSubmit(submitData)
+    const createData: CreateUnitData = {
+      name: formData.name.trim(),
+      asset_id: formData.asset_id,
+      size: sizeNum,
+      building_area: buildingAreaNum,
+      rent_price: 0,
+      description: formData.description.trim() || undefined,
+      status: normalizedStatus,
+    }
+
+    await onSubmit(createData)
   }
 
   const handleInputChange = (field: string, value: string | boolean) => {

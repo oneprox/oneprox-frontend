@@ -1282,8 +1282,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
     handleInputChange(field, parsedValue)
   }
 
-  const computedTotalPrice =
-    (tenant?.rent_price ?? formData.rent_price ?? 0) + (formData.ppn ?? 0)
+  const computedTotalPrice = (formData.rent_price ?? 0) + (formData.ppn ?? 0)
 
   // Format number with thousand separators (for area and power)
   const formatNumber = (value: number | string): string => {
@@ -3313,10 +3312,13 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
     if (payment) {
       // Update payment
       const updateData: UpdateTenantPaymentData = {
-        payment_method: formData.payment_method || undefined,
+        ...(formData.payment_method
+          ? { payment_method: formData.payment_method }
+          : {}),
         // Kalau user hapus catatan, tetap kirim string kosong agar backend mengosongkan nilai lama
         // (backend biasanya menolak null untuk field string → 400 Bad Request).
         notes: formData.notes.trim(),
+        billing_type: formData.billing_type.trim(),
       }
       if (formData.payment_deadline) {
         updateData.payment_deadline = new Date(formData.payment_deadline).toISOString()
@@ -3326,9 +3328,6 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
       }
       // Selalu kirim paid_amount saat edit agar 0 / kosong memicu unpaid di backend
       updateData.paid_amount = parsePrice(formData.paid_amount)
-      if (formData.billing_type) {
-        updateData.billing_type = formData.billing_type
-      }
       if (formData.billing_period) {
         updateData.billing_period = formData.billing_period
       }
@@ -3395,17 +3394,17 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
         ppn,
         billing_amount,
         payment_deadline: new Date(formData.payment_deadline).toISOString(),
-        payment_method: formData.payment_method || undefined,
+        ...(formData.payment_method
+          ? { payment_method: formData.payment_method }
+          : {}),
         notes: formData.notes.trim() || undefined,
+        billing_type: formData.billing_type.trim() || undefined,
       }
       if (paidAmount !== undefined) {
         createData.paid_amount = paidAmount
       }
       if (paymentDateIso) {
         createData.payment_date = paymentDateIso
-      }
-      if (formData.billing_type) {
-        createData.billing_type = formData.billing_type
       }
       if (formData.outstanding !== '') {
         createData.outstanding = parsePrice(formData.outstanding)
@@ -3629,7 +3628,7 @@ function PaymentForm({ payment, onSubmit, loading = false, onCancel }: PaymentFo
             <Label htmlFor="payment_method" className="text-sm font-medium">Metode Pembayaran</Label>
             <Select
               key={`payment-method-${payment?.id ?? 'new'}-${formData.payment_method || 'empty'}`}
-              defaultValue={formData.payment_method || undefined}
+              value={formData.payment_method || undefined}
               onValueChange={(value) => handleInputChange('payment_method', value)}
             >
               <SelectTrigger className={`w-full min-w-0 ${errors.payment_method ? 'border-red-500' : ''}`}>

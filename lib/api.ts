@@ -1126,6 +1126,7 @@ export interface CreateUnitData {
 
 export interface UpdateUnitData {
   name?: string
+  asset_id?: string
   size?: number
   building_area?: number
   rent_price?: number
