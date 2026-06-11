@@ -15,9 +15,16 @@ const Chart = dynamic(() => import('react-apexcharts'), { ssr: false })
 
 const PROGRESS = '#345e6f'
 const TRACK = '#f0f2f5'
-const DONUT_TRACK = '#e8ecf0'
+const PATROL_TIME_SLOTS = ['07:00', '11:00', '16:00', '19:00', '22:00', '04:00'] as const
 
-const PATROL_TIME_SLOTS = ['08:00', '13:00', '17:00', '20:00', '22:00', '04:00'] as const
+const PATROL_SLOT_HOUR_MAP: Record<number, number> = {
+  7: 0,
+  11: 1,
+  16: 2,
+  19: 3,
+  22: 4,
+  4: 5,
+}
 
 interface DailyWorkStatusProps {
   selectedAssetId?: string
@@ -119,13 +126,45 @@ function statusHistogram(tasks: UserTask[]): Record<string, number> {
   return out
 }
 
-/** Map jam dari scheduled_at ke indeks slot patroli */
-function slotIndexFromUserTask(ut: UserTask): number {
+function hourFromUserTask(ut: UserTask): number | null {
+  const timeStr = ut.time?.trim()
+  if (timeStr) {
+    const [h] = timeStr.split(':')
+    const hour = parseInt(h, 10)
+    if (!Number.isNaN(hour)) return hour
+  }
+
   const raw = ut.scheduled_at || ut.start_at || ut.created_at
-  if (!raw) return -1
-  const h = new Date(raw).getHours()
-  const map: Record<number, number> = { 8: 0, 13: 1, 17: 2, 20: 3, 22: 4, 4: 5, 0: 5 }
-  return map[h] ?? -1
+  if (!raw) return null
+
+  const hourPart = new Intl.DateTimeFormat('en-GB', {
+    hour: 'numeric',
+    hour12: false,
+    timeZone: 'Asia/Jakarta',
+  }).formatToParts(new Date(raw)).find((p) => p.type === 'hour')?.value
+
+  const hour = hourPart != null ? parseInt(hourPart, 10) : NaN
+  return Number.isNaN(hour) ? null : hour
+}
+
+/** Map jam dari `time` / `scheduled_at` ke indeks slot patroli main task */
+function slotIndexFromUserTask(ut: UserTask): number {
+  const hour = hourFromUserTask(ut)
+  if (hour === null) return -1
+  return PATROL_SLOT_HOUR_MAP[hour] ?? -1
+}
+
+function mainMatchesPatrolSlot(main: UserTask, col: number): boolean {
+  const times = main.task?.times
+  if (Array.isArray(times) && times.length > 0) {
+    return times.some((timeValue) => {
+      const [h] = String(timeValue).split(':')
+      const hour = parseInt(h, 10)
+      if (Number.isNaN(hour)) return false
+      return PATROL_SLOT_HOUR_MAP[hour] === col
+    })
+  }
+  return slotIndexFromUserTask(main) === col
 }
 
 type CellStatus = 'selesai' | 'terlewat' | 'proses' | 'belum'
@@ -136,6 +175,14 @@ function cellStatusForPatrol(ut: UserTask | undefined): CellStatus {
   if (isInProgress(ut)) return 'proses'
   const deadline = ut.scheduled_at ? new Date(ut.scheduled_at) : null
   if (deadline && deadline < new Date() && !isCompleted(ut)) return 'terlewat'
+  return 'belum'
+}
+
+function aggregatePatrolStatus(tasks: UserTask[]): CellStatus {
+  if (tasks.length === 0) return 'belum'
+  if (tasks.every(isCompleted)) return 'selesai'
+  if (tasks.some(isInProgress)) return 'proses'
+  if (tasks.some((task) => cellStatusForPatrol(task) === 'terlewat')) return 'terlewat'
   return 'belum'
 }
 
@@ -224,49 +271,6 @@ function radialOptions(percentage: number): ApexOptions {
     },
     colors: [PROGRESS],
     stroke: { lineCap: 'round' },
-  }
-}
-
-function donutOptions(label: string, percentage: number): ApexOptions {
-  const pct = Math.min(100, Math.max(0, Math.round(percentage)))
-  return {
-    chart: { type: 'donut', toolbar: { show: false } },
-    labels: [label, 'Sisa'],
-    colors: [PROGRESS, DONUT_TRACK],
-    dataLabels: { enabled: false },
-    plotOptions: {
-      pie: {
-        donut: {
-          size: '76%',
-          labels: {
-            show: true,
-            name: {
-              show: true,
-              offsetY: 18,
-              color: '#64748b',
-              fontSize: '12px',
-              fontWeight: 600,
-            },
-            value: {
-              show: true,
-              offsetY: -6,
-              fontSize: '22px',
-              fontWeight: 700,
-              color: '#0f172a',
-              formatter: () => `${pct}%`,
-            },
-            total: {
-              show: false,
-            },
-          },
-        },
-      },
-    },
-    states: {
-      hover: { filter: { type: 'none' } },
-      active: { filter: { type: 'none' } },
-    },
-    legend: { show: false },
   }
 }
 
@@ -594,22 +598,25 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
   const pctBulananKeamanan = completionRate(keamananMonthList)
 
   /**
-   * Baris patroli: satu baris per main task (tree API), slot waktu diisi dari
-   * pool main + sub `user_task` keamanan (sama flow data dengan kebersihan).
+   * Baris patroli per main task. Slot waktu mengikuti jadwal main task;
+   * child task tidak difilter per jam — status sel menggabungkan semua child.
    */
   const patrolMatrix = useMemo(() => {
     return keamananSecurityGroups
       .map((group, idx) => {
         const { main, key, children } = group
-        const vis = visibleChildrenForRole(main, children, isKeamanan)
-        const pool: UserTask[] = []
-        if (isKeamanan(main)) pool.push(main)
-        vis.forEach((c) => {
-          if (isKeamanan(c)) pool.push(c)
-        })
+        const vis = visibleChildrenForRole(main, children, isKeamanan).filter(isKeamanan)
         const titik = mainTaskGroupTitle(main, 'Patroli')
         const cells = PATROL_TIME_SLOTS.map((_, col) => {
-          const ut = pool.find((u) => slotIndexFromUserTask(u) === col)
+          if (!mainMatchesPatrolSlot(main, col)) {
+            return { ut: undefined, status: 'belum' as CellStatus }
+          }
+
+          if (vis.length > 0) {
+            return { ut: vis[0], status: aggregatePatrolStatus(vis) }
+          }
+
+          const ut = isKeamanan(main) ? main : undefined
           return { ut, status: cellStatusForPatrol(ut) }
         })
         return { key: key || `patrol-${idx}`, titik, cells }
@@ -617,15 +624,6 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
       .sort((a, b) => a.titik.localeCompare(b.titik, 'id'))
       .slice(0, 12)
   }, [keamananSecurityGroups])
-
-  const toggleCleaningExpand = (mainKey: string) => {
-    setExpandedCleaningMainIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(mainKey)) next.delete(mainKey)
-      else next.add(mainKey)
-      return next
-    })
-  }
 
   const PatrolIcon = ({ status }: { status: CellStatus }) => {
     if (status === 'selesai') {
@@ -654,6 +652,15 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
         <Circle className="h-3 w-3" />
       </span>
     )
+  }
+
+  const toggleCleaningExpand = (mainKey: string) => {
+    setExpandedCleaningMainIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(mainKey)) next.delete(mainKey)
+      else next.add(mainKey)
+      return next
+    })
   }
 
   if (loading) {

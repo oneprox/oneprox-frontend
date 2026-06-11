@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Tenant, DURATION_UNIT_LABELS, DURATION_UNITS, TenantDepositLog, TenantPaymentLog, tenantsApi, UpdateTenantPaymentData, CreateTenantPaymentData, normalizeTenantStatus, TENANT_STATUS_LABELS } from '@/lib/api'
+import { Tenant, Asset, DURATION_UNIT_LABELS, TenantPaymentLog, tenantsApi, UpdateTenantPaymentData, CreateTenantPaymentData, normalizeTenantStatus, TENANT_STATUS_LABELS, ASSET_TYPE_LABELS } from '@/lib/api'
 import { formatBillingRatePercent } from '@/lib/billing-rate'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -31,7 +31,7 @@ import {
 } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { History, Building2, X, Edit, Wallet, CreditCard, DollarSign, ChevronLeft, ChevronRight, Loader2, Plus, Image as ImageIcon, FileText } from 'lucide-react'
+import { History, Building2, X, Edit, CreditCard, DollarSign, ChevronLeft, ChevronRight, Loader2, Plus, Image as ImageIcon, FileText } from 'lucide-react'
 import Link from 'next/link'
 import TenantLogsTable from '@/components/table/tenant-logs-table'
 import toast from 'react-hot-toast'
@@ -54,6 +54,13 @@ function formatCurrencyIdr(value: number | string | null | undefined): string {
   const n = Number(value)
   if (Number.isNaN(n) || n === 0) return '-'
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n)
+}
+
+function getTenantTotalRentPrice(tenant: Tenant): number {
+  if (tenant.total_price != null && Number(tenant.total_price) > 0) {
+    return Number(tenant.total_price)
+  }
+  return (tenant.rent_price || 0) + (tenant.ppn || 0)
 }
 
 function paymentMethodLabel(method: string | null | undefined): string {
@@ -101,6 +108,35 @@ const getCategoryLabel = (tenant: Tenant): string => {
   return '-'
 }
 
+const getAssetTypeLabel = (assetType: number | string) => {
+  if (typeof assetType === 'string') {
+    const stringToLabel: Record<string, string> = {
+      ESTATE: 'Estate',
+      OFFICE: 'Office',
+      WAREHOUSE: 'Warehouse',
+      SPORT: 'Sport',
+      ENTERTAINMENTRESTAURANT: 'Entertainment/Restaurant',
+      RESIDENCE: 'Residence',
+      MALL: 'Mall',
+      SUPPORTFACILITYMOSQUEITAL: 'Support Facility/Mosque',
+      PARKINGLOT: 'Parking Lot',
+    }
+    return stringToLabel[assetType] || assetType
+  }
+  return ASSET_TYPE_LABELS[assetType] || 'Unknown'
+}
+
+const resolveBuildingType = (tenant: Tenant): 'unit' | 'asset' | null => {
+  if (tenant.building_type === 'unit' || tenant.building_type === 'asset') {
+    return tenant.building_type
+  }
+  if (tenant.units && tenant.units.length > 0) return 'unit'
+  if (tenant.assets && tenant.assets.length > 0) return 'asset'
+  if (tenant.asset_ids && tenant.asset_ids.length > 0) return 'asset'
+  if (tenant.unit_ids && tenant.unit_ids.length > 0) return 'unit'
+  return null
+}
+
 interface TenantDetailDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -114,7 +150,6 @@ export default function TenantDetailDialog({
 }: TenantDetailDialogProps) {
   const [mounted, setMounted] = useState(false)
   const [activeTab, setActiveTab] = useState('info')
-  const [depositLogs, setDepositLogs] = useState<TenantDepositLog[]>([])
   const [paymentLogs, setPaymentLogs] = useState<TenantPaymentLog[]>([])
   const [paymentLoading, setPaymentLoading] = useState(false)
   const [paymentPage, setPaymentPage] = useState(1)
@@ -151,30 +186,36 @@ export default function TenantDetailDialog({
     payment_date: ''
   })
   const [creatingPayment, setCreatingPayment] = useState(false)
+  const [displayTenant, setDisplayTenant] = useState<Tenant | null>(tenant)
+  const [tenantDetailLoading, setTenantDetailLoading] = useState(false)
 
   useEffect(() => {
     setMounted(true)
   }, [])
 
-  // Fetch deposit logs when dialog opens and tenant is available
   useEffect(() => {
-    const loadDepositLogs = async () => {
-      if (open && tenant?.id) {
-        try {
-          const response = await tenantsApi.getTenantDepositLogs(tenant.id)
-          if (response.success && response.data) {
-            const logsData = response.data as any
-            const logs = Array.isArray(logsData.data) ? logsData.data : (Array.isArray(logsData) ? logsData : [])
-            console.log('logs', logs)
-            setDepositLogs(logs)
-          }
-        } catch (error) {
-          console.error('Load deposit logs error:', error)
+    const loadTenantDetail = async () => {
+      if (!open || !tenant?.id) {
+        setDisplayTenant(tenant)
+        return
+      }
+
+      setDisplayTenant(tenant)
+      setTenantDetailLoading(true)
+      try {
+        const response = await tenantsApi.getTenant(tenant.id)
+        if (response.success && response.data) {
+          const tenantData = (response.data as any).data ?? response.data
+          setDisplayTenant(tenantData as Tenant)
         }
+      } catch (error) {
+        console.error('Load tenant detail error:', error)
+      } finally {
+        setTenantDetailLoading(false)
       }
     }
 
-    loadDepositLogs()
+    loadTenantDetail()
   }, [open, tenant?.id])
 
   // Fetch all paid payments to calculate total amount due
@@ -586,86 +627,11 @@ export default function TenantDetailDialog({
 
   const { totalMustPay, totalPaid, remaining } = calculateTotalAmountDue()
 
-  // Calculate price per term (harga bayar sewa)
-  const calculatePricePerTerm = () => {
-    if (!tenant) {
-      console.log("calculatePricePerTerm: no tenant")
-      return null
-    }
-    
-    const rentPrice = tenant.rent_price || 0
-    const downPayment = tenant.down_payment || 0
-    const duration = parseInt(String(tenant.rent_duration)) || 0
-    
-    // Normalize rent_duration_unit to number: 0 = year, 1 = month
-    let durationUnitNum: number
-    if (typeof tenant.rent_duration_unit === 'number') {
-      durationUnitNum = tenant.rent_duration_unit
-    } else if (typeof tenant.rent_duration_unit === 'string') {
-      const unitStr = tenant.rent_duration_unit.toLowerCase()
-      durationUnitNum = (unitStr === 'year' || unitStr === DURATION_UNITS.YEAR) ? 0 : 1
-    } else {
-      durationUnitNum = 1 // default to month
-    }
-    
-    // Normalize payment_term to number: 0 = year, 1 = month
-    let paymentTermNum: number
-    if (typeof tenant.payment_term === 'number') {
-      paymentTermNum = tenant.payment_term
-    } else if (typeof tenant.payment_term === 'string') {
-      const termStr = tenant.payment_term.trim().toLowerCase()
-      if (termStr === '0' || termStr === 'year' || termStr === DURATION_UNITS.YEAR) {
-        paymentTermNum = 0
-      } else if (termStr === '1' || termStr === 'month' || termStr === DURATION_UNITS.MONTH) {
-        paymentTermNum = 1
-      } else {
-        paymentTermNum = 1 // default to month
-      }
-    } else {
-      paymentTermNum = 1 // default to month
-    }
-    
-    console.log("calculatePricePerTerm: durationUnitNum", durationUnitNum, "paymentTermNum", paymentTermNum)
-    
-    let numberOfPayments = 0
-    
-    // Check payment_term first
-    if (paymentTermNum === durationUnitNum) {
-      // If payment_term is same as rent_duration_unit, number of payments is duration
-      numberOfPayments = duration
-      console.log("calculatePricePerTerm: same units, numberOfPayments = duration =", duration)
-    } else {
-      // If payment_term is not the same as rent_duration_unit
-      if (paymentTermNum === 1 && durationUnitNum === 0) {
-        // If payment_term is month (1) and rent_duration_unit is year (0), number of payments is duration * 12
-        numberOfPayments = duration * 12
-        console.log("calculatePricePerTerm: month payment with year duration, numberOfPayments =", numberOfPayments)
-      } else {
-        console.log("calculatePricePerTerm: no matching condition, numberOfPayments stays 0")
-      }
-    }
-    console.log("numberOfPayments", numberOfPayments)
-    
-    // Harga bayar is (rentPrice - downPayment) / number of payments
-    if (numberOfPayments > 0) {
-      return (rentPrice - downPayment) / numberOfPayments
-    }
-    
-    return null
-  }
+  const activeTenant = displayTenant ?? tenant
+  const totalRentPrice = activeTenant ? getTenantTotalRentPrice(activeTenant) : 0
+  const buildingType = activeTenant ? resolveBuildingType(activeTenant) : null
 
-  const pricePerTerm = calculatePricePerTerm()
-  console.log("pricePerTerm", pricePerTerm)
-  const formattedPricePerTerm = pricePerTerm 
-    ? new Intl.NumberFormat('id-ID', {
-        style: 'currency',
-        currency: 'IDR',
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0,
-      }).format(pricePerTerm)
-    : null
-
-  if (!tenant || !open) return null
+  if (!tenant || !open || !activeTenant) return null
 
   return (
     <div 
@@ -678,7 +644,7 @@ export default function TenantDetailDialog({
           <div>
             <h2 className="text-xl font-semibold flex items-center gap-2">
               <Building2 className="h-5 w-5" />
-              Detail Tenant: {tenant.name}
+              Detail Tenant: {activeTenant.name}
             </h2>
             <p className="text-sm text-gray-600 mt-1">
               Informasi lengkap dan riwayat aktivitas tenant
@@ -701,7 +667,7 @@ export default function TenantDetailDialog({
             <div className="flex items-center justify-end">
               <div className="flex items-center gap-2">
                 <Button asChild>
-                  <Link href={`/tenants/edit/${tenant.id}`}>
+                  <Link href={`/tenants/edit/${activeTenant.id}`}>
                     <Edit className="mr-2 h-4 w-4" />
                     Edit Tenant
                   </Link>
@@ -724,28 +690,6 @@ export default function TenantDetailDialog({
                   Informasi Tenant
                 </button>
                 <button
-                  onClick={() => setActiveTab('history')}
-                  className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                    activeTab === 'history'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  <History className="h-4 w-4" />
-                  History Aktivitas
-                </button>
-                <button
-                  onClick={() => setActiveTab('deposit')}
-                  className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                    activeTab === 'deposit'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  <Wallet className="h-4 w-4" />
-                  History Deposito
-                </button>
-                <button
                   onClick={() => setActiveTab('payment')}
                   className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
                     activeTab === 'payment'
@@ -755,6 +699,17 @@ export default function TenantDetailDialog({
                 >
                   <CreditCard className="h-4 w-4" />
                   History Pembayaran
+                </button>
+                <button
+                  onClick={() => setActiveTab('history')}
+                  className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === 'history'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <History className="h-4 w-4" />
+                  History Aktivitas
                 </button>
               </div>
 
@@ -777,14 +732,14 @@ export default function TenantDetailDialog({
                               Kode Tenant
                             </label>
                             <p className="text-sm font-mono bg-muted p-2 rounded">
-                              {tenant.code}
+                              {activeTenant.code}
                             </p>
                           </div>
                           <div>
                             <label className="text-sm font-medium text-muted-foreground">
                               Nama Tenant
                             </label>
-                            <p className="text-sm font-medium">{tenant.name}</p>
+                            <p className="text-sm font-medium">{activeTenant.name}</p>
                           </div>
                           <div>
                             <label className="text-sm font-medium text-muted-foreground">
@@ -793,12 +748,12 @@ export default function TenantDetailDialog({
                             <p className="text-sm font-medium">
                               {(() => {
                                 try {
-                                  if (tenant.user && typeof tenant.user === 'object') {
-                                    return tenant.user.name || tenant.user.email || '-';
+                                  if (activeTenant.user && typeof activeTenant.user === 'object') {
+                                    return activeTenant.user.name || activeTenant.user.email || '-';
                                   }
-                                  return tenant.user || '-';
+                                  return activeTenant.user || '-';
                                 } catch (error) {
-                                  console.error('Error rendering user field:', error, tenant.user);
+                                  console.error('Error rendering user field:', error, activeTenant.user);
                                   return '-';
                                 }
                               })()}
@@ -812,13 +767,13 @@ export default function TenantDetailDialog({
                               {(() => {
                                 // Use status from database if available, otherwise calculate based on contract_end_at
                                 let tenantStatus: string;
-                                const normalizedStatus = normalizeTenantStatus(tenant.status);
+                                const normalizedStatus = normalizeTenantStatus(activeTenant.status);
                                 if (normalizedStatus) {
                                   tenantStatus = normalizedStatus;
                                 } else {
                                   // Fallback: Calculate tenant status based on contract_end_at
                                   const today = new Date()
-                                  const endDate = new Date(tenant.contract_end_at)
+                                  const endDate = new Date(activeTenant.contract_end_at)
                                   const diffDays = Math.ceil((endDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
                                   tenantStatus = diffDays < 0 ? 'expired' : 'active'
                                 }
@@ -849,20 +804,20 @@ export default function TenantDetailDialog({
                             <label className="text-sm font-medium text-muted-foreground">
                               Mulai Kontrak
                             </label>
-                            <p className="text-sm font-medium">{formatDate(tenant.contract_begin_at)}</p>
+                            <p className="text-sm font-medium">{formatDate(activeTenant.contract_begin_at)}</p>
                           </div>
                           <div>
                             <label className="text-sm font-medium text-muted-foreground">
                               Berakhir Kontrak
                             </label>
-                            <p className="text-sm font-medium">{formatDate(tenant.contract_end_at)}</p>
+                            <p className="text-sm font-medium">{formatDate(activeTenant.contract_end_at)}</p>
                           </div>
                           <div>
                             <label className="text-sm font-medium text-muted-foreground">
                               Durasi Sewa
                             </label>
                             <p className="text-sm font-medium">
-                              {tenant.rent_duration} {DURATION_UNIT_LABELS[tenant.rent_duration_unit] || tenant.rent_duration_unit}
+                              {activeTenant.rent_duration} {DURATION_UNIT_LABELS[activeTenant.rent_duration_unit] || activeTenant.rent_duration_unit}
                             </p>
                           </div>
                           <div>
@@ -870,138 +825,102 @@ export default function TenantDetailDialog({
                               Harga Sewa
                             </label>
                             <p className="text-sm font-medium">
-                              {tenant.rent_price 
-                                ? new Intl.NumberFormat('id-ID', {
-                                    style: 'currency',
-                                    currency: 'IDR',
-                                    minimumFractionDigits: 0,
-                                    maximumFractionDigits: 0,
-                                  }).format(tenant.rent_price)
-                                : '-'}
+                              {formatCurrencyIdr(totalRentPrice)}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Total harga sewa + PPN
                             </p>
                           </div>
-                          {(
-                            <div>
-                              <label className="text-sm font-medium text-muted-foreground">
-                                Harga Bayar Sewa
-                              </label>
-                              <p className="text-sm font-medium">
-                                {(() => {
-                                  const rentPrice = tenant.rent_price || 0
-                                  const downPayment = tenant.down_payment || 0
-                                  const duration = parseInt(String(tenant.rent_duration)) || 0
-                                  
-                                  // Normalize rent_duration_unit to number: 0 = year, 1 = month
-                                  let durationUnitNum: number
-                                  if (typeof tenant.rent_duration_unit === 'number') {
-                                    durationUnitNum = tenant.rent_duration_unit
-                                  } else if (typeof tenant.rent_duration_unit === 'string') {
-                                    const unitStr = tenant.rent_duration_unit.toLowerCase()
-                                    durationUnitNum = (unitStr === 'year' || unitStr === DURATION_UNITS.YEAR) ? 0 : 1
-                                  } else {
-                                    durationUnitNum = 1 // default to month
-                                  }
-                                  
-                                  // Normalize payment_term to number: 0 = year, 1 = month
-                                  let paymentTermNum: number
-                                  if (typeof tenant.payment_term === 'number') {
-                                    paymentTermNum = tenant.payment_term
-                                  } else if (typeof tenant.payment_term === 'string') {
-                                    const termStr = tenant.payment_term.trim().toLowerCase()
-                                    if (termStr === '0' || termStr === 'year' || termStr === DURATION_UNITS.YEAR) {
-                                      paymentTermNum = 0
-                                    } else if (termStr === '1' || termStr === 'month' || termStr === DURATION_UNITS.MONTH) {
-                                      paymentTermNum = 1
-                                    } else {
-                                      paymentTermNum = 1 // default to month
-                                    }
-                                  } else {
-                                    paymentTermNum = 1 // default to month
-                                  }
-                                  
-                                  if (duration > 0) {
-                                    let numberOfPayments = 0
-                                    
-                                    // Check payment_term first
-                                    if (paymentTermNum === durationUnitNum) {
-                                      // If payment_term is same as rent_duration_unit, number of payments is duration
-                                      numberOfPayments = duration
-                                    } else {
-                                      // If payment_term is not the same as rent_duration_unit
-                                      if (paymentTermNum === 1 && durationUnitNum === 0) {
-                                        // If payment_term is month (1) and rent_duration_unit is year (0), number of payments is duration * 12
-                                        numberOfPayments = duration * 12
-                                      }
-                                    }
-                                    
-                                    // Harga bayar is (rentPrice - downPayment) / number of payments
-                                    const pricePerTerm = numberOfPayments > 0 ? (rentPrice - downPayment) / numberOfPayments : 0
-                                    
-                                    if (numberOfPayments > 0 && pricePerTerm > 0) {
-                                      return new Intl.NumberFormat('id-ID', {
-                                        style: 'currency',
-                                        currency: 'IDR',
-                                        minimumFractionDigits: 0,
-                                        maximumFractionDigits: 0,
-                                      }).format(pricePerTerm)
-                                    }
-                                  }
-                                  return '-'
-                                })()}
-                              </p>
-                            </div>
-                          )}
                           <div>
                             <label className="text-sm font-medium text-muted-foreground">
-                              Unit & Asset
+                              Tipe Bangunan
+                            </label>
+                            <div className="mt-1">
+                              {tenantDetailLoading ? (
+                                <span className="text-sm text-muted-foreground">Memuat...</span>
+                              ) : buildingType ? (
+                                <Badge variant="secondary" className="text-sm">
+                                  {buildingType === 'unit' ? 'Unit' : 'Asset'}
+                                </Badge>
+                              ) : (
+                                <span className="text-sm text-muted-foreground">-</span>
+                              )}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-sm font-medium text-muted-foreground">
+                              {buildingType === 'asset' ? 'Asset yang Digunakan' : 'Unit yang Digunakan'}
                             </label>
                             <div className="flex flex-col gap-2 mt-1">
-                              {(() => {
+                              {tenantDetailLoading ? (
+                                <span className="text-sm text-muted-foreground">Memuat...</span>
+                              ) : (() => {
                                 try {
-                                  // Check if units array exists and has items
-                                  if (tenant.units && Array.isArray(tenant.units) && tenant.units.length > 0) {
-                                    return tenant.units.map((unit, index) => {
-                                      if (!unit) return null;
-                                      const unitName = unit.name || unit.id || `Unit ${index + 1}`;
-                                      const assetName = unit.asset?.name || unit.asset?.code || (unit.asset_id ? `Asset ${unit.asset_id}` : null);
-                                      
-                                      return (
-                                        <div key={unit.id || index} className="flex flex-col gap-1">
-                                          <Badge variant="outline" className="text-sm w-fit">
-                                            {unitName}
-                                          </Badge>
-                                          {assetName && (
-                                            <div className="text-xs text-muted-foreground ml-1">
-                                              Asset: {assetName}
-                                            </div>
-                                          )}
-                                        </div>
-                                      );
-                                    }).filter(Boolean);
+                                  if (buildingType === 'unit') {
+                                    if (activeTenant.units && Array.isArray(activeTenant.units) && activeTenant.units.length > 0) {
+                                      return activeTenant.units.map((unit, index) => {
+                                        if (!unit) return null
+                                        const unitName = unit.name || unit.code || unit.id || `Unit ${index + 1}`
+                                        const assetName = unit.asset?.name || unit.asset?.code || null
+
+                                        return (
+                                          <div key={unit.id || index} className="flex flex-col gap-1">
+                                            <Badge variant="outline" className="text-sm w-fit">
+                                              {unitName}
+                                            </Badge>
+                                            {assetName && (
+                                              <div className="text-xs text-muted-foreground ml-1">
+                                                Asset: {assetName}
+                                              </div>
+                                            )}
+                                          </div>
+                                        )
+                                      }).filter(Boolean)
+                                    }
+
+                                    if (activeTenant.unit_ids && Array.isArray(activeTenant.unit_ids) && activeTenant.unit_ids.length > 0) {
+                                      return activeTenant.unit_ids.map((unitId, index) => (
+                                        <Badge key={index} variant="outline" className="text-sm w-fit">
+                                          {unitId}
+                                        </Badge>
+                                      ))
+                                    }
                                   }
-                                  
-                                  // Fallback: check unit_ids
-                                  if (tenant.unit_ids && Array.isArray(tenant.unit_ids) && tenant.unit_ids.length > 0) {
-                                    return tenant.unit_ids.map((unitId, index) => (
-                                      <Badge key={index} variant="outline" className="text-sm w-fit">
-                                        {unitId}
-                                      </Badge>
-                                    ));
+
+                                  if (buildingType === 'asset') {
+                                    if (activeTenant.assets && Array.isArray(activeTenant.assets) && activeTenant.assets.length > 0) {
+                                      return activeTenant.assets.map((asset: Asset, index: number) => {
+                                        const assetName = asset.name || asset.code || asset.id || `Asset ${index + 1}`
+                                        const assetTypeLabel = asset.asset_type != null ? getAssetTypeLabel(asset.asset_type) : null
+
+                                        return (
+                                          <div key={asset.id || index} className="flex flex-col gap-1">
+                                            <Badge variant="outline" className="text-sm w-fit">
+                                              {assetName}
+                                            </Badge>
+                                            {assetTypeLabel && (
+                                              <div className="text-xs text-muted-foreground ml-1">
+                                                Tipe: {assetTypeLabel}
+                                              </div>
+                                            )}
+                                          </div>
+                                        )
+                                      })
+                                    }
+
+                                    if (activeTenant.asset_ids && Array.isArray(activeTenant.asset_ids) && activeTenant.asset_ids.length > 0) {
+                                      return activeTenant.asset_ids.map((assetId, index) => (
+                                        <Badge key={index} variant="outline" className="text-sm w-fit">
+                                          {assetId}
+                                        </Badge>
+                                      ))
+                                    }
                                   }
-                                  
-                                  // If unit_ids is a string
-                                  if (tenant.unit_ids && typeof tenant.unit_ids === 'string') {
-                                    return (
-                                      <Badge variant="outline" className="text-sm w-fit">
-                                        {tenant.unit_ids}
-                                      </Badge>
-                                    );
-                                  }
-                                  
-                                  return <span className="text-sm text-muted-foreground">-</span>;
+
+                                  return <span className="text-sm text-muted-foreground">-</span>
                                 } catch (error) {
-                                  console.error('Error rendering unit field:', error, tenant.units, tenant.unit_ids);
-                                  return <span className="text-sm text-muted-foreground">-</span>;
+                                  console.error('Error rendering building resources:', error, activeTenant.units, activeTenant.assets)
+                                  return <span className="text-sm text-muted-foreground">-</span>
                                 }
                               })()}
                             </div>
@@ -1025,9 +944,9 @@ export default function TenantDetailDialog({
                               Dokumen Identitas
                             </label>
                             <div className="mt-2">
-                              {tenant.tenant_identifications && tenant.tenant_identifications.length > 0 ? (
+                              {activeTenant.tenant_identifications && activeTenant.tenant_identifications.length > 0 ? (
                                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                  {tenant.tenant_identifications.map((doc, index) => {
+                                  {activeTenant.tenant_identifications.map((doc, index) => {
                                     const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(doc) || doc.startsWith('data:image')
                                     const isPdf = /\.pdf$/i.test(doc)
                                     const fileName = doc.split('/').pop() || `Dokumen ${index + 1}`
@@ -1096,9 +1015,9 @@ export default function TenantDetailDialog({
                               Dokumen Kontrak
                             </label>
                             <div className="mt-2">
-                              {tenant.contract_documents && tenant.contract_documents.length > 0 ? (
+                              {activeTenant.contract_documents && activeTenant.contract_documents.length > 0 ? (
                                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                  {tenant.contract_documents.map((doc, index) => {
+                                  {activeTenant.contract_documents.map((doc, index) => {
                                     const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(doc) || doc.startsWith('data:image')
                                     const isPdf = /\.pdf$/i.test(doc)
                                     const fileName = doc.split('/').pop() || `Dokumen ${index + 1}`
@@ -1168,7 +1087,7 @@ export default function TenantDetailDialog({
                             </label>
                             <div className="flex flex-wrap gap-1 mt-1">
                               <Badge variant="outline" className="text-sm">
-                                {getCategoryLabel(tenant)}
+                                {getCategoryLabel(activeTenant)}
                               </Badge>
                             </div>
                           </div>
@@ -1190,20 +1109,20 @@ export default function TenantDetailDialog({
                             <label className="text-sm font-medium text-muted-foreground">
                               Dibuat Pada
                             </label>
-                            <p className="text-sm font-medium">{formatDate(tenant.created_at)}</p>
+                            <p className="text-sm font-medium">{formatDate(activeTenant.created_at)}</p>
                           </div>
                           <div>
                             <label className="text-sm font-medium text-muted-foreground">
                               Diperbarui Pada
                             </label>
-                            <p className="text-sm font-medium">{formatDate(tenant.updated_at)}</p>
+                            <p className="text-sm font-medium">{formatDate(activeTenant.updated_at)}</p>
                           </div>
                           <div>
                             <label className="text-sm font-medium text-muted-foreground">
                               ID Tenant
                             </label>
                             <p className="text-xs font-mono bg-muted p-2 rounded">
-                              {tenant.id}
+                              {activeTenant.id}
                             </p>
                           </div>
                           <div>
@@ -1211,7 +1130,7 @@ export default function TenantDetailDialog({
                               ID User
                             </label>
                             <p className="text-xs font-mono bg-muted p-2 rounded">
-                              {tenant.user_id}
+                              {activeTenant.user_id}
                             </p>
                           </div>
                         </div>
@@ -1230,95 +1149,7 @@ export default function TenantDetailDialog({
                         </CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <TenantLogsTable tenantId={tenant.id} loading={false} />
-                      </CardContent>
-                    </Card>
-                  </div>
-                )}
-
-                {activeTab === 'deposit' && (
-                  <div className="min-w-0 space-y-6">
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                          <Wallet className="h-5 w-5" />
-                          History Deposito
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="min-w-0">
-                        {depositLogs.length > 0 ? (
-                          <div className="max-w-full min-w-0">
-                            <Table className="min-w-[560px] w-max">
-                              <TableHeader>
-                                <TableRow>
-                                  <TableHead>Tanggal</TableHead>
-                                  <TableHead>Reason</TableHead>
-                                  <TableHead>Current Deposit</TableHead>
-                                  <TableHead>Dibuat Oleh</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {depositLogs.map((log) => {
-                                  const reason = log.reason || '-'
-                                  const newDeposit = log.new_deposit || 0
-                                  const oldDeposit = log.old_deposit || 0
-                                  const delta = newDeposit - oldDeposit
-                                  const isIncrease = delta > 0
-                                  const isDecrease = delta < 0
-                                  
-                                  return (
-                                    <TableRow key={log.id}>
-                                      <TableCell className="text-sm">
-                                        {formatDate(log.created_at)}
-                                      </TableCell>
-                                      <TableCell>
-                                        <span className="text-sm">{reason}</span>
-                                      </TableCell>
-                                      <TableCell>
-                                        <div className="flex items-center gap-2">
-                                          <span className="text-sm font-medium">
-                                            {new Intl.NumberFormat('id-ID', {
-                                              style: 'currency',
-                                              currency: 'IDR',
-                                              minimumFractionDigits: 0,
-                                            }).format(Number(newDeposit))}
-                                          </span>
-                                          {delta !== 0 && (
-                                            <span className={`text-sm font-semibold ${
-                                              isIncrease ? 'text-green-600' : 'text-red-600'
-                                            }`}>
-                                              ({isIncrease ? '+' : '-'}
-                                              {new Intl.NumberFormat('id-ID', {
-                                                style: 'currency',
-                                                currency: 'IDR',
-                                                minimumFractionDigits: 0,
-                                              }).format(Math.abs(delta))})
-                                            </span>
-                                          )}
-                                        </div>
-                                      </TableCell>
-                                      <TableCell>
-                                        {log.created_by ? (
-                                          <div>
-                                            <p className="font-medium text-sm">{log.created_by.name}</p>
-                                            <p className="text-xs text-muted-foreground">{log.created_by.email}</p>
-                                          </div>
-                                        ) : (
-                                          <span className="text-muted-foreground">-</span>
-                                        )}
-                                      </TableCell>
-                                    </TableRow>
-                                  )
-                                })}
-                              </TableBody>
-                            </Table>
-                          </div>
-                        ) : (
-                          <div className="text-center py-8 text-muted-foreground">
-                            <Wallet className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                            <p>Tidak ada history deposito</p>
-                          </div>
-                        )}
+                        <TenantLogsTable tenantId={activeTenant.id} loading={false} />
                       </CardContent>
                     </Card>
                   </div>
@@ -1662,7 +1493,7 @@ export default function TenantDetailDialog({
                 type="text"
                 value={paidAmountDisplay}
                 onChange={(e) => handlePaidAmountChange(e.target.value)}
-                placeholder={pricePerTerm ? formatPrice(pricePerTerm) : "Masukkan jumlah yang dibayar"}
+                placeholder="Masukkan jumlah yang dibayar"
                 inputMode="decimal"
               />
             </div>

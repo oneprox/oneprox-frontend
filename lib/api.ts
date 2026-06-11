@@ -1228,6 +1228,9 @@ export interface Tenant {
   contract_documents?: string[]
   unit_ids?: string[]
   units?: Unit[]
+  asset_ids?: string[]
+  assets?: Asset[]
+  building_type?: 'unit' | 'asset'
   category?: {
     id: number
     name: string
