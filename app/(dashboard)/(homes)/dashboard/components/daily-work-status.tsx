@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { assetsApi, userTasksApi, type Asset, type UserTask } from '@/lib/api'
 import LoadingSkeleton from '@/components/loading-skeleton'
 
@@ -176,6 +177,30 @@ function cellStatusForPatrol(ut: UserTask | undefined): CellStatus {
   const deadline = ut.scheduled_at ? new Date(ut.scheduled_at) : null
   if (deadline && deadline < new Date() && !isCompleted(ut)) return 'terlewat'
   return 'belum'
+}
+
+function taskMatchesPatrolSlot(ut: UserTask, main: UserTask, col: number): boolean {
+  const slot = slotIndexFromUserTask(ut)
+  if (slot >= 0) return slot === col
+  return mainMatchesPatrolSlot(main, col)
+}
+
+function aggregatePatrolStatus(tasks: UserTask[]): CellStatus {
+  if (tasks.length === 0) return 'belum'
+  if (tasks.every(isCompleted)) return 'selesai'
+  if (tasks.some(isInProgress)) return 'proses'
+  if (tasks.some((task) => cellStatusForPatrol(task) === 'terlewat')) return 'terlewat'
+  return 'belum'
+}
+
+function patrolTitikKey(ut: UserTask): string {
+  const taskId = ut.task_id ?? ut.task?.id
+  if (taskId != null && taskId !== '') return `task-${taskId}`
+  return `name-${(ut.task?.name || '').trim().toLowerCase()}`
+}
+
+function getUserDisplayName(ut: UserTask): string {
+  return (ut.user?.name || ut.user?.email || '').trim()
 }
 
 function childTaskPatrolTitle(child: UserTask, index: number): string {
@@ -596,11 +621,12 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
   const pctBulananKeamanan = completionRate(keamananMonthList)
 
   /**
-   * Satu baris per child task keamanan. Nama titik patroli = nama task child.
-   * Kolom jam mengikuti jadwal main task; status per sel dari child itu sendiri.
+   * Satu baris per titik patroli (nama task child). Beberapa user_task dengan
+   * task yang sama digabung; hover per sel menampilkan user di slot jam tersebut.
    */
   const patrolMatrix = useMemo(() => {
-    const rows: { key: string; titik: string; cells: { status: CellStatus }[] }[] = []
+    type PatrolEntry = { ut: UserTask; main: UserTask; titik: string; titikKey: string }
+    const entries: PatrolEntry[] = []
 
     keamananSecurityGroups.forEach((group, groupIdx) => {
       const { main, key, children } = group
@@ -608,39 +634,55 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
 
       if (vis.length > 0) {
         vis.forEach((child, childIdx) => {
-          const cells = PATROL_TIME_SLOTS.map((_, col) => {
-            if (!mainMatchesPatrolSlot(main, col)) {
-              return { status: 'belum' as CellStatus }
-            }
-            return { status: cellStatusForPatrol(child) }
-          })
-
-          rows.push({
-            key: `${key || `patrol-${groupIdx}`}-child-${child.user_task_id ?? child.id ?? childIdx}`,
-            titik: childTaskPatrolTitle(child, rows.length),
-            cells,
+          entries.push({
+            ut: child,
+            main,
+            titik: childTaskPatrolTitle(child, childIdx),
+            titikKey: patrolTitikKey(child),
           })
         })
         return
       }
 
       if (isKeamanan(main)) {
-        const cells = PATROL_TIME_SLOTS.map((_, col) => {
-          if (!mainMatchesPatrolSlot(main, col)) {
-            return { status: 'belum' as CellStatus }
-          }
-          return { status: cellStatusForPatrol(main) }
-        })
-
-        rows.push({
-          key: key || `patrol-${groupIdx}`,
-          titik: childTaskPatrolTitle(main, rows.length),
-          cells,
+        entries.push({
+          ut: main,
+          main,
+          titik: childTaskPatrolTitle(main, 0),
+          titikKey: patrolTitikKey(main),
         })
       }
     })
 
-    return rows.sort((a, b) => a.titik.localeCompare(b.titik, 'id'))
+    const grouped = new Map<string, { titik: string; items: PatrolEntry[] }>()
+    for (const entry of entries) {
+      const bucket = grouped.get(entry.titikKey)
+      if (bucket) {
+        bucket.items.push(entry)
+      } else {
+        grouped.set(entry.titikKey, { titik: entry.titik, items: [entry] })
+      }
+    }
+
+    return [...grouped.entries()]
+      .map(([titikKey, { titik, items }]) => {
+        const cells = PATROL_TIME_SLOTS.map((_, col) => {
+          const matched = items.filter((entry) => taskMatchesPatrolSlot(entry.ut, entry.main, col))
+          const users = [...new Set(matched.map((entry) => getUserDisplayName(entry.ut)).filter(Boolean))]
+
+          if (matched.length === 0) {
+            return { status: 'belum' as CellStatus, users: [] as string[] }
+          }
+
+          return {
+            status: aggregatePatrolStatus(matched.map((entry) => entry.ut)),
+            users,
+          }
+        })
+
+        return { key: titikKey, titik, cells }
+      })
+      .sort((a, b) => a.titik.localeCompare(b.titik, 'id'))
   }, [keamananSecurityGroups])
 
   const PatrolIcon = ({ status }: { status: CellStatus }) => {
@@ -947,9 +989,22 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
                         <TableCell className="max-w-[140px] text-sm text-slate-800">{row.titik}</TableCell>
                         {row.cells.map((c, j) => (
                           <TableCell key={j} className="text-center">
-                            <div className="flex justify-center">
-                              <PatrolIcon status={c.status} />
-                            </div>
+                            {c.users.length > 0 ? (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <div className="flex justify-center cursor-default">
+                                    <PatrolIcon status={c.status} />
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                  {c.users.join(', ')}
+                                </TooltipContent>
+                              </Tooltip>
+                            ) : (
+                              <div className="flex justify-center">
+                                <PatrolIcon status={c.status} />
+                              </div>
+                            )}
                           </TableCell>
                         ))}
                       </TableRow>
