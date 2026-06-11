@@ -178,12 +178,10 @@ function cellStatusForPatrol(ut: UserTask | undefined): CellStatus {
   return 'belum'
 }
 
-function aggregatePatrolStatus(tasks: UserTask[]): CellStatus {
-  if (tasks.length === 0) return 'belum'
-  if (tasks.every(isCompleted)) return 'selesai'
-  if (tasks.some(isInProgress)) return 'proses'
-  if (tasks.some((task) => cellStatusForPatrol(task) === 'terlewat')) return 'terlewat'
-  return 'belum'
+function childTaskPatrolTitle(child: UserTask, index: number): string {
+  const name = (child.task?.name || '').trim()
+  if (name) return name
+  return `Titik ${index + 1}`
 }
 
 /** Status tampilan dari field `user_tasks.status` (bukan inferensi terpisah). */
@@ -598,31 +596,51 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
   const pctBulananKeamanan = completionRate(keamananMonthList)
 
   /**
-   * Baris patroli per main task. Slot waktu mengikuti jadwal main task;
-   * child task tidak difilter per jam — status sel menggabungkan semua child.
+   * Satu baris per child task keamanan. Nama titik patroli = nama task child.
+   * Kolom jam mengikuti jadwal main task; status per sel dari child itu sendiri.
    */
   const patrolMatrix = useMemo(() => {
-    return keamananSecurityGroups
-      .map((group, idx) => {
-        const { main, key, children } = group
-        const vis = visibleChildrenForRole(main, children, isKeamanan).filter(isKeamanan)
-        const titik = mainTaskGroupTitle(main, 'Patroli')
+    const rows: { key: string; titik: string; cells: { status: CellStatus }[] }[] = []
+
+    keamananSecurityGroups.forEach((group, groupIdx) => {
+      const { main, key, children } = group
+      const vis = visibleChildrenForRole(main, children, isKeamanan)
+
+      if (vis.length > 0) {
+        vis.forEach((child, childIdx) => {
+          const cells = PATROL_TIME_SLOTS.map((_, col) => {
+            if (!mainMatchesPatrolSlot(main, col)) {
+              return { status: 'belum' as CellStatus }
+            }
+            return { status: cellStatusForPatrol(child) }
+          })
+
+          rows.push({
+            key: `${key || `patrol-${groupIdx}`}-child-${child.user_task_id ?? child.id ?? childIdx}`,
+            titik: childTaskPatrolTitle(child, rows.length),
+            cells,
+          })
+        })
+        return
+      }
+
+      if (isKeamanan(main)) {
         const cells = PATROL_TIME_SLOTS.map((_, col) => {
           if (!mainMatchesPatrolSlot(main, col)) {
-            return { ut: undefined, status: 'belum' as CellStatus }
+            return { status: 'belum' as CellStatus }
           }
-
-          if (vis.length > 0) {
-            return { ut: vis[0], status: aggregatePatrolStatus(vis) }
-          }
-
-          const ut = isKeamanan(main) ? main : undefined
-          return { ut, status: cellStatusForPatrol(ut) }
+          return { status: cellStatusForPatrol(main) }
         })
-        return { key: key || `patrol-${idx}`, titik, cells }
-      })
-      .sort((a, b) => a.titik.localeCompare(b.titik, 'id'))
-      .slice(0, 12)
+
+        rows.push({
+          key: key || `patrol-${groupIdx}`,
+          titik: childTaskPatrolTitle(main, rows.length),
+          cells,
+        })
+      }
+    })
+
+    return rows.sort((a, b) => a.titik.localeCompare(b.titik, 'id'))
   }, [keamananSecurityGroups])
 
   const PatrolIcon = ({ status }: { status: CellStatus }) => {
