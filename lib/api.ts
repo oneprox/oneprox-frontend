@@ -1038,6 +1038,7 @@ export interface Unit {
   id: string
   asset_id: string
   name: string
+  code?: string
   size: number
   building_area?: number
   rent_price: number
