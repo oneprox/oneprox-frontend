@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { assetsApi, userTasksApi, type Asset, type UserTask } from '@/lib/api'
 import LoadingSkeleton from '@/components/loading-skeleton'
 
@@ -990,16 +990,21 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
                         {row.cells.map((c, j) => (
                           <TableCell key={j} className="text-center">
                             {c.users.length > 0 ? (
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <div className="flex justify-center cursor-default">
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className="mx-auto flex cursor-pointer items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                    aria-label={`Lihat petugas ${row.titik} jam ${PATROL_TIME_SLOTS[j]}`}
+                                  >
                                     <PatrolIcon status={c.status} />
-                                  </div>
-                                </TooltipTrigger>
-                                <TooltipContent side="top">
-                                  {c.users.join(', ')}
-                                </TooltipContent>
-                              </Tooltip>
+                                  </button>
+                                </PopoverTrigger>
+                                <PopoverContent side="top" className="w-auto max-w-xs px-3 py-2 text-sm">
+                                  <p className="font-medium text-slate-700">Petugas</p>
+                                  <p className="text-slate-600">{c.users.join(', ')}</p>
+                                </PopoverContent>
+                              </Popover>
                             ) : (
                               <div className="flex justify-center">
                                 <PatrolIcon status={c.status} />
@@ -1036,6 +1041,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
                 <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border-2 border-slate-200 bg-white" />
                 Belum dijalankan
               </span>
+              <span className="text-slate-500">Klik ikon status untuk melihat petugas</span>
             </div>
           </CardContent>
         </Card>
