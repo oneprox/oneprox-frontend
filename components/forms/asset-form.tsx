@@ -47,7 +47,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Loader2, Upload, Image, FileText, X, MapPin, Search, Plus, Edit, Trash2 } from 'lucide-react'
+import { Loader2, Upload, Image as ImageIcon, FileText, X, MapPin, Search, Plus, Edit, Trash2 } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
@@ -788,7 +788,7 @@ export default function AssetForm({ asset, onSubmit, onCancel, loading = false }
             render={({ field }) => (
               <FormItem>
                 <FormLabel className="flex items-center gap-2">
-                  <Image className="h-4 w-4" />
+                  <ImageIcon className="h-4 w-4" />
                   Foto Asset
                   <span className="text-xs text-gray-500">(JPG, PNG, JPEG)</span>
                 </FormLabel>

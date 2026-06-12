@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Loader2, Upload, Image, X, Camera } from 'lucide-react'
+import { Loader2, Upload, Image as ImageIcon, X, Camera } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
@@ -229,7 +229,7 @@ export default function ComplaintReportForm({ onSubmit, onCancel, loading = fals
           />
         ) : (
           <div className="w-full h-32 flex items-center justify-center bg-gray-100">
-            <Image className="h-8 w-8 text-gray-400" />
+            <ImageIcon className="h-8 w-8 text-gray-400" />
           </div>
         )}
         <div className="p-2">

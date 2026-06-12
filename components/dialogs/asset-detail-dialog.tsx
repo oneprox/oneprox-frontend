@@ -5,7 +5,7 @@ import { Asset, ASSET_TYPE_LABELS } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { History, Building2, X, MapPin, Square, Calendar, Edit, Image, FileText } from 'lucide-react'
+import { History, Building2, X, MapPin, Square, Calendar, Edit, Image as ImageIcon, FileText } from 'lucide-react'
 import Link from 'next/link'
 import AssetLogsTable from '@/components/table/asset-logs-table'
 
@@ -304,7 +304,7 @@ export default function AssetDetailDialog({
                       <Card>
                         <CardHeader>
                           <CardTitle className="flex items-center gap-2">
-                            <Image className="h-5 w-5" />
+                            <ImageIcon className="h-5 w-5" />
                             Foto dan Dokumen
                           </CardTitle>
                         </CardHeader>
@@ -313,7 +313,7 @@ export default function AssetDetailDialog({
                           {asset.photos && asset.photos.length > 0 && (
                             <div>
                               <label className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-3">
-                                <Image className="h-4 w-4" />
+                                <ImageIcon className="h-4 w-4" />
                                 Foto Asset
                               </label>
                               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
