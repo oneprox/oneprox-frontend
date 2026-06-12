@@ -7,6 +7,10 @@
     "dev:turbo": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
+    "start:prod": "npm run build && next start",
+    "pm2:start": "pm2 start start.json",
+    "pm2:restart": "pm2 restart oripro-frontend",
+    "pm2:deploy": "npm install && npm run build && pm2 restart oripro-frontend || pm2 start start.json",
     "lint": "next lint"
   },
   "dependencies": {
@@ -59,7 +63,8 @@
     "@types/react-dom": "^18",
     "eslint": "^9.39.2",
     "eslint-config-next": "^15.3.8",
-    "tailwindcss": "^4",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.18",
     "typescript": "^5.8.3"
   }
 }

@@ -17,10 +17,18 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Loader2, Calendar, Clock, MapPin, CheckCircle2, Eye, RefreshCw, ArrowLeft, User as UserIcon, ChevronDown, ChevronRight, Home, UserRoundPen } from 'lucide-react'
+import { Loader2, Calendar, Clock, MapPin, CheckCircle2, Eye, RefreshCw, ArrowLeft, User as UserIcon, ChevronDown, ChevronRight, Home, UserRoundPen, ImageIcon } from 'lucide-react'
 import { attendanceApi, userTasksApi, usersApi, Attendance, UserTask, User, UserAsset } from '@/lib/api'
 import toast from 'react-hot-toast'
 import WorkerTaskDetailDialog from '@/components/dialogs/worker-task-detail-dialog'
+import TaskEvidenceBeforeAfterDialog, {
+  hasImageEvidence,
+} from '@/components/dialogs/task-evidence-before-after-dialog'
+
+function isCleaningRole(roleName?: string | null): boolean {
+  const role = (roleName || '').toLowerCase()
+  return role.includes('kebersihan') || role.includes('cleaning')
+}
 
 function WorkerDetailContent() {
   const router = useRouter()
@@ -38,6 +46,8 @@ function WorkerDetailContent() {
   const [isLoadingTasks, setIsLoadingTasks] = useState(true)
   const [selectedUserTask, setSelectedUserTask] = useState<UserTask | null>(null)
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false)
+  const [evidenceUserTask, setEvidenceUserTask] = useState<UserTask | null>(null)
+  const [isEvidenceDialogOpen, setIsEvidenceDialogOpen] = useState(false)
   const toLocalDateInputValue = (date: Date) => {
     const year = date.getFullYear()
     const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -690,6 +700,13 @@ function WorkerDetailContent() {
     setIsDetailDialogOpen(true)
   }
 
+  const handleViewTaskEvidence = (userTask: UserTask) => {
+    setEvidenceUserTask(userTask)
+    setIsEvidenceDialogOpen(true)
+  }
+
+  const isCleaningWorker = isCleaningRole(user?.role?.name)
+
   const toggleExpandDate = (date: string) => {
     setExpandedDates(prev => {
       const newSet = new Set(prev)
@@ -1287,15 +1304,28 @@ function WorkerDetailContent() {
                                                           {getTaskStatusBadge(userTask)}
                                                         </TableCell>
                                                         <TableCell>
-                                                          <Button
-                                                            variant="outline"
-                                                            size="sm"
-                                                            onClick={() => handleViewTaskDetail(userTask)}
-                                                            className="flex items-center gap-2"
-                                                          >
-                                                            <Eye className="h-4 w-4" />
-                                                            Detail
-                                                          </Button>
+                                                          <div className="flex flex-wrap items-center gap-2">
+                                                            <Button
+                                                              variant="outline"
+                                                              size="sm"
+                                                              onClick={() => handleViewTaskDetail(userTask)}
+                                                              className="flex items-center gap-2"
+                                                            >
+                                                              <Eye className="h-4 w-4" />
+                                                              Detail
+                                                            </Button>
+                                                            {isCleaningWorker && hasImageEvidence(userTask) && (
+                                                              <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                onClick={() => handleViewTaskEvidence(userTask)}
+                                                                className="flex items-center gap-2"
+                                                              >
+                                                                <ImageIcon className="h-4 w-4" />
+                                                                Bukti
+                                                              </Button>
+                                                            )}
+                                                          </div>
                                                         </TableCell>
                                                       </TableRow>
                                                     )
@@ -1328,6 +1358,12 @@ function WorkerDetailContent() {
         open={isDetailDialogOpen}
         onOpenChange={setIsDetailDialogOpen}
         userTask={selectedUserTask}
+      />
+
+      <TaskEvidenceBeforeAfterDialog
+        open={isEvidenceDialogOpen}
+        onOpenChange={setIsEvidenceDialogOpen}
+        userTask={evidenceUserTask}
       />
     </div>
   )

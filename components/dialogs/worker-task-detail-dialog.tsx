@@ -4,8 +4,16 @@ import React, { useState, useEffect } from 'react'
 import { UserTask, User, usersApi } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { X, Calendar, Clock, Building2, CheckCircle2, XCircle, Play, User as UserIcon, Users, Loader2 } from 'lucide-react'
+import { X, Calendar, Clock, Building2, CheckCircle2, XCircle, Play, User as UserIcon, Users, Loader2, ImageIcon } from 'lucide-react'
+import TaskEvidenceBeforeAfterDialog, {
+  hasImageEvidence,
+  parseTaskEvidences,
+} from '@/components/dialogs/task-evidence-before-after-dialog'
+
+function isCleaningRole(roleName?: string | null): boolean {
+  const role = (roleName || '').toLowerCase()
+  return role.includes('kebersihan') || role.includes('cleaning')
+}
 
 interface WorkerTaskDetailDialogProps {
   open: boolean
@@ -21,6 +29,7 @@ export default function WorkerTaskDetailDialog({
   const [mounted, setMounted] = useState(false)
   const [activeUsers, setActiveUsers] = useState<User[]>([])
   const [loadingUsers, setLoadingUsers] = useState(false)
+  const [evidenceDialogOpen, setEvidenceDialogOpen] = useState(false)
 
   useEffect(() => {
     setMounted(true)
@@ -146,6 +155,10 @@ export default function WorkerTaskDetailDialog({
   }
 
   const task = userTask.task
+  const roleName = userTask.user?.role?.name || task?.role?.name || ''
+  const isCleaningWorker = isCleaningRole(roleName)
+  const evidenceSlots = parseTaskEvidences(userTask.evidences)
+  const showBeforeAfterPopup = isCleaningWorker && evidenceSlots.length > 0
 
   return (
     <div 
@@ -270,68 +283,131 @@ export default function WorkerTaskDetailDialog({
             )}
 
             {/* Evidence */}
-            {userTask.evidences && userTask.evidences.length > 0 && (
+            {showBeforeAfterPopup && (
               <div className="border-t pt-3">
-                <p className="text-sm text-muted-foreground mb-2">Bukti Pengerjaan:</p>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm text-muted-foreground">Bukti Pengerjaan:</p>
+                  {hasImageEvidence(userTask) && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1.5"
+                      onClick={() => setEvidenceDialogOpen(true)}
+                    >
+                      <ImageIcon className="h-4 w-4" />
+                      Lihat Before / After
+                    </Button>
+                  )}
+                </div>
                 <div className="grid grid-cols-2 gap-3">
-                  {userTask.evidences.map((evidence: any, index: number) => {
-                    const rawUrl =
-                      typeof evidence === 'string'
-                        ? evidence
-                        : evidence && typeof evidence === 'object' && evidence.url != null
-                          ? String(evidence.url)
-                          : ''
-                    if (!rawUrl) return null
-
-                    const type =
-                      evidence && typeof evidence === 'object' && typeof evidence.type === 'string'
-                        ? String(evidence.type).toLowerCase()
-                        : ''
-                    const typeLabel =
-                      type === 'before' ? 'Before' : type === 'after' ? 'After' : `Bukti ${index + 1}`
+                  {(['before', 'after'] as const).map((slotType) => {
+                    const slot = evidenceSlots.find((e) => e.type === slotType)
+                    const typeLabel = slotType === 'before' ? 'Before' : 'After'
                     const badgeClass =
-                      type === 'before'
+                      slotType === 'before'
                         ? 'bg-amber-100 text-amber-800 border-amber-200'
-                        : type === 'after'
-                          ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                          : 'bg-slate-100 text-slate-700 border-slate-200'
+                        : 'bg-emerald-100 text-emerald-800 border-emerald-200'
 
-                    if (rawUrl.startsWith('text:')) {
-                      const text = rawUrl.slice(5).trim() || '(catatan)'
+                    if (!slot) {
                       return (
-                        <div key={index} className="space-y-1 rounded border border-slate-200 bg-slate-50 p-2">
-                          <Badge variant="outline" className={`text-[10px] ${badgeClass}`}>
-                            {typeLabel}
-                          </Badge>
-                          <p className="text-xs whitespace-pre-wrap break-words text-slate-700">{text}</p>
+                        <div
+                          key={slotType}
+                          className="flex h-28 items-center justify-center rounded border border-dashed border-slate-200 bg-slate-50 text-xs text-muted-foreground"
+                        >
+                          {typeLabel} belum ada
                         </div>
                       )
                     }
 
-                    const isImage = /\.(jpe?g|png|gif|webp|bmp|svg)(\?|$)/i.test(rawUrl)
+                    if (slot.isText) {
+                      return (
+                        <div key={slotType} className="space-y-1 rounded border border-slate-200 bg-slate-50 p-2">
+                          <Badge variant="outline" className={`text-[10px] ${badgeClass}`}>
+                            {typeLabel}
+                          </Badge>
+                          <p className="text-xs whitespace-pre-wrap break-words text-slate-700">{slot.text}</p>
+                        </div>
+                      )
+                    }
 
-                    return (
-                      <div key={index} className="space-y-1">
-                        {isImage ? (
-                          <a href={rawUrl} target="_blank" rel="noopener noreferrer">
-                            <img
-                              src={rawUrl}
-                              alt={`Evidence ${index + 1}`}
-                              className="w-full h-32 object-cover rounded border border-slate-200"
-                            />
-                          </a>
-                        ) : (
+                    if (!slot.isImage) {
+                      return (
+                        <div key={slotType} className="space-y-1">
                           <a
-                            href={rawUrl}
+                            href={slot.url}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="block rounded border border-slate-200 bg-slate-50 p-3 text-xs font-medium text-blue-600 hover:underline break-all"
                           >
-                            {rawUrl}
+                            Buka lampiran
                           </a>
-                        )}
+                          <Badge variant="outline" className={`text-[10px] ${badgeClass}`}>
+                            {typeLabel}
+                          </Badge>
+                        </div>
+                      )
+                    }
+
+                    return (
+                      <button
+                        key={slotType}
+                        type="button"
+                        onClick={() => setEvidenceDialogOpen(true)}
+                        className="space-y-1 text-left"
+                      >
+                        <img
+                          src={slot.url}
+                          alt={typeLabel}
+                          className="h-28 w-full rounded border border-slate-200 object-cover"
+                        />
                         <Badge variant="outline" className={`text-[10px] ${badgeClass}`}>
                           {typeLabel}
+                        </Badge>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+            {!showBeforeAfterPopup && userTask.evidences && userTask.evidences.length > 0 && (
+              <div className="border-t pt-3">
+                <p className="text-sm text-muted-foreground mb-2">Bukti Pengerjaan:</p>
+                <div className="grid grid-cols-2 gap-3">
+                  {evidenceSlots.map((slot, index) => {
+                    if (slot.isText) {
+                      return (
+                        <div key={index} className="space-y-1 rounded border border-slate-200 bg-slate-50 p-2">
+                          <Badge variant="outline" className="text-[10px]">
+                            {slot.label}
+                          </Badge>
+                          <p className="text-xs whitespace-pre-wrap break-words text-slate-700">{slot.text}</p>
+                        </div>
+                      )
+                    }
+
+                    return (
+                      <div key={index} className="space-y-1">
+                        {slot.isImage ? (
+                          <a href={slot.url} target="_blank" rel="noopener noreferrer">
+                            <img
+                              src={slot.url}
+                              alt={slot.label}
+                              className="h-32 w-full rounded border border-slate-200 object-cover"
+                            />
+                          </a>
+                        ) : (
+                          <a
+                            href={slot.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block break-all rounded border border-slate-200 bg-slate-50 p-3 text-xs font-medium text-blue-600 hover:underline"
+                          >
+                            Buka lampiran
+                          </a>
+                        )}
+                        <Badge variant="outline" className="text-[10px]">
+                          {slot.label}
                         </Badge>
                       </div>
                     )
@@ -378,6 +454,12 @@ export default function WorkerTaskDetailDialog({
           </div>
         </div>
       </div>
+
+      <TaskEvidenceBeforeAfterDialog
+        open={evidenceDialogOpen}
+        onOpenChange={setEvidenceDialogOpen}
+        userTask={userTask}
+      />
     </div>
   )
 }
