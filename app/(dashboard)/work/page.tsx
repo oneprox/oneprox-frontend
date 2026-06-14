@@ -121,7 +121,7 @@ function WorkContent() {
 
   /**
    * Task rutin yang masih aktif sekarang (WIB):
-   * - batch yang `created_at`-nya hari ini, atau
+   * - batch hari ini yang jendela shift-nya masih berjalan, atau
    * - batch kemarin yang shift-nya melewati tengah malam dan belum berakhir.
    */
   const activeRoutineTasks = filterRoutineTasksForActiveShift(routineUserTasks, now)
@@ -174,7 +174,7 @@ function WorkContent() {
         <section className="space-y-3">
           <h2 className="text-lg font-semibold tracking-tight">Task rutin (generate)</h2>
           <p className="text-sm text-muted-foreground">
-            Task rutin shift aktif (WIB): hari ini, atau shift kemarin yang melewati tengah malam dan belum mencapai end_time
+            Task rutin shift aktif (WIB): shift hari ini yang sedang berjalan, atau shift kemarin yang melewati tengah malam dan belum mencapai end_time
           </p>
           <TaskList
             userTasks={activeRoutineTasks}

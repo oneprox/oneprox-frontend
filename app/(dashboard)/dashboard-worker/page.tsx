@@ -178,7 +178,7 @@ function DashboardWorkerContent() {
 
   /**
    * List rutin shift aktif (WIB):
-   * - batch hari ini, atau
+   * - batch hari ini yang jendela shift-nya masih berjalan, atau
    * - batch shift kemarin yang melewati tengah malam dan belum mencapai end_time.
    * Statistik di bawah memakai data bulan berjalan.
    */

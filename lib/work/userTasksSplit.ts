@@ -67,6 +67,41 @@ function jakartaDateTime(jakartaDate: string, time: string): Date | null {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
+function jakartaTimeMinutes(d: Date): number {
+  const parts = d
+    .toLocaleTimeString('en-GB', {
+      timeZone: 'Asia/Jakarta',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+    .split(':')
+  const h = parseInt(parts[0], 10)
+  const mm = parseInt(parts[1], 10)
+  if (Number.isNaN(h) || Number.isNaN(mm)) return 0
+  return h * 60 + mm
+}
+
+/**
+ * Tanggal anchor shift (WIB).
+ * Shift malam (19:00–07:00): bila generate terjadi di dini hari (00:00–end_time),
+ * shift dimulai hari sebelumnya — bukan malam hari yang sama.
+ */
+function resolveShiftAnchorDate(
+  createdJakarta: string,
+  createdAt: Date,
+  startMin: number,
+  endMin: number
+): string {
+  if (endMin > startMin) return createdJakarta
+
+  const createdMin = jakartaTimeMinutes(createdAt)
+  if (createdMin <= endMin) {
+    return addDaysJakarta(createdJakarta, -1) ?? createdJakarta
+  }
+  return createdJakarta
+}
+
 interface TaskGroupTimes {
   start_time?: string
   end_time?: string
@@ -87,7 +122,7 @@ function readTaskGroupTimes(task: UserTask): TaskGroupTimes | null {
 }
 
 export interface ShiftWindow {
-  /** Mulai shift (Date absolut, anchor pada `created_at` di Jakarta). */
+  /** Mulai shift (Date absolut). */
   start: Date
   /** Akhir shift (Date absolut). */
   end: Date
@@ -95,12 +130,17 @@ export interface ShiftWindow {
   crossesMidnight: boolean
 }
 
+function isWithinShiftWindow(window: ShiftWindow, nowMs: number): boolean {
+  return nowMs >= window.start.getTime() && nowMs <= window.end.getTime()
+}
+
 /**
  * Hitung jendela shift berdasarkan task_group.start_time/end_time
- * dan tanggal `created_at` (zona Jakarta).
+ * dan waktu generate (`created_at`, zona Jakarta).
  *
- * - Bila end_time <= start_time, end di-anchor ke hari berikutnya
- *   (mis. 19:00 - 07:00 hari berikutnya).
+ * - Shift malam (19:00–07:00): bila generate di dini hari (00:00–end_time),
+ *   anchor shift = hari sebelumnya (shift yang sedang berjalan).
+ * - Bila end_time <= start_time, end di-anchor ke hari setelah anchor.
  * - Mengembalikan `null` bila task_group atau `created_at` tidak tersedia.
  */
 export function getShiftWindowForTask(task: UserTask): ShiftWindow | null {
@@ -108,9 +148,10 @@ export function getShiftWindowForTask(task: UserTask): ShiftWindow | null {
   if (!tg || !tg.start_time || !tg.end_time) return null
   if (!task.created_at) return null
 
+  const createdAt = new Date(task.created_at)
   let createdJakarta: string
   try {
-    createdJakarta = jakartaDateString(new Date(task.created_at))
+    createdJakarta = jakartaDateString(createdAt)
   } catch {
     return null
   }
@@ -120,13 +161,15 @@ export function getShiftWindowForTask(task: UserTask): ShiftWindow | null {
   const endMin = parseHmToMinutes(tg.end_time)
   if (startMin == null || endMin == null) return null
 
-  const start = jakartaDateTime(createdJakarta, tg.start_time)
+  const crossesMidnight = endMin <= startMin
+  const anchorDate = resolveShiftAnchorDate(createdJakarta, createdAt, startMin, endMin)
+
+  const start = jakartaDateTime(anchorDate, tg.start_time)
   if (!start) return null
 
-  const crossesMidnight = endMin <= startMin
   const endDate = crossesMidnight
-    ? addDaysJakarta(createdJakarta, 1)
-    : createdJakarta
+    ? addDaysJakarta(anchorDate, 1)
+    : anchorDate
   if (!endDate) return null
   const end = jakartaDateTime(endDate, tg.end_time)
   if (!end) return null
@@ -157,32 +200,30 @@ export function filterRoutineTasksForToday(tasks: UserTask[]): UserTask[] {
 /**
  * Filter task rutin yang masih relevan ditampilkan sekarang.
  *
- * - Task yang `created_at`-nya hari ini (Jakarta) tetap ditampilkan.
- * - Task dari shift kemarin yang melewati tengah malam (mis. 19:00 - 07:00)
- *   tetap ditampilkan selama waktu sekarang masih sebelum end_time-nya
- *   (mis. jam 03:00 hari ini, shift kemarin yang berakhir jam 07:00 masih aktif).
+ * Task ditampilkan hanya bila waktu sekarang (WIB) masih dalam jendela shift
+ * task group-nya. Shift malam (19:00–07:00) tetap tampil di dini hari (mis.
+ * jam 04:00) selama belum melewati end_time.
  */
 export function filterRoutineTasksForActiveShift(
   tasks: UserTask[],
   now: Date = new Date()
 ): UserTask[] {
   if (tasks.length === 0) return []
+  const t = now.getTime()
   const today = jakartaDateString(now)
   return tasks.filter((task) => {
     if (!task.created_at) return false
 
-    let createdJakarta: string
+    const window = getShiftWindowForTask(task)
+    if (window) {
+      return isWithinShiftWindow(window, t)
+    }
+
     try {
-      createdJakarta = jakartaDateString(new Date(task.created_at))
+      return jakartaDateString(new Date(task.created_at)) === today
     } catch {
       return false
     }
-
-    if (createdJakarta === today) return true
-
-    const window = getShiftWindowForTask(task)
-    if (!window || !window.crossesMidnight) return false
-    return now.getTime() <= window.end.getTime()
   })
 }
 
