@@ -10,7 +10,8 @@ import { GenerateTaskButton } from '../../../components/work/GenerateTaskButton'
 import { TaskList } from '../../../components/work/TaskList'
 import { CompleteTaskDialog } from '../../../components/work/CompleteTaskDialog'
 import {
-  filterRoutineTasksForToday,
+  filterRoutineTasksForActiveShift,
+  isAnyShiftEndingSoon,
   normalizeFlatUserTask,
   parseNonRoutineUserTasksResponse,
   parseRoutineUserTasksResponse,
@@ -24,6 +25,7 @@ function WorkContent() {
   const [isLoading, setIsLoading] = useState(true)
   const [selectedUserTask, setSelectedUserTask] = useState<UserTask | null>(null)
   const [isCompleteDialogOpen, setIsCompleteDialogOpen] = useState(false)
+  const [now, setNow] = useState<Date>(() => new Date())
 
   const loadUserTasks = async () => {
     try {
@@ -61,6 +63,11 @@ function WorkContent() {
 
   useEffect(() => {
     loadUserTasks()
+  }, [])
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(new Date()), 30 * 1000)
+    return () => clearInterval(interval)
   }, [])
 
   const handleGenerateSuccess = () => {
@@ -112,9 +119,15 @@ function WorkContent() {
     
   }
 
-  /** Hanya batch rutin yang `created_at`-nya hari ini (WIB); batch kemarin tidak ikut. */
-  const routineTasksForToday = filterRoutineTasksForToday(routineUserTasks)
-  const hasRoutineTasksToday = routineTasksForToday.length > 0
+  /**
+   * Task rutin yang masih aktif sekarang (WIB):
+   * - batch yang `created_at`-nya hari ini, atau
+   * - batch kemarin yang shift-nya melewati tengah malam dan belum berakhir.
+   */
+  const activeRoutineTasks = filterRoutineTasksForActiveShift(routineUserTasks, now)
+  const hasActiveRoutineTasks = activeRoutineTasks.length > 0
+  /** ≤ 1 jam sebelum shift aktif berakhir → tampilkan tombol Generate untuk shift berikutnya. */
+  const shiftEndingSoon = isAnyShiftEndingSoon(activeRoutineTasks, now)
   const hasNonRoutineThisMonth = nonRoutineUserTasks.length > 0
 
   return (
@@ -131,15 +144,23 @@ function WorkContent() {
         </div>
       </div>
 
-      {/* Generate rutin — jika belum ada batch rutin untuk hari ini (WIB) */}
-      {!isLoading && !hasRoutineTasksToday && (
+      {/*
+        Tombol Generate:
+        - Belum ada shift aktif → ajak generate shift baru.
+        - Atau, shift aktif akan berakhir <= 1 jam lagi (mis. 06:00 untuk shift
+          19:00-07:00) → tampilkan tombol agar petugas pengganti bisa
+          men-generate shift berikutnya saat pergantian.
+      */}
+      {!isLoading && (!hasActiveRoutineTasks || shiftEndingSoon) && (
         <Card>
           <CardContent className="flex items-center justify-center py-8 md:py-12 px-4">
             <div className="text-center space-y-4 w-full max-w-md">
               <p className="text-sm md:text-base text-muted-foreground">
-                {hasNonRoutineThisMonth
-                  ? 'Belum ada task rutin untuk hari ini — generate shift baru. Task non-rutin bulan ini ada di bawah.'
-                  : 'Belum ada task rutin untuk hari ini — generate shift baru'}
+                {!hasActiveRoutineTasks
+                  ? hasNonRoutineThisMonth
+                    ? 'Belum ada task rutin yang aktif — generate shift baru. Task non-rutin bulan ini ada di bawah.'
+                    : 'Belum ada task rutin yang aktif — generate shift baru'
+                  : 'Shift saat ini hampir berakhir — generate task untuk shift berikutnya (pergantian shift)'}
               </p>
               <div className="flex justify-center">
                 <GenerateTaskButton onGenerateSuccess={handleGenerateSuccess} />
@@ -153,15 +174,15 @@ function WorkContent() {
         <section className="space-y-3">
           <h2 className="text-lg font-semibold tracking-tight">Task rutin (generate)</h2>
           <p className="text-sm text-muted-foreground">
-            Hanya task rutin yang dibuat hari ini (zona WIB); shift hari lain tidak ditampilkan
+            Task rutin shift aktif (WIB): hari ini, atau shift kemarin yang melewati tengah malam dan belum mencapai end_time
           </p>
           <TaskList
-            userTasks={routineTasksForToday}
+            userTasks={activeRoutineTasks}
             isLoading={isLoading}
             onStartTask={handleStartTask}
             onCompleteTask={handleCompleteTask}
             variant="routine"
-            emptyListMessage="Tidak ada task rutin untuk hari ini"
+            emptyListMessage="Tidak ada task rutin pada shift aktif"
             filterByTaskRequirement={false}
           />
         </section>

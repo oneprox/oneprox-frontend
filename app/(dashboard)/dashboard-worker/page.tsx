@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Loader2, Clock, CheckCircle2, Calendar, MapPin, ClipboardList } from 'lucide-react'
 import { attendanceApi, dashboardApi, userTasksApi, Attendance, UserTask } from '@/lib/api'
 import {
-  filterRoutineTasksForToday,
+  filterRoutineTasksForActiveShift,
   normalizeFlatUserTask,
 } from '@/lib/work/userTasksSplit'
 import { getJakartaCalendarMonthIsoRange } from '@/lib/work/jakartaMonthRange'
@@ -176,8 +176,13 @@ function DashboardWorkerContent() {
     })
   }
 
-  /** List rutin: hanya batch yang `created_at`-nya hari ini (WIB). Statistik: seluruh bulan berjalan. */
-  const routineTasksForToday = filterRoutineTasksForToday(routineUserTasks)
+  /**
+   * List rutin shift aktif (WIB):
+   * - batch hari ini, atau
+   * - batch shift kemarin yang melewati tengah malam dan belum mencapai end_time.
+   * Statistik di bawah memakai data bulan berjalan.
+   */
+  const routineTasksForToday = filterRoutineTasksForActiveShift(routineUserTasks)
 
   const allTasksForStats = [...flattenRoutineTasks(routineUserTasks), ...nonRoutineUserTasks]
   const isTaskCompleted = (t: UserTask) => t.status === 'completed' || !!t.completed_at
@@ -321,7 +326,7 @@ function DashboardWorkerContent() {
                   <div className="space-y-2">
                     <h3 className="text-sm font-semibold text-foreground">Task rutin (generate)</h3>
                     <p className="text-xs text-muted-foreground">
-                      Hanya tugas rutin yang dibuat hari ini. Statistik di bawah memakai data bulan berjalan.
+                      Tugas rutin shift aktif (hari ini atau shift kemarin yang melewati tengah malam dan belum berakhir). Statistik di bawah memakai data bulan berjalan.
                     </p>
                     <TaskList
                       userTasks={routineTasksForToday}
@@ -330,7 +335,7 @@ function DashboardWorkerContent() {
                       onCompleteTask={handleCompleteTask}
                       onTaskClick={handleTaskClick}
                       variant="routine"
-                      emptyListMessage="Belum ada task rutin untuk hari ini"
+                      emptyListMessage="Belum ada task rutin pada shift aktif"
                       filterByTaskRequirement={false}
                     />
                   </div>
