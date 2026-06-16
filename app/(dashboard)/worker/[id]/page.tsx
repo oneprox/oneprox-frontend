@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, Suspense } from 'react'
+import React, { Fragment, useState, useEffect, Suspense } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -17,7 +17,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Loader2, Calendar, Clock, MapPin, CheckCircle2, Eye, RefreshCw, ArrowLeft, User as UserIcon, ChevronDown, ChevronRight, Home, UserRoundPen, ImageIcon } from 'lucide-react'
+import { Loader2, Calendar, Clock, MapPin, CheckCircle2, Eye, RefreshCw, ArrowLeft, User as UserIcon, ChevronDown, ChevronRight, Home, UserRoundPen, ImageIcon, Check, X, Circle } from 'lucide-react'
 import { attendanceApi, userTasksApi, usersApi, Attendance, UserTask, User, UserAsset } from '@/lib/api'
 import toast from 'react-hot-toast'
 import WorkerTaskDetailDialog from '@/components/dialogs/worker-task-detail-dialog'
@@ -28,6 +28,78 @@ import TaskEvidenceBeforeAfterDialog, {
 function isCleaningRole(roleName?: string | null): boolean {
   const role = (roleName || '').toLowerCase()
   return role.includes('kebersihan') || role.includes('cleaning')
+}
+
+function isSecurityRole(roleName?: string | null): boolean {
+  const role = (roleName || '').toLowerCase()
+  return role.includes('keamanan') || role.includes('security') || role.includes('satpam')
+}
+
+const PATROL_SLOTS = ['07:00', '11:00', '16:00', '19:00', '22:00', '04:00'] as const
+const SLOT_HOUR_MAP: Record<number, number> = { 7: 0, 11: 1, 16: 2, 19: 3, 22: 4, 4: 5 }
+
+type SlotStatus = 'selesai' | 'terlewat' | 'proses' | 'belum'
+
+function getProgressStatus(ut: UserTask): { label: string; className: string } {
+  const s = (ut.status || '').toLowerCase()
+  if (s === 'completed' || !!ut.completed_at) return { label: 'Selesai', className: 'border border-emerald-200 bg-emerald-50 text-emerald-800' }
+  if (s === 'in_progress' || s === 'inprogress') return { label: 'Dalam proses', className: 'border border-amber-200 bg-amber-50 text-amber-800' }
+  if (s === 'cancelled') return { label: 'Dibatalkan', className: 'border border-slate-200 bg-slate-100 text-slate-700' }
+  return { label: 'Menunggu', className: 'border border-slate-200 bg-white text-slate-600' }
+}
+
+function isTaskDone(ut: UserTask): boolean {
+  const s = (ut.status || '').toLowerCase()
+  if (s === 'completed' || !!ut.completed_at) return true
+  const children = Array.isArray(ut.sub_user_task) ? ut.sub_user_task as UserTask[] : []
+  if (children.length === 0) return false
+  return children.every(c => (c.status || '').toLowerCase() === 'completed' || !!c.completed_at)
+}
+
+function isTaskRunning(ut: UserTask): boolean {
+  const s = (ut.status || '').toLowerCase()
+  return s === 'inprogress' || s === 'in_progress' || (!!ut.started_at && !ut.completed_at)
+}
+
+function getPatrolSlotIndex(ut: UserTask): number {
+  const timeStr = (ut.time || '').trim()
+  if (timeStr) {
+    const h = parseInt(timeStr.split(':')[0], 10)
+    if (!isNaN(h) && SLOT_HOUR_MAP[h] !== undefined) return SLOT_HOUR_MAP[h]
+  }
+  const times = (ut.task as any)?.times
+  if (Array.isArray(times) && times.length > 0) {
+    const h = parseInt(String(times[0]).split(':')[0], 10)
+    if (!isNaN(h) && SLOT_HOUR_MAP[h] !== undefined) return SLOT_HOUR_MAP[h]
+  }
+  const raw = ut.scheduled_at || ut.start_at
+  if (raw) {
+    try {
+      const hourStr = new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hour12: false, timeZone: 'Asia/Jakarta' })
+        .formatToParts(new Date(raw)).find(p => p.type === 'hour')?.value
+      const h = hourStr != null ? parseInt(hourStr, 10) : NaN
+      if (!isNaN(h) && SLOT_HOUR_MAP[h] !== undefined) return SLOT_HOUR_MAP[h]
+    } catch { /* ignore */ }
+  }
+  return -1
+}
+
+function mainMatchesSlot(main: UserTask, col: number): boolean {
+  const times = (main.task as any)?.times
+  if (Array.isArray(times) && times.length > 0) {
+    return times.some((tv: unknown) => {
+      const h = parseInt(String(tv).split(':')[0], 10)
+      return !isNaN(h) && SLOT_HOUR_MAP[h] === col
+    })
+  }
+  return getPatrolSlotIndex(main) === col
+}
+
+function PatrolStatusIcon({ status }: { status: SlotStatus }) {
+  if (status === 'selesai') return <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-white"><Check className="h-3 w-3" strokeWidth={3} /></span>
+  if (status === 'terlewat') return <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-red-500 text-white"><X className="h-3 w-3" strokeWidth={3} /></span>
+  if (status === 'proses') return <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-blue-500 text-white"><Loader2 className="h-3 w-3 animate-spin" /></span>
+  return <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border-2 border-slate-200 bg-white text-slate-300"><Circle className="h-3 w-3" /></span>
 }
 
 function WorkerDetailContent() {
@@ -706,6 +778,49 @@ function WorkerDetailContent() {
   }
 
   const isCleaningWorker = isCleaningRole(user?.role?.name)
+  const isSecurityWorker = isSecurityRole(user?.role?.name)
+
+  // Get non-flattened tasks for a specific date (use userTasks which retains sub_user_task)
+  const getNestedTasksForDate = (date: string): UserTask[] =>
+    userTasks.filter(task => {
+      if (!task.created_at) return false
+      try { return getJakartaDateKey(task.created_at) === date }
+      catch { return false }
+    })
+
+  const buildPatrolMatrix = (date: string) => {
+    const tasks = getNestedTasksForDate(date)
+    const rowMap = new Map<string, { titik: string; cells: { status: SlotStatus; uts: UserTask[] }[] }>()
+
+    tasks.forEach(main => {
+      const children = (Array.isArray(main.sub_user_task) ? main.sub_user_task : []) as UserTask[]
+      const points = children.length > 0 ? children : [main]
+
+      points.forEach((pt, ptIdx) => {
+        const titik = pt.task?.name || (children.length > 0 ? `Titik ${ptIdx + 1}` : main.task?.name || 'Patroli')
+        const key = `${pt.task_id ?? pt.task?.id ?? titik}`
+        if (!rowMap.has(key)) {
+          rowMap.set(key, { titik, cells: PATROL_SLOTS.map(() => ({ status: 'belum' as SlotStatus, uts: [] })) })
+        }
+        const row = rowMap.get(key)!
+        PATROL_SLOTS.forEach((_, col) => {
+          const matches = children.length > 0
+            ? (getPatrolSlotIndex(pt) === col || (getPatrolSlotIndex(pt) === -1 && mainMatchesSlot(main, col)))
+            : mainMatchesSlot(main, col)
+          if (matches) {
+            row.cells[col].uts.push(pt)
+            const s = isTaskDone(pt) ? 'selesai' : isTaskRunning(pt) ? 'proses'
+              : (pt.scheduled_at && new Date(pt.scheduled_at) < new Date() ? 'terlewat' : 'belum')
+            if (row.cells[col].status === 'belum' || s === 'selesai') row.cells[col].status = s
+          }
+        })
+      })
+    })
+
+    return [...rowMap.entries()]
+      .map(([key, v]) => ({ key, titik: v.titik, cells: v.cells }))
+      .sort((a, b) => a.titik.localeCompare(b.titik, 'id'))
+  }
 
   const toggleExpandDate = (date: string) => {
     setExpandedDates(prev => {
@@ -1118,8 +1233,8 @@ function WorkerDetailContent() {
                       />
                     </div>
                     <Button
-                      onClick={loadAllUserTasks}
-                      disabled={isLoadingAllTasks || !!dateError}
+                      onClick={() => { loadUserTasks(); loadAllUserTasks() }}
+                      disabled={isLoadingAllTasks || isLoadingTasks || !!dateError}
                       variant="outline"
                     >
                       {isLoadingAllTasks ? (
@@ -1175,13 +1290,15 @@ function WorkerDetailContent() {
                               getDailyWorkStatistics().map((stat, index) => {
                                 const isExpanded = expandedDates.has(stat.date)
                                 const taskDetailRows = getTaskDetailRows(stat.date)
-                                const hasTasks = taskDetailRows.length > 0
-                                
+                                const hasExpandContent = (isCleaningWorker || isSecurityWorker)
+                                  ? stat.total > 0
+                                  : taskDetailRows.length > 0
+
                                 return (
                                   <React.Fragment key={index}>
                                     <TableRow className={isExpanded ? 'bg-muted/50' : ''}>
                                       <TableCell>
-                                        {hasTasks ? (
+                                        {hasExpandContent ? (
                                           <Button
                                             variant="ghost"
                                             size="sm"
@@ -1235,105 +1352,164 @@ function WorkerDetailContent() {
                                       </TableCell>
                                     </TableRow>
                                     
-                                    {/* Expanded Task List */}
-                                    {isExpanded && hasTasks && (
+                                    {/* Expanded Progress View */}
+                                    {isExpanded && (
                                       <TableRow>
                                         <TableCell colSpan={6} className="p-0 bg-muted/30">
-                                          <div className="p-4 pl-6">
-                                            <h4 className="text-sm font-semibold mb-3">Daftar Task - {formatDateShort(stat.date)}</h4>
-                                            <div className="rounded-md border bg-background max-h-[200px] overflow-y-auto overflow-x-auto">
-                                              <Table>
-                                                <TableHeader className="sticky top-0 bg-background z-10">
-                                                  <TableRow>
-                                                    <TableHead>Nama Task</TableHead>
-                                                    <TableHead>Waktu</TableHead>
-                                                    <TableHead>Status</TableHead>
-                                                    <TableHead>Aksi</TableHead>
-                                                  </TableRow>
-                                                </TableHeader>
-                                                <TableBody>
-                                                  {taskDetailRows.map((row, rowIndex) => {
-                                                    if (row.type === 'main-header') {
-                                                      const mainTask = row.task
-                                                      const mainKey =
-                                                        mainTask.user_task_id ||
-                                                        mainTask.id ||
-                                                        `main-${rowIndex}`
-                                                      return (
-                                                        <TableRow
-                                                          key={`header-${mainKey}`}
-                                                          className="bg-muted/40"
-                                                        >
-                                                          <TableCell className="font-semibold">
-                                                            {mainTask.task?.name || 'Task'}
-                                                            <Badge variant="default" className="ml-2 text-xs">
-                                                              Main Task
-                                                            </Badge>
-                                                          </TableCell>
-                                                          <TableCell className="font-medium">
-                                                            {getTaskDisplayTime(mainTask)}
-                                                          </TableCell>
-                                                          <TableCell>-</TableCell>
-                                                          <TableCell />
-                                                        </TableRow>
-                                                      )
-                                                    }
-
-                                                    const userTask = row.task
-                                                    const taskId =
-                                                      userTask.user_task_id ||
-                                                      userTask.id ||
-                                                      userTask.task_id
-                                                    const isSub = isSubTask(userTask)
-                                                    return (
-                                                      <TableRow key={taskId}>
-                                                        <TableCell
-                                                          className={`font-medium ${row.indent ? 'pl-8' : ''}`}
-                                                        >
-                                                          {userTask.task?.name || 'Task'}
-                                                          {isSub && (
-                                                            <Badge variant="outline" className="ml-2 text-xs">
-                                                              Sub Task
-                                                            </Badge>
-                                                          )}
-                                                        </TableCell>
-                                                        <TableCell>
-                                                          {getTaskDisplayTime(userTask)}
-                                                        </TableCell>
-                                                        <TableCell>
-                                                          {getTaskStatusBadge(userTask)}
-                                                        </TableCell>
-                                                        <TableCell>
-                                                          <div className="flex flex-wrap items-center gap-2">
-                                                            <Button
-                                                              variant="outline"
-                                                              size="sm"
-                                                              onClick={() => handleViewTaskDetail(userTask)}
-                                                              className="flex items-center gap-2"
-                                                            >
-                                                              <Eye className="h-4 w-4" />
-                                                              Detail
-                                                            </Button>
-                                                            {isCleaningWorker && hasImageEvidence(userTask) && (
-                                                              <Button
-                                                                variant="outline"
-                                                                size="sm"
-                                                                onClick={() => handleViewTaskEvidence(userTask)}
-                                                                className="flex items-center gap-2"
-                                                              >
-                                                                <ImageIcon className="h-4 w-4" />
-                                                                Bukti
-                                                              </Button>
-                                                            )}
-                                                          </div>
+                                          {isCleaningWorker ? (
+                                            /* ---- Progress Kebersihan ---- */
+                                            <div className="p-4 pl-6 space-y-2">
+                                              <h4 className="text-sm font-semibold">Progress Kebersihan — {formatDateShort(stat.date)}</h4>
+                                              <div className="rounded-md border bg-background overflow-x-auto">
+                                                <Table className="min-w-[480px] table-fixed">
+                                                  <TableHeader>
+                                                    <TableRow className="hover:bg-transparent">
+                                                      <TableHead className="w-10 text-xs uppercase font-semibold text-slate-500">No</TableHead>
+                                                      <TableHead className="text-xs uppercase font-semibold text-slate-500">Pekerjaan</TableHead>
+                                                      <TableHead className="w-36 text-xs uppercase font-semibold text-slate-500">Status</TableHead>
+                                                      <TableHead className="w-28 text-xs uppercase font-semibold text-slate-500">Aksi</TableHead>
+                                                    </TableRow>
+                                                  </TableHeader>
+                                                  <TableBody>
+                                                    {getNestedTasksForDate(stat.date).length === 0 ? (
+                                                      <TableRow>
+                                                        <TableCell colSpan={4} className="text-center py-4 text-sm text-muted-foreground">
+                                                          Tidak ada tugas untuk tanggal ini.
                                                         </TableCell>
                                                       </TableRow>
-                                                    )
-                                                  })}
-                                                </TableBody>
-                                              </Table>
+                                                    ) : (
+                                                      getNestedTasksForDate(stat.date).map((task, idx) => {
+                                                        const subs = (Array.isArray(task.sub_user_task) ? task.sub_user_task : []) as UserTask[]
+                                                        const st = getProgressStatus(task)
+                                                        return (
+                                                          <Fragment key={task.user_task_id ?? task.id ?? idx}>
+                                                            <TableRow className="bg-slate-50/80">
+                                                              <TableCell className="text-slate-600">{idx + 1}</TableCell>
+                                                              <TableCell className="font-medium text-sm">
+                                                                {task.task?.name || '-'}
+                                                                {subs.length > 0 && <span className="ml-1 font-normal text-muted-foreground">({subs.length})</span>}
+                                                              </TableCell>
+                                                              <TableCell>
+                                                                <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${st.className}`}>{st.label}</span>
+                                                              </TableCell>
+                                                              <TableCell>
+                                                                <Button variant="outline" size="sm" onClick={() => handleViewTaskDetail(task)} className="gap-1 h-7 text-xs">
+                                                                  <Eye className="h-3 w-3" />Detail
+                                                                </Button>
+                                                              </TableCell>
+                                                            </TableRow>
+                                                            {subs.map((sub, sIdx) => {
+                                                              const subSt = getProgressStatus(sub)
+                                                              return (
+                                                                <TableRow key={sub.user_task_id ?? sub.id ?? sIdx} className="bg-white">
+                                                                  <TableCell />
+                                                                  <TableCell className="text-sm pl-8 text-slate-700">↳ {sub.task?.name || '-'}</TableCell>
+                                                                  <TableCell>
+                                                                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${subSt.className}`}>{subSt.label}</span>
+                                                                  </TableCell>
+                                                                  <TableCell>
+                                                                    <div className="flex gap-1">
+                                                                      <Button variant="outline" size="sm" onClick={() => handleViewTaskDetail(sub)} className="gap-1 h-7 text-xs">
+                                                                        <Eye className="h-3 w-3" />Detail
+                                                                      </Button>
+                                                                      {hasImageEvidence(sub) && (
+                                                                        <Button variant="outline" size="sm" onClick={() => handleViewTaskEvidence(sub)} className="gap-1 h-7 text-xs">
+                                                                          <ImageIcon className="h-3 w-3" />Bukti
+                                                                        </Button>
+                                                                      )}
+                                                                    </div>
+                                                                  </TableCell>
+                                                                </TableRow>
+                                                              )
+                                                            })}
+                                                          </Fragment>
+                                                        )
+                                                      })
+                                                    )}
+                                                  </TableBody>
+                                                </Table>
+                                              </div>
                                             </div>
-                                          </div>
+                                          ) : isSecurityWorker ? (
+                                            /* ---- Progress Keamanan (Patrol Matrix) ---- */
+                                            <div className="p-4 pl-6 space-y-2">
+                                              <h4 className="text-sm font-semibold">Progress Keamanan — {formatDateShort(stat.date)}</h4>
+                                              <div className="rounded-md border bg-background overflow-x-auto">
+                                                <Table className="min-w-[580px]">
+                                                  <TableHeader>
+                                                    <TableRow className="hover:bg-transparent">
+                                                      <TableHead className="w-10 text-xs uppercase font-semibold text-slate-500">No</TableHead>
+                                                      <TableHead className="min-w-[110px] text-xs uppercase font-semibold text-slate-500">Titik Patroli</TableHead>
+                                                      {PATROL_SLOTS.map(t => (
+                                                        <TableHead key={t} className="text-center text-xs uppercase font-semibold text-slate-500 whitespace-nowrap">{t}</TableHead>
+                                                      ))}
+                                                    </TableRow>
+                                                  </TableHeader>
+                                                  <TableBody>
+                                                    {buildPatrolMatrix(stat.date).length === 0 ? (
+                                                      <TableRow>
+                                                        <TableCell colSpan={8} className="text-center py-4 text-sm text-muted-foreground">
+                                                          Tidak ada tugas untuk tanggal ini.
+                                                        </TableCell>
+                                                      </TableRow>
+                                                    ) : (
+                                                      buildPatrolMatrix(stat.date).map((row, rIdx) => (
+                                                        <TableRow key={row.key}>
+                                                          <TableCell className="text-slate-600">{rIdx + 1}</TableCell>
+                                                          <TableCell className="text-sm text-slate-800">{row.titik}</TableCell>
+                                                          {row.cells.map((c, j) => (
+                                                            <TableCell key={j} className="text-center">
+                                                              <PatrolStatusIcon status={c.status} />
+                                                            </TableCell>
+                                                          ))}
+                                                        </TableRow>
+                                                      ))
+                                                    )}
+                                                  </TableBody>
+                                                </Table>
+                                              </div>
+                                              <div className="flex flex-wrap gap-3 pt-1 text-xs text-slate-600">
+                                                <span className="flex items-center gap-1"><span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white"><Check className="h-3 w-3" strokeWidth={3} /></span>Selesai</span>
+                                                <span className="flex items-center gap-1"><span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white"><X className="h-3 w-3" strokeWidth={3} /></span>Terlewat</span>
+                                                <span className="flex items-center gap-1"><span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-white"><Loader2 className="h-3 w-3 animate-spin" /></span>Proses</span>
+                                                <span className="flex items-center gap-1"><span className="inline-flex h-5 w-5 items-center justify-center rounded-full border-2 border-slate-200 bg-white" />Belum</span>
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            /* ---- Fallback: plain task list ---- */
+                                            <div className="p-4 pl-6">
+                                              <h4 className="text-sm font-semibold mb-3">Daftar Task — {formatDateShort(stat.date)}</h4>
+                                              <div className="rounded-md border bg-background overflow-x-auto">
+                                                <Table>
+                                                  <TableHeader>
+                                                    <TableRow>
+                                                      <TableHead>Nama Task</TableHead>
+                                                      <TableHead>Waktu</TableHead>
+                                                      <TableHead>Status</TableHead>
+                                                    </TableRow>
+                                                  </TableHeader>
+                                                  <TableBody>
+                                                    {getTaskDetailRows(stat.date).map((row, rowIndex) => {
+                                                      if (row.type === 'main-header') return (
+                                                        <TableRow key={`h-${rowIndex}`} className="bg-muted/40">
+                                                          <TableCell className="font-semibold">{row.task.task?.name || 'Task'}</TableCell>
+                                                          <TableCell>{getTaskDisplayTime(row.task)}</TableCell>
+                                                          <TableCell>-</TableCell>
+                                                        </TableRow>
+                                                      )
+                                                      return (
+                                                        <TableRow key={row.task.user_task_id ?? row.task.id ?? rowIndex}>
+                                                          <TableCell className={`font-medium ${row.indent ? 'pl-8' : ''}`}>{row.task.task?.name || 'Task'}</TableCell>
+                                                          <TableCell>{getTaskDisplayTime(row.task)}</TableCell>
+                                                          <TableCell>{getTaskStatusBadge(row.task)}</TableCell>
+                                                        </TableRow>
+                                                      )
+                                                    })}
+                                                  </TableBody>
+                                                </Table>
+                                              </div>
+                                            </div>
+                                          )}
                                         </TableCell>
                                       </TableRow>
                                     )}

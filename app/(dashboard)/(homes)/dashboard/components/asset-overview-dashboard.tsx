@@ -18,8 +18,10 @@ import { cn } from '@/lib/utils'
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false })
 
 interface AssetOverviewData {
-  totalLandArea: number // m²
-  totalBuildingArea: number // m²
+  totalLandAreaAsset: number // m²
+  totalLandAreaTersewa: number // m²
+  totalBuildingAreaAsset: number // m²
+  totalBuildingAreaTersewa: number // m²
   occupancy: number // percentage
   averageRate: number // Rp per m²
 }
@@ -197,8 +199,10 @@ export default function AssetOverviewDashboard({
     }
   }
   const [overviewData, setOverviewData] = useState<AssetOverviewData>({
-    totalLandArea: 0,
-    totalBuildingArea: 0,
+    totalLandAreaAsset: 0,
+    totalLandAreaTersewa: 0,
+    totalBuildingAreaAsset: 0,
+    totalBuildingAreaTersewa: 0,
     occupancy: 0,
     averageRate: 0
   })
@@ -287,8 +291,10 @@ export default function AssetOverviewDashboard({
         if (data.overview) {
           const overview = data.overview as any
           setOverviewData({
-            totalLandArea: parseLooseNumber(overview.totalLandArea),
-            totalBuildingArea: parseLooseNumber(overview.totalBuildingArea),
+            totalLandAreaAsset: parseLooseNumber(overview.totalLandAreaAsset),
+            totalLandAreaTersewa: parseLooseNumber(overview.totalLandAreaTersewa),
+            totalBuildingAreaAsset: parseLooseNumber(overview.totalBuildingAreaAsset),
+            totalBuildingAreaTersewa: parseLooseNumber(overview.totalBuildingAreaTersewa),
             occupancy: parseLooseNumber(overview.occupancy),
             averageRate: parseLooseNumber(overview.averageRate),
           })
@@ -719,40 +725,62 @@ export default function AssetOverviewDashboard({
 
       {/* Overview Metrics */}
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 md:gap-6 lg:grid-cols-4">
+        {/* Lahan: Aset + Tersewa */}
         <Card
           className="gap-0 border-0 py-0 text-white shadow-md overflow-hidden rounded-2xl"
           style={{ background: '#F97316' }}
         >
-          <CardContent className="px-8 py-4">
-            <div className="flex flex-col gap-6">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/25">
-                <Mountain className="h-6 w-6 text-white" strokeWidth={2} />
+          <CardContent className="px-8 py-4 h-full">
+            <div className="flex flex-col justify-between h-full gap-3">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/25">
+                  <Mountain className="h-4 w-4 text-white" strokeWidth={2} />
+                </div>
+                <p className="text-sm font-bold tracking-wide text-white/80 uppercase">Lahan</p>
               </div>
-              <div className="space-y-3">
-                <p className="text-lg font-bold tracking-wide text-white uppercase">Total Lahan</p>
-                <p className="text-5xl font-bold leading-none tracking-tight sm:text-2xl">
-                  {formatAreaNumber(tenantAreaTotals.land)}{' '}
-                  <span className="text-2xl font-semibold text-white/55 sm:text-2xl">m²</span>
+              <div>
+                <p className="text-sm text-white/70 uppercase mb-1">Aset</p>
+                <p className="text-2xl font-bold leading-none">
+                  {formatAreaNumber(overviewData.totalLandAreaAsset)}{' '}
+                  <span className="text-sm font-semibold text-white/55">m²</span>
+                </p>
+              </div>
+              <div className="border-t border-white/20 pt-3">
+                <p className="text-sm text-white/70 uppercase mb-1">Tersewa</p>
+                <p className="text-2xl font-bold leading-none">
+                  {formatAreaNumber(overviewData.totalLandAreaTersewa)}{' '}
+                  <span className="text-sm font-semibold text-white/55">m²</span>
                 </p>
               </div>
             </div>
           </CardContent>
         </Card>
 
+        {/* Bangunan: Aset + Tersewa */}
         <Card
           className="gap-0 border-0 py-0 text-white shadow-md overflow-hidden rounded-2xl"
           style={{ background: '#8B5CF6' }}
         >
-          <CardContent className="px-8 py-4">
-            <div className="flex flex-col gap-6">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/25">
-                <DraftingCompass className="h-6 w-6 text-white" strokeWidth={2} />
+          <CardContent className="px-8 py-4 h-full">
+            <div className="flex flex-col justify-between h-full gap-3">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/25">
+                  <DraftingCompass className="h-4 w-4 text-white" strokeWidth={2} />
+                </div>
+                <p className="text-sm font-bold tracking-wide text-white/80 uppercase">Bangunan</p>
               </div>
-              <div className="space-y-3">
-                <p className="text-lg font-bold tracking-wide text-white uppercase">Luas Bangunan</p>
-                <p className="text-5xl font-bold leading-none tracking-tight sm:text-2xl">
-                  {formatAreaNumber(tenantAreaTotals.building)}{' '}
-                  <span className="text-2xl font-semibold text-white/55 sm:text-2xl">m²</span>
+              <div>
+                <p className="text-sm text-white/70 uppercase mb-1">Aset</p>
+                <p className="text-2xl font-bold leading-none">
+                  {formatAreaNumber(overviewData.totalBuildingAreaAsset)}{' '}
+                  <span className="text-sm font-semibold text-white/55">m²</span>
+                </p>
+              </div>
+              <div className="border-t border-white/20 pt-3">
+                <p className="text-sm text-white/70 uppercase mb-1">Tersewa</p>
+                <p className="text-2xl font-bold leading-none">
+                  {formatAreaNumber(overviewData.totalBuildingAreaTersewa)}{' '}
+                  <span className="text-sm font-semibold text-white/55">m²</span>
                 </p>
               </div>
             </div>
