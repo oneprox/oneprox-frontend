@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Tenant, CreateTenantData, UpdateTenantData, usersApi, unitsApi, tenantsApi, rolesApi, assetsApi, User, Unit, Asset, DURATION_UNITS, DURATION_UNIT_LABELS, TenantPaymentLog, CreateTenantPaymentData, UpdateTenantPaymentData, TenantLegal, CreateTenantLegalData, UpdateTenantLegalData, settingsApi, Setting, normalizeTenantStatus } from '@/lib/api'
+import { Tenant, CreateTenantData, UpdateTenantData, usersApi, unitsApi, tenantsApi, rolesApi, assetsApi, User, Unit, Asset, DURATION_UNITS, DURATION_UNIT_LABELS, TenantPaymentLog, CreateTenantPaymentData, UpdateTenantPaymentData, TenantDepositLog, CreateTenantDepositLogData, UpdateTenantDepositLogData, TenantLegal, CreateTenantLegalData, UpdateTenantLegalData, settingsApi, Setting, normalizeTenantStatus } from '@/lib/api'
 import {
   formatBillingRatePercent,
   storedRateToPercentInput,
@@ -55,6 +55,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { Loader2, Plus, X, File, Search, UserPlus, Users, Eye, EyeOff, Calendar, Edit, Trash2, DollarSign, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import DepositForm from '@/components/forms/deposit-form'
 import toast from 'react-hot-toast'
 import { compressImageFile } from '@/lib/compressImage'
 import {
@@ -246,6 +247,86 @@ function SortablePaymentHead({
   )
 }
 
+const DEPOSIT_PAGE_SIZE = 10
+
+type DepositSortField = 'deposit_date' | 'amount' | 'created_at'
+
+function parseDepositLogsResponse(response: {
+  success?: boolean
+  data?: unknown
+  pagination?: { total?: number; limit?: number; offset?: number }
+}) {
+  const envelope = response.data as Record<string, unknown> | TenantDepositLog[] | undefined
+
+  const logs = Array.isArray(envelope)
+    ? envelope
+    : Array.isArray(envelope?.data)
+      ? (envelope.data as TenantDepositLog[])
+      : []
+
+  let total: number | null =
+    response.pagination?.total != null ? Number(response.pagination.total) : null
+
+  if (total == null && envelope && typeof envelope === 'object' && !Array.isArray(envelope)) {
+    const pag = envelope.pagination as { total?: number } | undefined
+    if (pag?.total != null) {
+      total = Number(pag.total)
+    } else if (typeof envelope.total === 'number') {
+      total = envelope.total as number
+    } else if (typeof envelope.count === 'number') {
+      total = envelope.count as number
+    }
+  }
+
+  return { logs, total }
+}
+
+function formatDepositAmount(amount: number) {
+  const abs = Math.abs(amount)
+  const formatted = `Rp ${abs.toLocaleString('id-ID')}`
+  if (amount > 0) {
+    return { text: formatted, className: 'text-green-600 font-medium' }
+  }
+  if (amount < 0) {
+    return { text: `-${formatted}`, className: 'text-red-600 font-medium' }
+  }
+  return { text: formatted, className: '' }
+}
+
+function SortableDepositHead({
+  label,
+  field,
+  orderBy,
+  order,
+  onSort,
+  className,
+}: {
+  label: string
+  field: DepositSortField
+  orderBy: DepositSortField
+  order: 'ASC' | 'DESC'
+  onSort: (field: DepositSortField) => void
+  className?: string
+}) {
+  const isActive = orderBy === field
+  return (
+    <TableHead className={className}>
+      <button
+        type="button"
+        onClick={() => onSort(field)}
+        className="inline-flex items-center gap-1 font-medium hover:text-foreground text-left whitespace-nowrap"
+      >
+        {label}
+        {isActive ? (
+          order === 'ASC' ? <ArrowUp className="h-3.5 w-3.5 shrink-0" /> : <ArrowDown className="h-3.5 w-3.5 shrink-0" />
+        ) : (
+          <ArrowUpDown className="h-3.5 w-3.5 shrink-0 opacity-40" />
+        )}
+      </button>
+    </TableHead>
+  )
+}
+
 export default function TenantForm({ tenant, onSubmit, loading = false }: TenantFormProps) {
   const searchParams = useSearchParams()
   const [formData, setFormData] = useState({
@@ -321,6 +402,18 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
   const [paymentTotal, setPaymentTotal] = useState(0)
   const [paymentOrderBy, setPaymentOrderBy] = useState<PaymentSortField>('payment_deadline')
   const [paymentOrder, setPaymentOrder] = useState<'ASC' | 'DESC'>('DESC')
+  const [depositLogs, setDepositLogs] = useState<TenantDepositLog[]>([])
+  const [depositLogsLoading, setDepositLogsLoading] = useState(false)
+  const [depositDialogOpen, setDepositDialogOpen] = useState(false)
+  const [editingDeposit, setEditingDeposit] = useState<TenantDepositLog | null>(null)
+  const [depositFormLoading, setDepositFormLoading] = useState(false)
+  const [deleteDepositDialogOpen, setDeleteDepositDialogOpen] = useState(false)
+  const [depositToDelete, setDepositToDelete] = useState<TenantDepositLog | null>(null)
+  const [deletingDeposit, setDeletingDeposit] = useState(false)
+  const [depositPage, setDepositPage] = useState(1)
+  const [depositTotal, setDepositTotal] = useState(0)
+  const [depositOrderBy, setDepositOrderBy] = useState<DepositSortField>('deposit_date')
+  const [depositOrder, setDepositOrder] = useState<'ASC' | 'DESC'>('DESC')
   const [activeTab, setActiveTab] = useState('info')
   const tabFromUrl = searchParams.get('tab')?.toLowerCase() ?? ''
 
@@ -328,6 +421,8 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
     if (!tenant?.id || !tabFromUrl) return
     if (tabFromUrl === 'finance' || tabFromUrl === 'payments') {
       setActiveTab('payments')
+    } else if (tabFromUrl === 'deposits') {
+      setActiveTab('deposits')
     } else if (tabFromUrl === 'legals') {
       setActiveTab('legals')
     } else if (tabFromUrl === 'info') {
@@ -672,6 +767,63 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
 
   const totalPaymentPages = Math.max(1, Math.ceil(paymentTotal / PAYMENT_PAGE_SIZE))
 
+  const depositLogsTenantIdRef = useRef<string | null>(null)
+  const isDeletingDepositRef = useRef(false)
+
+  const loadDepositLogs = useCallback(async () => {
+    if (!tenant?.id) return
+
+    let page = depositPage
+    if (depositLogsTenantIdRef.current !== tenant.id) {
+      depositLogsTenantIdRef.current = tenant.id
+      page = 1
+      if (depositPage !== 1) {
+        setDepositPage(1)
+        return
+      }
+    }
+
+    setDepositLogsLoading(true)
+    try {
+      const offset = (page - 1) * DEPOSIT_PAGE_SIZE
+      const response = await tenantsApi.getTenantDepositLogs(tenant.id, {
+        limit: DEPOSIT_PAGE_SIZE,
+        offset,
+        orderBy: depositOrderBy,
+        order: depositOrder,
+      })
+
+      if (response.success) {
+        const { logs, total } = parseDepositLogsResponse(response)
+        setDepositLogs(logs)
+        if (total != null && !Number.isNaN(total) && total >= 0) {
+          setDepositTotal(total)
+        } else if (page === 1) {
+          setDepositTotal(logs.length)
+        }
+      } else {
+        toast.error(response.error || 'Gagal memuat data deposit')
+      }
+    } catch (error) {
+      console.error('Load deposit logs error:', error)
+      toast.error('Terjadi kesalahan saat memuat data deposit')
+    } finally {
+      setDepositLogsLoading(false)
+    }
+  }, [tenant?.id, depositPage, depositOrderBy, depositOrder])
+
+  const handleDepositSort = (field: DepositSortField) => {
+    if (depositOrderBy === field) {
+      setDepositOrder((prev) => (prev === 'ASC' ? 'DESC' : 'ASC'))
+    } else {
+      setDepositOrderBy(field)
+      setDepositOrder('DESC')
+    }
+    setDepositPage(1)
+  }
+
+  const totalDepositPages = Math.max(1, Math.ceil(depositTotal / DEPOSIT_PAGE_SIZE))
+
   const loadLegalDocuments = async () => {
     if (!tenant?.id) return
 
@@ -699,9 +851,13 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
       loadLegalDocuments()
     } else {
       paymentLogsTenantIdRef.current = null
+      depositLogsTenantIdRef.current = null
       setPaymentLogs([])
       setPaymentTotal(0)
       setPaymentPage(1)
+      setDepositLogs([])
+      setDepositTotal(0)
+      setDepositPage(1)
       setLegalDocuments([])
     }
   }, [tenant?.id])
@@ -711,6 +867,12 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
       loadPaymentLogs()
     }
   }, [tenant?.id, loadPaymentLogs])
+
+  useEffect(() => {
+    if (tenant?.id) {
+      loadDepositLogs()
+    }
+  }, [tenant?.id, loadDepositLogs])
 
   const handleCreateLegal = () => {
     setEditingLegal(null)
@@ -827,6 +989,116 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
       toast.error('Terjadi kesalahan saat menyimpan legal document')
     } finally {
       setLegalFormLoading(false)
+    }
+  }
+
+  const handleCreateDeposit = () => {
+    setEditingDeposit(null)
+    setDepositDialogOpen(true)
+  }
+
+  const handleEditDeposit = (deposit: TenantDepositLog) => {
+    setEditingDeposit(deposit)
+    setDepositDialogOpen(true)
+  }
+
+  const handleDeleteDeposit = (deposit: TenantDepositLog) => {
+    setDepositToDelete(deposit)
+    setDeleteDepositDialogOpen(true)
+  }
+
+  const handleDeleteDepositConfirm = async () => {
+    if (!depositToDelete || !tenant?.id || isDeletingDepositRef.current) return
+
+    const deletingId = Number(depositToDelete.id)
+    if (!Number.isFinite(deletingId) || deletingId < 1) {
+      toast.error('ID deposit tidak valid')
+      return
+    }
+
+    isDeletingDepositRef.current = true
+    setDeletingDeposit(true)
+    try {
+      const response = await tenantsApi.deleteTenantDepositLog(tenant.id, deletingId)
+
+      const markDeletedSuccess = async () => {
+        toast.success('Deposit berhasil dihapus')
+        setDepositLogs((prev) => prev.filter((d) => Number(d.id) !== deletingId))
+        await loadDepositLogs()
+      }
+
+      if (response.success !== false && !response.error) {
+        await markDeletedSuccess()
+        return
+      }
+
+      const errorText = (response.error || response.message || '').toLowerCase()
+      const shouldVerify =
+        errorText.includes('network error') ||
+        errorText.includes('not found') ||
+        errorText.includes('tidak ditemukan')
+
+      if (shouldVerify) {
+        const verifyResponse = await tenantsApi.getTenantDepositLogs(tenant.id, {
+          limit: DEPOSIT_PAGE_SIZE,
+          offset: (depositPage - 1) * DEPOSIT_PAGE_SIZE,
+          orderBy: depositOrderBy,
+          order: depositOrder,
+        })
+        const { logs: verifyLogs } = parseDepositLogsResponse(verifyResponse)
+        const stillExists = verifyLogs.some((d) => Number(d.id) === deletingId)
+        if (!stillExists) {
+          setDepositLogs(verifyLogs)
+          await markDeletedSuccess()
+          return
+        }
+      }
+
+      toast.error(response.error || response.message || 'Gagal menghapus deposit')
+    } catch (error) {
+      console.error('Delete deposit error:', error)
+      toast.error('Terjadi kesalahan saat menghapus deposit')
+    } finally {
+      isDeletingDepositRef.current = false
+      setDeletingDeposit(false)
+      setDeleteDepositDialogOpen(false)
+      setDepositToDelete(null)
+    }
+  }
+
+  const handleDepositSubmit = async (data: CreateTenantDepositLogData | UpdateTenantDepositLogData) => {
+    if (!tenant?.id) {
+      toast.error('Tenant ID tidak ditemukan')
+      return
+    }
+
+    setDepositFormLoading(true)
+    try {
+      if (editingDeposit) {
+        const response = await tenantsApi.updateTenantDepositLog(tenant.id, editingDeposit.id, data)
+        if (response.success) {
+          toast.success('Deposit berhasil diperbarui')
+          setDepositDialogOpen(false)
+          setEditingDeposit(null)
+          loadDepositLogs()
+        } else {
+          toast.error(response.error || 'Gagal memperbarui deposit')
+        }
+      } else {
+        const response = await tenantsApi.createTenantDepositLog(tenant.id, data as CreateTenantDepositLogData)
+        if (response.success) {
+          toast.success('Deposit berhasil ditambahkan')
+          setDepositDialogOpen(false)
+          loadDepositLogs()
+        } else {
+          toast.error(response.error || 'Gagal menambahkan deposit')
+        }
+      }
+    } catch (error) {
+      console.error('Deposit submit error:', error)
+      toast.error('Terjadi kesalahan saat menyimpan deposit')
+    } finally {
+      setDepositFormLoading(false)
     }
   }
 
@@ -1577,6 +1849,14 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
         >
           <span className="sm:hidden">Tagihan{tenant?.id ? ` (${paymentTotal || paymentLogs.length})` : ''}</span>
           <span className="hidden sm:inline">Penagihan{tenant?.id ? ` (${paymentTotal || paymentLogs.length})` : ''}</span>
+        </TabsTrigger>
+        <TabsTrigger 
+          value="deposits" 
+          disabled={!tenant?.id}
+          className='shrink-0 rounded-none border-0 border-t-2 border-neutral-200 px-3 py-2.5 text-sm font-semibold text-neutral-600 hover:text-blue-600 data-[state=active]:border-blue-600 data-[state=active]:bg-gradient data-[state=active]:shadow-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-500 dark:text-white dark:hover:text-blue-500 dark:data-[state=active]:border-blue-600 sm:px-4'
+        >
+          <span className="sm:hidden">Deposit{tenant?.id ? ` (${depositTotal || depositLogs.length})` : ''}</span>
+          <span className="hidden sm:inline">Deposit{tenant?.id ? ` (${depositTotal || depositLogs.length})` : ''}</span>
         </TabsTrigger>
         <TabsTrigger 
           value="legals" 
@@ -2768,6 +3048,151 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
         </div>
       </TabsContent>
 
+      <TabsContent value="deposits" className="min-w-0 px-4 py-4 sm:px-6">
+        <div className="min-w-0 space-y-4">
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h3 className="text-lg font-semibold tracking-tight">Deposit</h3>
+            <Button
+              onClick={handleCreateDeposit}
+              size="sm"
+              className="h-9 w-full shrink-0 sm:w-auto sm:self-center"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Tambah Deposit
+            </Button>
+          </div>
+
+          {depositLogsLoading ? (
+            <div className="flex justify-center items-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+          ) : (
+            <div className="max-w-full min-w-0 rounded-md border bg-card shadow-sm">
+              <p className="border-b bg-muted/40 px-3 py-2 text-xs text-muted-foreground md:hidden">
+                Geser ke samping untuk melihat semua kolom.
+              </p>
+              <Table className="min-w-[720px] w-max">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-12 text-center">No</TableHead>
+                    <TableHead className="w-[120px] text-center">Aksi</TableHead>
+                    <SortableDepositHead
+                      label="Tanggal Deposit"
+                      field="deposit_date"
+                      orderBy={depositOrderBy}
+                      order={depositOrder}
+                      onSort={handleDepositSort}
+                    />
+                    <SortableDepositHead
+                      label="Jumlah Deposit"
+                      field="amount"
+                      orderBy={depositOrderBy}
+                      order={depositOrder}
+                      onSort={handleDepositSort}
+                    />
+                    <TableHead>Keterangan</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {depositLogs.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                        Tidak ada data deposit
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    depositLogs.map((deposit, index) => {
+                      const amountDisplay = formatDepositAmount(Number(deposit.amount))
+                      return (
+                        <TableRow key={deposit.id} className="group hover:bg-muted">
+                          <TableCell className="text-center font-medium">
+                            {(depositPage - 1) * DEPOSIT_PAGE_SIZE + index + 1}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex justify-center gap-2">
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => handleEditDeposit(deposit)}
+                                className="h-8 w-8 rounded-full text-green-600 bg-green-600/10 hover:bg-green-600/20"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => handleDeleteDeposit(deposit)}
+                              className="h-8 w-8 rounded-full text-red-500 bg-red-500/10 hover:bg-red-500/20"
+                            >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {deposit.deposit_date
+                              ? new Date(String(deposit.deposit_date).slice(0, 10)).toLocaleDateString('id-ID')
+                              : '-'}
+                          </TableCell>
+                          <TableCell className={amountDisplay.className}>
+                            {deposit.amount != null && !Number.isNaN(Number(deposit.amount))
+                              ? amountDisplay.text
+                              : '-'}
+                          </TableCell>
+                          <TableCell className="max-w-[280px] truncate" title={deposit.notes || undefined}>
+                            {deposit.notes || '-'}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })
+                  )}
+                </TableBody>
+              </Table>
+              {(depositTotal > DEPOSIT_PAGE_SIZE || depositPage > 1 || depositLogs.length > 0) && (
+                <div className="flex flex-col gap-3 border-t px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-muted-foreground">
+                    {depositTotal > 0 ? (
+                      <>
+                        Menampilkan {(depositPage - 1) * DEPOSIT_PAGE_SIZE + 1}–
+                        {Math.min(depositPage * DEPOSIT_PAGE_SIZE, depositTotal)} dari {depositTotal} deposit
+                      </>
+                    ) : (
+                      <>
+                        Menampilkan {(depositPage - 1) * DEPOSIT_PAGE_SIZE + 1}–
+                        {(depositPage - 1) * DEPOSIT_PAGE_SIZE + depositLogs.length} deposit
+                      </>
+                    )}
+                  </p>
+                  <div className="flex items-center justify-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setDepositPage((prev) => Math.max(1, prev - 1))}
+                      disabled={depositPage === 1 || depositLogsLoading}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <span className="text-sm tabular-nums">
+                      Halaman {depositPage} dari {totalDepositPages}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setDepositPage((prev) => Math.min(totalDepositPages, prev + 1))}
+                      disabled={depositLogsLoading || depositPage >= totalDepositPages}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </TabsContent>
+
       <TabsContent value="legals" className="min-w-0 px-6 py-4">
         <div className="space-y-4">
           <div className="flex justify-between items-center">
@@ -2904,6 +3329,58 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
               'Hapus'
             )}
           </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    {/* Deposit Dialog */}
+    <Dialog open={depositDialogOpen} onOpenChange={setDepositDialogOpen}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{editingDeposit ? 'Edit Deposit' : 'Tambah Deposit'}</DialogTitle>
+          <DialogDescription>
+            {editingDeposit ? 'Perbarui transaksi deposit' : 'Masukkan transaksi deposit baru'}
+          </DialogDescription>
+        </DialogHeader>
+        <DepositForm
+          deposit={editingDeposit || undefined}
+          onSubmit={handleDepositSubmit}
+          loading={depositFormLoading}
+          onCancel={() => {
+            setDepositDialogOpen(false)
+            setEditingDeposit(null)
+          }}
+        />
+      </DialogContent>
+    </Dialog>
+
+    {/* Delete Deposit Dialog */}
+    <AlertDialog open={deleteDepositDialogOpen} onOpenChange={setDeleteDepositDialogOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Hapus Deposit</AlertDialogTitle>
+          <AlertDialogDescription>
+            Apakah Anda yakin ingin menghapus transaksi deposit ini? Tindakan ini tidak dapat dibatalkan.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={deletingDeposit}>Batal</AlertDialogCancel>
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={deletingDeposit}
+            className="bg-red-600 hover:bg-red-700"
+            onClick={() => void handleDeleteDepositConfirm()}
+          >
+            {deletingDeposit ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Menghapus...
+              </>
+            ) : (
+              'Hapus'
+            )}
+          </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
