@@ -653,39 +653,10 @@ export function CompleteTaskDialog({
             setIsLocationValid(true) // No location check needed
           }
           
-          // Set scan code first
+          // Set scan code — foto bukti opsional, diambil terpisah setelah scan
           setFormData(prev => ({ ...prev, scanCode: decodedText }))
 
-          // Capture screenshot for evidence and close modal
           setTimeout(async () => {
-            const videoElement = qrReaderElement.querySelector('video') as HTMLVideoElement
-            if (videoElement && videoElement.videoWidth && videoElement.videoHeight) {
-              const canvas = document.createElement('canvas')
-              const context = canvas.getContext('2d')
-              if (context) {
-                const maxDim = 1280
-                let w = videoElement.videoWidth
-                let h = videoElement.videoHeight
-                const scale = Math.min(maxDim / w, maxDim / h, 1)
-                w = Math.max(1, Math.round(w * scale))
-                h = Math.max(1, Math.round(h * scale))
-                canvas.width = w
-                canvas.height = h
-                context.drawImage(videoElement, 0, 0, w, h)
-                
-                await new Promise<void>((resolve) => {
-                  canvas.toBlob(async (blob) => {
-                    if (blob) {
-                      const raw = new File([blob], `scan-${Date.now()}.jpg`, { type: 'image/jpeg' })
-                      const file = await compressImageFile(raw, { maxBytes: UPLOAD_MAX_FILE_BYTES })
-                      setFormData(prev => ({ ...prev, fileScan: file, scanCode: decodedText }))
-                      await handleFileChange('fileScan', file)
-                    }
-                    resolve()
-                  }, 'image/jpeg', 0.9)
-                })
-              }
-            }
             await dismissScanOverlay(true)
             toast.success('QR Code berhasil di-scan!')
           }, 100)
@@ -1222,13 +1193,6 @@ export function CompleteTaskDialog({
                   <span className="sm:hidden">Scan</span>
                 </Button>
               </div>
-              {filePreview.scan && (
-                <img
-                  src={filePreview.scan}
-                  alt="Scan"
-                  className="mt-2 w-full max-w-xs h-24 sm:h-32 object-cover rounded"
-                />
-              )}
               {formData.scanCode && (
                 <div className="mt-2 space-y-2">
                   <div className="p-2 bg-gray-100 rounded text-xs sm:text-sm break-all">
@@ -1274,6 +1238,58 @@ export function CompleteTaskDialog({
                         </div>
                       )}
                     </div>
+                  )}
+                </div>
+              )}
+
+              {isScanCodeValid === true && formData.scanCode && (
+                <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
+                  <Label>Foto Bukti <span className="text-muted-foreground font-normal">(opsional)</span></Label>
+                  <p className="text-xs text-muted-foreground">
+                    Setelah scan berhasil, Anda dapat melampirkan foto jika diperlukan.
+                  </p>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => captureFromCamera('fileScan')}
+                      className="flex items-center gap-2"
+                    >
+                      <Camera className="h-4 w-4" />
+                      Ambil Foto
+                    </Button>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) handleFileChange('fileScan', file)
+                        e.target.value = ''
+                      }}
+                      className="hidden"
+                      id="file-scan-input"
+                    />
+                    <label htmlFor="file-scan-input">
+                      <Button type="button" variant="outline" asChild>
+                        <span>Pilih File</span>
+                      </Button>
+                    </label>
+                    {formData.fileScan && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => handleFileChange('fileScan', null)}
+                      >
+                        Hapus Foto
+                      </Button>
+                    )}
+                  </div>
+                  {filePreview.scan && (
+                    <img
+                      src={filePreview.scan}
+                      alt="Foto bukti"
+                      className="mt-2 w-full max-w-xs h-24 sm:h-32 object-cover rounded"
+                    />
                   )}
                 </div>
               )}
