@@ -7,6 +7,13 @@ import { loginSchema } from "./lib/zod"
 import { ZodError } from "zod"
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  session: {
+    maxAge: 365 * 24 * 60 * 60,
+    updateAge: 24 * 60 * 60,
+  },
+  jwt: {
+    maxAge: 365 * 24 * 60 * 60,
+  },
   providers: [
     Credentials({
       credentials: {
