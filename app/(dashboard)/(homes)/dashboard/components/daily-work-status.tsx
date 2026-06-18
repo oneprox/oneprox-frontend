@@ -194,9 +194,16 @@ function aggregatePatrolStatus(tasks: UserTask[]): CellStatus {
 }
 
 function patrolTitikKey(ut: UserTask): string {
+  const name = (ut.task?.name || '').trim().toLowerCase()
+  if (name) return `name-${name}`
   const taskId = ut.task_id ?? ut.task?.id
   if (taskId != null && taskId !== '') return `task-${taskId}`
-  return `name-${(ut.task?.name || '').trim().toLowerCase()}`
+  return `unknown-${ut.user_task_id ?? ut.id ?? ''}`
+}
+
+function titikSortOrder(name: string): number {
+  const match = name.match(/titik\s*(\d+)/i)
+  return match ? parseInt(match[1], 10) : 9999
 }
 
 function getUserDisplayName(ut: UserTask): string {
@@ -682,7 +689,11 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
 
         return { key: titikKey, titik, cells }
       })
-      .sort((a, b) => a.titik.localeCompare(b.titik, 'id'))
+      .sort((a, b) => {
+        const orderDiff = titikSortOrder(a.titik) - titikSortOrder(b.titik)
+        if (orderDiff !== 0) return orderDiff
+        return a.titik.localeCompare(b.titik, 'id')
+      })
   }, [keamananSecurityGroups])
 
   const PatrolIcon = ({ status }: { status: CellStatus }) => {
