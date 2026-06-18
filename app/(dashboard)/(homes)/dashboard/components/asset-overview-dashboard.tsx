@@ -62,6 +62,10 @@ function isOpenObligationStatus(status: string): boolean {
   return /^(selesai|done|lunas|completed)$/.test(s) || s.includes('sudah dibayar')
 }
 
+function isPlaceholderLegalStatus(status: string): boolean {
+  return (status || '').trim().toLowerCase() === 'tanpa_dokumen'
+}
+
 /** Merah: lewat tempo · Kuning: ≤30 hari · Biru: &gt;30 hari */
 function dueDateDotClass(dueDateIso: string | undefined): string {
   if (!dueDateIso) return 'bg-slate-300'
@@ -591,6 +595,7 @@ export default function AssetOverviewDashboard({
   const legalProgressByTenant = useMemo(() => {
     const map = new Map<string, { completed: number; total: number }>()
     for (const row of legalitasSourceRows) {
+      if (isPlaceholderLegalStatus(row.status)) continue
       const key = tenantGroupKeyLegal(row)
       const current = map.get(key) ?? { completed: 0, total: 0 }
       current.total += 1
@@ -1030,15 +1035,21 @@ export default function AssetOverviewDashboard({
                 ) : (
                   visibleLegalGroups.map((group, groupIndex) => {
                     const isOpen = expandedLegalKeys.has(group.key)
-                    const groupOverdue = group.logs.some((r) => legalRowDisplayStatus(r) === 'Overdue')
-                    const groupStatusLabel = groupOverdue ? 'Overdue' : 'On Process'
-                    const earliest = earliestUnfinishedLegalRow(group.logs)
+                    const realLegalLogs = group.logs.filter((r) => !isPlaceholderLegalStatus(r.status))
+                    const hasOnlyPlaceholder = realLegalLogs.length === 0
+                    const groupOverdue = realLegalLogs.some((r) => legalRowDisplayStatus(r) === 'Overdue')
+                    const groupStatusLabel = hasOnlyPlaceholder
+                      ? 'Belum ada dokumen'
+                      : groupOverdue
+                        ? 'Overdue'
+                        : 'On Process'
+                    const earliest = earliestUnfinishedLegalRow(realLegalLogs.length > 0 ? realLegalLogs : group.logs)
                     const dotClass = dueDateDotClass(earliest?.dueDateIso)
                     const earliestLabel = earliest?.jatuhTempo || '—'
-                    const progressSummary = legalProgressByTenant.get(group.key) ?? { completed: 0, total: group.logs.length }
+                    const progressSummary = legalProgressByTenant.get(group.key) ?? { completed: 0, total: realLegalLogs.length }
                     const progressPercent = progressSummary.total > 0
                       ? Math.round((progressSummary.completed / progressSummary.total) * 100)
-                      : 0
+                      : null
 
                     return (
                       <Fragment key={`legal-g-${group.key}`}>
@@ -1069,6 +1080,10 @@ export default function AssetOverviewDashboard({
                               <span className="inline-flex rounded-full border border-red-100 bg-red-50 px-2.5 py-0.5 text-sm font-medium text-red-700">
                                 Overdue
                               </span>
+                            ) : groupStatusLabel === 'Belum ada dokumen' ? (
+                              <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-sm font-medium text-slate-600">
+                                Belum ada dokumen
+                              </span>
                             ) : (
                               <span className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-2.5 py-0.5 text-sm font-medium text-blue-700">
                                 On Process
@@ -1088,10 +1103,10 @@ export default function AssetOverviewDashboard({
                             </div>
                           </TableCell>
                           <TableCell className="min-w-0 break-words align-middle text-base whitespace-normal text-slate-700">
-                            {group.logs.length} item
+                            {hasOnlyPlaceholder ? '—' : `${realLegalLogs.length} item`}
                           </TableCell>
                           <TableCell className="whitespace-nowrap text-base font-bold tabular-nums text-slate-900">
-                            {progressPercent}%
+                            {progressPercent === null ? '—' : `${progressPercent}%`}
                           </TableCell>
                           <TableCell className="min-w-0 align-middle">
                             {group.tenantId ? (
@@ -1152,6 +1167,7 @@ export default function AssetOverviewDashboard({
                                           '—'
                                         const keteranganLabel = row.keterangan && row.keterangan.trim() !== '' ? row.keterangan : '—'
                                         const isCompleted = isOpenObligationStatus(row.status)
+                                        const isPlaceholder = isPlaceholderLegalStatus(row.status)
                                         return (
                                           <TableRow
                                             key={`legal-${group.key}-${row.id}`}
@@ -1171,7 +1187,11 @@ export default function AssetOverviewDashboard({
                                               {keteranganLabel}
                                             </TableCell>
                                             <TableCell className="align-middle">
-                                              {isCompleted ? (
+                                              {isPlaceholder ? (
+                                                <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-sm font-medium text-slate-600">
+                                                  Belum ada dokumen
+                                                </span>
+                                              ) : isCompleted ? (
                                                 <span className="inline-flex rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-0.5 text-sm font-medium text-emerald-700">
                                                   Selesai
                                                 </span>
