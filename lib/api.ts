@@ -199,7 +199,15 @@ export class ApiClient {
       }
 
       // Handle nested response format (when backend wraps response in another data object)
-      if (data && typeof data === 'object' && 'data' in data && typeof data.data === 'object' && 'data' in data.data) {
+      if (
+        data &&
+        typeof data === 'object' &&
+        'data' in data &&
+        data.data != null &&
+        typeof data.data === 'object' &&
+        !Array.isArray(data.data) &&
+        'data' in data.data
+      ) {
         return {
           success: data.data.success || true,
           data: data.data.data,
@@ -448,20 +456,33 @@ export interface TenantLog {
 export interface TenantDepositLog {
   id: number
   tenant_id: string
-  reason?: string
-  new_deposit?: number
-  old_deposit?: number
-  old_data?: {
-    deposit?: number
-    old_deposit?: number
-    amount?: number
-  }
+  deposit_date: string
+  amount: number
+  notes?: string
   created_by?: {
     id: string
     name: string
     email: string
   }
+  updated_by?: {
+    id: string
+    name: string
+    email: string
+  } | null
   created_at: string
+  updated_at?: string | null
+}
+
+export interface CreateTenantDepositLogData {
+  deposit_date: string
+  amount: number
+  notes?: string
+}
+
+export interface UpdateTenantDepositLogData {
+  deposit_date?: string
+  amount?: number
+  notes?: string
 }
 
 // Tenant Payment Log interface
@@ -1405,8 +1426,32 @@ export const tenantsApi = {
     return apiClient.get<TenantLog[]>(`/api/tenants/${tenantId}/logs`)
   },
 
-  async getTenantDepositLogs(tenantId: string): Promise<ApiResponse<TenantDepositLog[]>> {
-    return apiClient.get<TenantDepositLog[]>(`/api/tenants/${tenantId}/deposito-logs`)
+  async getTenantDepositLogs(tenantId: string, params?: {
+    limit?: number
+    offset?: number
+    orderBy?: 'deposit_date' | 'amount' | 'created_at'
+    order?: 'ASC' | 'DESC'
+  }): Promise<ApiResponse<TenantDepositLog[]>> {
+    const queryParams = new URLSearchParams()
+    if (params?.limit != null) queryParams.append('limit', params.limit.toString())
+    if (params?.offset != null) queryParams.append('offset', params.offset.toString())
+    if (params?.orderBy) queryParams.append('orderBy', params.orderBy)
+    if (params?.order) queryParams.append('order', params.order)
+
+    const endpoint = `/api/tenants/${tenantId}/deposito-logs${queryParams.toString() ? `?${queryParams.toString()}` : ''}`
+    return apiClient.get<TenantDepositLog[]>(endpoint)
+  },
+
+  async createTenantDepositLog(tenantId: string, data: CreateTenantDepositLogData): Promise<ApiResponse<TenantDepositLog>> {
+    return apiClient.post<TenantDepositLog>(`/api/tenants/${tenantId}/deposito-logs`, data)
+  },
+
+  async updateTenantDepositLog(tenantId: string, logId: number, data: UpdateTenantDepositLogData): Promise<ApiResponse<TenantDepositLog>> {
+    return apiClient.put<TenantDepositLog>(`/api/tenants/${tenantId}/deposito-logs/${logId}`, data)
+  },
+
+  async deleteTenantDepositLog(tenantId: string, logId: number): Promise<ApiResponse<void>> {
+    return apiClient.delete<void>(`/api/tenants/${tenantId}/deposito-logs/${logId}`)
   },
 
   async getTenantPaymentLogs(tenantId: string, params?: {

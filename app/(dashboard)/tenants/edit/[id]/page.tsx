@@ -2,13 +2,12 @@
 
 import React, { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { Tenant, CreateTenantData, UpdateTenantData, TenantDepositLog, tenantsApi } from '@/lib/api'
+import { Tenant, CreateTenantData, UpdateTenantData, tenantsApi } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb'
-import { Home, Users, Edit, Loader2, Menu, FileText } from 'lucide-react'
+import { Home, Edit, Loader2, FileText } from 'lucide-react'
 import TenantForm from '@/components/forms/tenant-form'
 import toast from 'react-hot-toast'
-import TenantLogsTable from '@/components/table/tenant-logs-table'
 
 export default function EditTenantPage() {
   const router = useRouter()
@@ -18,17 +17,13 @@ export default function EditTenantPage() {
   const [tenant, setTenant] = useState<Tenant | null>(null)
   const [loading, setLoading] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
-  const [depositLogs, setDepositLogs] = useState<TenantDepositLog[]>([])
 
   useEffect(() => {
     const loadTenant = async () => {
       if (!tenantId) return
       
       try {
-        const [tenantResponse, depositLogsResponse] = await Promise.all([
-          tenantsApi.getTenant(tenantId),
-          tenantsApi.getTenantDepositLogs(tenantId)
-        ])
+        const tenantResponse = await tenantsApi.getTenant(tenantId)
         
         if (tenantResponse.success && tenantResponse.data) {
           const responseData = tenantResponse.data as any
@@ -36,12 +31,6 @@ export default function EditTenantPage() {
         } else {
           toast.error(tenantResponse.error || 'Tenant tidak ditemukan')
           router.push('/tenants')
-        }
-
-        if (depositLogsResponse.success && depositLogsResponse.data) {
-          const logsData = depositLogsResponse.data as any
-          const logs = Array.isArray(logsData.data) ? logsData.data : (Array.isArray(logsData) ? logsData : [])
-          setDepositLogs(logs)
         }
       } catch (error) {
         console.error('Load tenant error:', error)
@@ -103,7 +92,6 @@ export default function EditTenantPage() {
 
   return (
     <div className="space-y-6">
-      {/* Breadcrumb */}
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
@@ -129,7 +117,6 @@ export default function EditTenantPage() {
         </BreadcrumbList>
       </Breadcrumb>
 
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Edit Tenant</h1>
@@ -139,7 +126,6 @@ export default function EditTenantPage() {
         </div>
       </div>
 
-      {/* Form */}
       <Card>
         <CardHeader>
           <CardTitle>Form Edit Tenant</CardTitle>
