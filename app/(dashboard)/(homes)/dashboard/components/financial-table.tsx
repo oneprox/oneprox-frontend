@@ -25,23 +25,109 @@ function normalizeDashboardList<T>(payload: unknown): T[] {
   return []
 }
 
+type FinancialPaymentStatus = 'overdue' | 'reminder_needed' | 'scheduled' | 'paid'
+
+const PAYMENT_STATUS_ORDER: Record<FinancialPaymentStatus, number> = {
+  overdue: 0,
+  reminder_needed: 1,
+  scheduled: 2,
+  paid: 3,
+}
+
+function isPastDueByDate(row: FinancialTableData): boolean {
+  const startToday = new Date()
+  startToday.setHours(0, 0, 0, 0)
+  const todayMs = startToday.getTime()
+
+  if (row.dueDateIso) {
+    const t = new Date(row.dueDateIso).getTime()
+    if (!Number.isNaN(t)) {
+      const d = new Date(t)
+      const dueDayMs = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+      return dueDayMs < todayMs
+    }
+  }
+
+  const jtMs = parseLooseDateToMs(row.jatuhTempo)
+  if (jtMs != null) {
+    const d = new Date(jtMs)
+    const dueDayMs = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+    return dueDayMs < todayMs
+  }
+
+  return false
+}
+
+function normalizePaymentStatus(row: FinancialTableData): FinancialPaymentStatus {
+  const raw = String(row.status || '').toLowerCase().trim()
+  if (raw === 'overdue' || raw === 'reminder_needed' || raw === 'scheduled' || raw === 'paid') {
+    return raw
+  }
+  if (raw === 'on process') return 'scheduled'
+  if (isPastDueByDate(row)) return 'overdue'
+  return 'scheduled'
+}
+
+function compareFinancialRows(a: FinancialTableData, b: FinancialTableData): number {
+  const sa = PAYMENT_STATUS_ORDER[normalizePaymentStatus(a)]
+  const sb = PAYMENT_STATUS_ORDER[normalizePaymentStatus(b)]
+  if (sa !== sb) return sa - sb
+
+  if (normalizePaymentStatus(a) === 'overdue' && normalizePaymentStatus(b) === 'overdue') {
+    return (b.aging || 0) - (a.aging || 0)
+  }
+
+  const ta = a.dueDateIso ? new Date(a.dueDateIso).getTime() : Infinity
+  const tb = b.dueDateIso ? new Date(b.dueDateIso).getTime() : Infinity
+  return ta - tb
+}
+
+function worstGroupStatus(logs: FinancialTableData[]): FinancialPaymentStatus {
+  let worst: FinancialPaymentStatus = 'paid'
+  let worstOrder = PAYMENT_STATUS_ORDER.paid
+  for (const row of logs) {
+    const st = normalizePaymentStatus(row)
+    const order = PAYMENT_STATUS_ORDER[st]
+    if (order < worstOrder) {
+      worstOrder = order
+      worst = st
+    }
+  }
+  return worst
+}
+
+function PaymentStatusBadge({ status }: { status: FinancialPaymentStatus }) {
+  if (status === 'overdue') {
+    return (
+      <span className="inline-flex max-w-full rounded-full border border-red-100 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 sm:px-2.5 sm:text-sm">
+        Overdue
+      </span>
+    )
+  }
+  if (status === 'reminder_needed') {
+    return (
+      <span className="inline-flex max-w-full rounded-full border border-amber-100 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 sm:px-2.5 sm:text-sm">
+        Reminder Needed
+      </span>
+    )
+  }
+  if (status === 'paid') {
+    return (
+      <span className="inline-flex max-w-full rounded-full border border-emerald-100 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800 sm:px-2.5 sm:text-sm">
+        Paid
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex max-w-full rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-700 sm:px-2.5 sm:text-sm">
+      Scheduled
+    </span>
+  )
+}
+
 function formatInvoiceRupiah(value: number): string {
   const n = Number.isFinite(value) ? Math.round(value) : 0
   return `Rp ${n.toLocaleString('id-ID')}`
-}
-
-function financialInvoiceDisplayStatus(row: FinancialTableData): 'Overdue' | 'On Process' {
-  if (row.status === 'Overdue') return 'Overdue'
-  if (row.dueDateIso) {
-    const due = new Date(row.dueDateIso)
-    if (!Number.isNaN(due.getTime())) {
-      const startToday = new Date()
-      startToday.setHours(0, 0, 0, 0)
-      const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate())
-      if (dueDay < startToday) return 'Overdue'
-    }
-  }
-  return 'On Process'
 }
 
 function parseLooseDateToMs(value: string | undefined | null): number | null {
@@ -62,33 +148,6 @@ function parseLooseDateToMs(value: string | undefined | null): number | null {
   if (!dd || !mm || !yyyy) return null
   const d = new Date(yyyy, mm - 1, dd)
   return Number.isNaN(d.getTime()) ? null : d.getTime()
-}
-
-function isPastDue(row: FinancialTableData): boolean {
-  const startToday = new Date()
-  startToday.setHours(0, 0, 0, 0)
-  const todayMs = startToday.getTime()
-
-  // Prefer dueDateIso if present
-  if (row.dueDateIso) {
-    const t = new Date(row.dueDateIso).getTime()
-    if (!Number.isNaN(t)) {
-      const d = new Date(t)
-      const dueDayMs = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-      return dueDayMs < todayMs
-    }
-  }
-
-  // Fallback to formatted string "jatuhTempo"
-  const jtMs = parseLooseDateToMs(row.jatuhTempo)
-  if (jtMs != null) {
-    const d = new Date(jtMs)
-    const dueDayMs = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-    return dueDayMs < todayMs
-  }
-
-  // Last resort: keep existing derived logic (may use dueDateIso again)
-  return financialInvoiceDisplayStatus(row) === 'Overdue'
 }
 
 function tenantGroupKey(row: FinancialTableData): string {
@@ -177,9 +236,13 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
       })
     }
     groups.sort((a, b) => {
+      const sa = PAYMENT_STATUS_ORDER[worstGroupStatus(a.logs)]
+      const sb = PAYMENT_STATUS_ORDER[worstGroupStatus(b.logs)]
+      if (sa !== sb) return sa - sb
+
       const da = earliestDueMs(a.logs)
       const db = earliestDueMs(b.logs)
-      if (!da && !db) return 0
+      if (!da && !db) return a.nama.localeCompare(b.nama, 'id')
       if (!da) return 1
       if (!db) return -1
       return da - db
@@ -280,23 +343,16 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
               ) : (
                 visibleTenantGroups.map((group, groupIndex) => {
                   const isOpen = expandedKeys.has(group.key)
-                  const sortedByDue = [...group.logs].sort((a, b) => {
-                    const ta = a.dueDateIso ? new Date(a.dueDateIso).getTime() : Infinity
-                    const tb = b.dueDateIso ? new Date(b.dueDateIso).getTime() : Infinity
-                    return ta - tb
-                  })
-                  const primaryLog = sortedByDue[0]
+                  const sortedByPriority = [...group.logs].sort(compareFinancialRows)
+                  const groupStatus = worstGroupStatus(group.logs)
                   const totalNilai = group.logs.some((r) => r.sisaNilai !== undefined)
                     ? (group.logs.find((r) => r.sisaNilai !== undefined)?.sisaNilai ?? 0)
                     : group.logs.reduce((s, r) => s + (Number(r.nilaiInvoice) || 0), 0)
                   const nilaiTunggakan = group.logs.reduce((sum, r) => {
-                    if (!isPastDue(r)) return sum
-                    // Nilai tunggakan = nilai invoice yang sudah overdue (lewat jatuh tempo)
+                    if (normalizePaymentStatus(r) !== 'overdue') return sum
                     return sum + (Number(r.nilaiInvoice) || 0)
                   }, 0)
                   const maxAging = Math.max(0, ...group.logs.map((r) => r.aging || 0))
-                  const groupOverdue = group.logs.some((r) => financialInvoiceDisplayStatus(r) === 'Overdue')
-                  const groupStatusLabel = groupOverdue ? 'Overdue' : 'On Process'
 
                   return (
                     <Fragment key={`fin-g-${group.key}`}>
@@ -325,15 +381,7 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                           {group.nama}
                         </TableCell>
                         <TableCell className="w-[9.5rem] min-w-[9.5rem] shrink-0 align-middle">
-                          {groupStatusLabel === 'Overdue' ? (
-                            <span className="inline-flex max-w-full rounded-full border border-red-100 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 sm:px-2.5 sm:text-sm">
-                              Overdue
-                            </span>
-                          ) : (
-                            <span className="inline-flex max-w-full rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 sm:px-2.5 sm:text-sm">
-                              On Process
-                            </span>
-                          )}
+                          <PaymentStatusBadge status={groupStatus} />
                         </TableCell>
                         <TableCell className="min-w-[11rem] break-words align-middle border-l border-slate-200/80 pl-3 text-base whitespace-normal text-slate-700">
                           {group.aset}
@@ -418,8 +466,8 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                                     </TableRow>
                                   </TableHeader>
                                   <TableBody>
-                                    {group.logs.map((row, logIdx) => {
-                                      const displayStatus = financialInvoiceDisplayStatus(row)
+                                    {sortedByPriority.map((row, logIdx) => {
+                                      const displayStatus = normalizePaymentStatus(row)
                                       const catatanTampil =
                                         row.catatan && row.catatan.trim() !== '' && row.catatan !== '-'
                                           ? row.catatan
@@ -452,15 +500,7 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                                             {jt}
                                           </TableCell>
                                           <TableCell className="align-middle">
-                                            {displayStatus === 'Overdue' ? (
-                                              <span className="inline-flex rounded-full border border-red-100 bg-red-50 px-2.5 py-0.5 text-sm font-medium text-red-700">
-                                                Overdue
-                                              </span>
-                                            ) : (
-                                              <span className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-2.5 py-0.5 text-sm font-medium text-blue-700">
-                                                On Process
-                                              </span>
-                                            )}
+                                            <PaymentStatusBadge status={displayStatus} />
                                           </TableCell>
                                           <TableCell className="min-w-0 break-words align-middle text-base whitespace-normal text-slate-600">
                                             {catatanTampil}

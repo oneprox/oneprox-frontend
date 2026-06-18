@@ -2364,6 +2364,7 @@ export interface FinancialTableData {
   nilaiInvoice: number
   sisaNilai?: number
   tanggalInvoice: string
+  /** overdue | reminder_needed | scheduled | paid */
   status: string
   aging: number
 }
