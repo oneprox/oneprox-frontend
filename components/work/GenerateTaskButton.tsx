@@ -52,14 +52,20 @@ export function GenerateTaskButton({ onGenerateSuccess, assetId, assetIds: asset
         await new Promise(resolve => setTimeout(resolve, 1000))
         onGenerateSuccess()
       } else {
-        toast.error(response.error || 'Gagal generate user tasks')
+        const msg = response.error || response.message || ''
+        if (msg.includes('already been generated') || msg.includes('409')) {
+          toast.success('User tasks sudah di-generate untuk shift ini')
+          onGenerateSuccess()
+        } else {
+          toast.error(msg || 'Gagal generate user tasks')
+        }
       }
     } catch (error: unknown) {
       console.error('Error generating tasks:', error)
       const msg =
         error instanceof Error ? error.message : ''
       if (msg.includes('already been generated') || msg.includes('409')) {
-        toast.error('User tasks sudah pernah di-generate untuk periode ini')
+        toast.success('User tasks sudah di-generate untuk shift ini')
         onGenerateSuccess()
       } else {
         toast.error('Terjadi kesalahan saat generate user tasks')

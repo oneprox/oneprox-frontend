@@ -3,6 +3,9 @@ import type { UserTask } from '@/lib/api'
 /** 1 jam dalam milidetik. */
 export const ONE_HOUR_MS = 60 * 60 * 1000
 
+/** Jendela tampil task yang sudah di-generate sebelum shift mulai (selaras backend ~3 jam). */
+export const ROUTINE_PRE_SHIFT_DISPLAY_MS = 3 * ONE_HOUR_MS
+
 /** Parse array dari GET /api/user-tasks (bentuk response bermacam-macam). */
 export function parseRoutineUserTasksResponse(responseData: unknown): UserTask[] {
   if (!responseData || typeof responseData !== 'object') return []
@@ -197,34 +200,55 @@ export function filterRoutineTasksForToday(tasks: UserTask[]): UserTask[] {
   })
 }
 
+export interface RoutineShiftFilterOptions {
+  /** Tampilkan task yang sudah di-generate sebelum shift mulai (ms sebelum start_time). */
+  includeUpcomingWithinMs?: number
+}
+
+function isRoutineTaskVisibleNow(
+  task: UserTask,
+  nowMs: number,
+  includeUpcomingWithinMs: number
+): boolean {
+  if (!task.created_at) return false
+
+  const window = getShiftWindowForTask(task)
+  if (window) {
+    if (isWithinShiftWindow(window, nowMs)) return true
+    if (nowMs > window.end.getTime()) return false
+    if (nowMs < window.start.getTime()) {
+      return window.start.getTime() - nowMs <= includeUpcomingWithinMs
+    }
+    return false
+  }
+
+  try {
+    return jakartaDateString(new Date(task.created_at)) === jakartaDateString(new Date(nowMs))
+  } catch {
+    return false
+  }
+}
+
 /**
  * Filter task rutin yang masih relevan ditampilkan sekarang.
  *
- * Task ditampilkan hanya bila waktu sekarang (WIB) masih dalam jendela shift
- * task group-nya. Shift malam (19:00–07:00) tetap tampil di dini hari (mis.
- * jam 04:00) selama belum melewati end_time.
+ * Task ditampilkan bila waktu sekarang (WIB) masih dalam jendela shift task
+ * group-nya, atau shift belum mulai tetapi task sudah di-generate dalam jendela
+ * pra-shift (mis. generate jam 06:00 untuk shift 07:00). Shift malam (19:00–07:00)
+ * tetap tampil di dini hari selama belum melewati end_time.
  */
 export function filterRoutineTasksForActiveShift(
   tasks: UserTask[],
-  now: Date = new Date()
+  now: Date = new Date(),
+  options?: RoutineShiftFilterOptions
 ): UserTask[] {
   if (tasks.length === 0) return []
   const t = now.getTime()
-  const today = jakartaDateString(now)
-  return tasks.filter((task) => {
-    if (!task.created_at) return false
-
-    const window = getShiftWindowForTask(task)
-    if (window) {
-      return isWithinShiftWindow(window, t)
-    }
-
-    try {
-      return jakartaDateString(new Date(task.created_at)) === today
-    } catch {
-      return false
-    }
-  })
+  const includeUpcomingWithinMs =
+    options?.includeUpcomingWithinMs ?? ROUTINE_PRE_SHIFT_DISPLAY_MS
+  return tasks.filter((task) =>
+    isRoutineTaskVisibleNow(task, t, includeUpcomingWithinMs)
+  )
 }
 
 /**
