@@ -6,7 +6,7 @@ import { ChevronRight } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
-import { dashboardApi, type FinancialTableData } from '@/lib/api'
+import { dashboardApi, tenantsApi, type FinancialTableData, type Tenant } from '@/lib/api'
 import LoadingSkeleton from '@/components/loading-skeleton'
 
 const TABLE_PAGE_SIZE = 10
@@ -175,6 +175,7 @@ interface TenantFinancialGroup {
 
 export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTableProps) {
   const [rows, setRows] = useState<FinancialTableData[]>([])
+  const [tenantRentById, setTenantRentById] = useState<Map<string, number>>(new Map())
   const [loading, setLoading] = useState(true)
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set())
   const [visibleCount, setVisibleCount] = useState(TABLE_PAGE_SIZE)
@@ -186,18 +187,41 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
     const load = async () => {
       try {
         setLoading(true)
-        const response = await dashboardApi.getFinancialTable(
-          selectedAssetId !== 'all' ? selectedAssetId : undefined
-        )
+        const assetParam = selectedAssetId !== 'all' ? selectedAssetId : undefined
+        const [financialRes, tenantRes] = await Promise.all([
+          dashboardApi.getFinancialTable(assetParam),
+          tenantsApi.getTenants({
+            limit: 10000,
+            offset: 0,
+            ...(assetParam ? { asset_id: assetParam } : {}),
+          }),
+        ])
         if (cancelled) return
-        if (response.success && response.data != null) {
-          setRows(normalizeDashboardList<FinancialTableData>(response.data))
+
+        if (financialRes.success && financialRes.data != null) {
+          setRows(normalizeDashboardList<FinancialTableData>(financialRes.data))
         } else {
           setRows([])
         }
+
+        if (tenantRes.success && tenantRes.data != null) {
+          const tenants = normalizeDashboardList<Tenant>(tenantRes.data)
+          const rentMap = new Map<string, number>()
+          for (const tenant of tenants) {
+            if (tenant.id) {
+              rentMap.set(tenant.id, Number(tenant.rent_price) || 0)
+            }
+          }
+          setTenantRentById(rentMap)
+        } else {
+          setTenantRentById(new Map())
+        }
       } catch (err) {
         console.error('Error loading financial table:', err)
-        if (!cancelled) setRows([])
+        if (!cancelled) {
+          setRows([])
+          setTenantRentById(new Map())
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -345,13 +369,12 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                   const isOpen = expandedKeys.has(group.key)
                   const sortedByPriority = [...group.logs].sort(compareFinancialRows)
                   const groupStatus = worstGroupStatus(group.logs)
-                  const totalNilai = group.logs.some((r) => r.sisaNilai !== undefined)
-                    ? (group.logs.find((r) => r.sisaNilai !== undefined)?.sisaNilai ?? 0)
-                    : group.logs.reduce((s, r) => s + (Number(r.nilaiInvoice) || 0), 0)
-                  const nilaiTunggakan = group.logs.reduce((sum, r) => {
-                    if (normalizePaymentStatus(r) !== 'overdue') return sum
-                    return sum + (Number(r.nilaiInvoice) || 0)
-                  }, 0)
+                  const totalNilai =
+                    group.tenantId != null
+                      ? (tenantRentById.get(group.tenantId) ?? 0)
+                      : 0
+                  const nilaiTunggakan =
+                    group.logs.find((r) => r.sisaNilai !== undefined && r.sisaNilai !== null)?.sisaNilai ?? 0
                   const maxAging = Math.max(0, ...group.logs.map((r) => r.aging || 0))
 
                   return (
