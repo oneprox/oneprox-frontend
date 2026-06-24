@@ -901,7 +901,7 @@ export default function AssetOverviewDashboard({
                   Kinerja Keuangan {financialYear}
                 </CardTitle>
                 <CardDescription className="text-lg font-normal text-slate-500">
-                  Financial tracking against annual projections (Rp)
+                  Pelacakan keuangan terhadap proyeksi tahunan (Rp)
                 </CardDescription>
               </div>
               {financialData.length > 0 ? (
