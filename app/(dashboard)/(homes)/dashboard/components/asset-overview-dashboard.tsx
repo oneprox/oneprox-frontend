@@ -478,7 +478,7 @@ export default function AssetOverviewDashboard({
             },
             total: {
               show: true,
-              label: 'OCCUPIED',
+              label: 'Okupansi',
               fontSize: '13px',
               fontWeight: 800,
               color: '#94A3B8',
@@ -846,7 +846,7 @@ export default function AssetOverviewDashboard({
               </button>
             </CardTitle>
             <p className="text-lg text-muted-foreground -mt-1">
-              Okupasi unit per sektor dan unit tersedia (semua unit dalam cakupan aset)
+              Okupansi unit per sektor dan unit tersedia (semua unit dalam cakupan aset)
             </p>
           </CardHeader>
           <CardContent className="pb-6">
