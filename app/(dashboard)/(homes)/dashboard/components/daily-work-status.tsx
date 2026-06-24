@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { ApexOptions } from 'apexcharts'
-import { Check, ChevronDown, ChevronRight, Circle, CornerDownRight, Loader2, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Circle, CornerDownRight, Loader2, RefreshCw, X } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
@@ -371,6 +371,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
   const [tasksToday, setTasksToday] = useState<UserTask[]>([])
   const [tasksMonth, setTasksMonth] = useState<UserTask[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   /** Main `user_task_id` yang baris anaknya di-expand di tabel kebersihan */
   const [expandedCleaningMainIds, setExpandedCleaningMainIds] = useState<Set<string>>(new Set())
 
@@ -380,9 +381,14 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
     return d
   }, [])
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true
     try {
-      setLoading(true)
+      if (silent) {
+        setRefreshing(true)
+      } else {
+        setLoading(true)
+      }
       const todayStr = dateKey(today)
       const [yearStr, monthStr] = todayStr.split('-')
       const year = Number(yearStr)
@@ -467,33 +473,12 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
       setTasksMonth([])
     } finally {
       setLoading(false)
+      setRefreshing(false)
     }
   }, [today, selectedAssetId])
 
   useEffect(() => {
-    loadData()
-  }, [loadData, selectedAssetId])
-
-  useEffect(() => {
-    // Jaga chart tetap sinkron saat user balik fokus ke tab/halaman dashboard.
-    const onFocus = () => {
-      void loadData()
-    }
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') void loadData()
-    }
-
-    window.addEventListener('focus', onFocus)
-    document.addEventListener('visibilitychange', onVisibilityChange)
-    const intervalId = window.setInterval(() => {
-      void loadData()
-    }, 60_000)
-
-    return () => {
-      window.removeEventListener('focus', onFocus)
-      document.removeEventListener('visibilitychange', onVisibilityChange)
-      window.clearInterval(intervalId)
-    }
+    void loadData()
   }, [loadData])
 
   const flatToday = useMemo(() => flattenUserTasks(tasksToday), [tasksToday])
@@ -782,8 +767,23 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card className="border border-gray-200 shadow-sm">
           <CardHeader className="space-y-1 pb-2">
-            <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">Progress Harian Kebersihan</CardTitle>
-            <CardDescription className="text-base text-slate-500">Pantau pencapaian pekerjaan kebersihan</CardDescription>
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">Progress Harian Kebersihan</CardTitle>
+                <CardDescription className="text-base text-slate-500">Pantau pencapaian pekerjaan kebersihan</CardDescription>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void loadData({ silent: true })}
+                disabled={refreshing}
+                className="shrink-0"
+              >
+                <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+                <span className="ml-2">Refresh</span>
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="overflow-x-auto">
             <Table className="min-w-[640px] table-fixed">
@@ -967,8 +967,23 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
 
         <Card className="border border-gray-200 shadow-sm">
           <CardHeader className="space-y-1 pb-2">
-            <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">Progress Harian Keamanan</CardTitle>
-            <CardDescription className="text-base text-slate-500">Pantau pencapaian pekerjaan keamanan</CardDescription>
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">Progress Harian Keamanan</CardTitle>
+                <CardDescription className="text-base text-slate-500">Pantau pencapaian pekerjaan keamanan</CardDescription>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void loadData({ silent: true })}
+                disabled={refreshing}
+                className="shrink-0"
+              >
+                <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+                <span className="ml-2">Refresh</span>
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="overflow-x-auto">
