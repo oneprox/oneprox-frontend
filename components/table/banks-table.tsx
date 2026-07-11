@@ -68,11 +68,11 @@ export default function BanksTable({
         toast.success('Bank berhasil dihapus')
         onRefresh()
       } else {
-        toast.error(response.error || 'Failed to delete bank')
+        toast.error(response.error || 'Gagal menghapus bank')
       }
     } catch (error) {
       console.error('Delete bank error:', error)
-      toast.error('An error occurred while deleting bank')
+      toast.error('Terjadi kesalahan saat menghapus bank')
     } finally {
       setDeleting(false)
       setDeleteDialogOpen(false)
@@ -126,18 +126,18 @@ export default function BanksTable({
           <TableHeader>
             <TableRow>
               <TableHead>No</TableHead>
-              <TableHead>Bank Name</TableHead>
-              <TableHead>Account Number</TableHead>
-              <TableHead>Holder Name</TableHead>
+              <TableHead>Nama Bank</TableHead>
+              <TableHead>Nomor Rekening</TableHead>
+              <TableHead>Nama Pemilik</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="w-[70px]">Actions</TableHead>
+              <TableHead className="w-[70px]">Aksi</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {banks.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                  No banks found
+                  Tidak ada bank ditemukan
                 </TableCell>
               </TableRow>
             ) : (
@@ -151,7 +151,7 @@ export default function BanksTable({
                     <TableCell>{bank.holder_name}</TableCell>
                     <TableCell>
                       <Badge variant={bank.is_active ? 'default' : 'secondary'}>
-                        {bank.is_active ? 'Active' : 'Inactive'}
+                        {bank.is_active ? 'Aktif' : 'Tidak Aktif'}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -224,22 +224,22 @@ export default function BanksTable({
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Confirm Delete</AlertDialogTitle>
+            <AlertDialogTitle>Konfirmasi Hapus</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete bank <strong>{bankToDelete?.bank_name}</strong>?
-              This action cannot be undone. If this bank is still referenced by a tenant, deletion will be blocked.
+              Apakah Anda yakin ingin menghapus bank <strong>{bankToDelete?.bank_name}</strong>?
+              Tindakan ini tidak dapat dibatalkan. Jika bank ini masih digunakan oleh tenant, penghapusan akan ditolak.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>
-              Cancel
+              Batal
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteConfirm}
               disabled={deleting}
               className="bg-red-600 hover:bg-red-700"
             >
-              {deleting ? 'Deleting...' : 'Delete'}
+              {deleting ? 'Menghapus...' : 'Hapus'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

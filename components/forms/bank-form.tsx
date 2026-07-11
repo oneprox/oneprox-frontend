@@ -19,9 +19,9 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 
 const bankSchema = z.object({
-  bank_name: z.string().min(1, 'Bank name is required').trim(),
-  bank_account: z.string().min(1, 'Account number is required').trim(),
-  holder_name: z.string().min(1, 'Holder name is required').trim(),
+  bank_name: z.string().min(1, 'Nama bank wajib diisi').trim(),
+  bank_account: z.string().min(1, 'Nomor rekening wajib diisi').trim(),
+  holder_name: z.string().min(1, 'Nama pemilik rekening wajib diisi').trim(),
   is_active: z.boolean().optional().default(true),
 })
 
@@ -78,9 +78,9 @@ export default function BankForm({ bank, onSubmit, onCancel, loading = false }: 
           name="bank_name"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Bank Name <span className="text-red-500">*</span></FormLabel>
+              <FormLabel>Nama Bank <span className="text-red-500">*</span></FormLabel>
               <FormControl>
-                <Input placeholder="e.g. BCA" {...field} />
+                <Input placeholder="Contoh: BCA" {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -92,9 +92,9 @@ export default function BankForm({ bank, onSubmit, onCancel, loading = false }: 
           name="bank_account"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Account Number <span className="text-red-500">*</span></FormLabel>
+              <FormLabel>Nomor Rekening <span className="text-red-500">*</span></FormLabel>
               <FormControl>
-                <Input placeholder="e.g. 1234567890" {...field} />
+                <Input placeholder="Contoh: 1234567890" {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -106,9 +106,9 @@ export default function BankForm({ bank, onSubmit, onCancel, loading = false }: 
           name="holder_name"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Account Holder Name <span className="text-red-500">*</span></FormLabel>
+              <FormLabel>Nama Pemilik Rekening <span className="text-red-500">*</span></FormLabel>
               <FormControl>
-                <Input placeholder="e.g. PT Oripro Properti" {...field} />
+                <Input placeholder="Contoh: PT Oripro Properti" {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -121,9 +121,9 @@ export default function BankForm({ bank, onSubmit, onCancel, loading = false }: 
           render={({ field }) => (
             <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
               <div className="space-y-0.5">
-                <FormLabel className="text-base">Active</FormLabel>
+                <FormLabel className="text-base">Aktif</FormLabel>
                 <div className="text-sm text-muted-foreground">
-                  Enable or disable this bank account
+                  Aktifkan atau nonaktifkan rekening bank ini
                 </div>
               </div>
               <FormControl>
@@ -143,11 +143,11 @@ export default function BankForm({ bank, onSubmit, onCancel, loading = false }: 
             onClick={onCancel}
             disabled={loading}
           >
-            Cancel
+            Batal
           </Button>
           <Button type="submit" disabled={loading}>
             {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {bank ? 'Update Bank' : 'Create Bank'}
+            {bank ? 'Perbarui Bank' : 'Tambah Bank'}
           </Button>
         </div>
       </form>

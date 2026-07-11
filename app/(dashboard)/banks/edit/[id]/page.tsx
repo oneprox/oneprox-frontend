@@ -33,12 +33,12 @@ export default function EditBankPage() {
           const responseData = response.data as any
           setBank(responseData.data || responseData)
         } else {
-          toast.error(response.error || 'Failed to load bank')
+          toast.error(response.error || 'Gagal memuat data bank')
           router.push('/banks')
         }
       } catch (error) {
         console.error('Load bank error:', error)
-        toast.error('An error occurred while loading bank')
+        toast.error('Terjadi kesalahan saat memuat data bank')
         router.push('/banks')
       } finally {
         setInitialLoading(false)
@@ -57,11 +57,11 @@ export default function EditBankPage() {
         toast.success('Bank berhasil diperbarui')
         router.push('/banks')
       } else {
-        toast.error(response.error || 'Failed to update bank')
+        toast.error(response.error || 'Gagal memperbarui bank')
       }
     } catch (error) {
       console.error('Update bank error:', error)
-      toast.error('An error occurred while updating bank')
+      toast.error('Terjadi kesalahan saat memperbarui bank')
     } finally {
       setLoading(false)
     }

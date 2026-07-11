@@ -85,13 +85,13 @@ export default function BanksPage() {
         setBanks(banksData)
         setPagination(paginationData)
       } else {
-        toast.error(response.error || 'Failed to load banks')
+        toast.error(response.error || 'Gagal memuat data bank')
         setBanks([])
         setPagination(undefined)
       }
     } catch (error) {
       console.error('Load banks error:', error)
-      toast.error('An error occurred while loading banks')
+      toast.error('Terjadi kesalahan saat memuat data bank')
       setBanks([])
       setPagination(undefined)
     } finally {

@@ -27,11 +27,11 @@ export default function CreateBankPage() {
         toast.success('Bank berhasil ditambahkan')
         router.push('/banks')
       } else {
-        toast.error(response.error || 'Failed to create bank')
+        toast.error(response.error || 'Gagal menambahkan bank')
       }
     } catch (error) {
       console.error('Create bank error:', error)
-      toast.error('An error occurred while creating bank')
+      toast.error('Terjadi kesalahan saat menambahkan bank')
     } finally {
       setLoading(false)
     }
