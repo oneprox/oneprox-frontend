@@ -24,6 +24,7 @@ import WorkerTaskDetailDialog from '@/components/dialogs/worker-task-detail-dial
 import TaskEvidenceBeforeAfterDialog, {
   hasImageEvidence,
 } from '@/components/dialogs/task-evidence-before-after-dialog'
+import { buildPatrolScheduleTables, type CellStatus } from '@/lib/patrol-schedule'
 
 function isCleaningRole(roleName?: string | null): boolean {
   const role = (roleName || '').toLowerCase()
@@ -35,10 +36,7 @@ function isSecurityRole(roleName?: string | null): boolean {
   return role.includes('keamanan') || role.includes('security') || role.includes('satpam')
 }
 
-const PATROL_SLOTS = ['07:00', '11:00', '16:00', '19:00', '22:00', '04:00'] as const
-const SLOT_HOUR_MAP: Record<number, number> = { 7: 0, 11: 1, 16: 2, 19: 3, 22: 4, 4: 5 }
-
-type SlotStatus = 'selesai' | 'terlewat' | 'proses' | 'belum'
+type SlotStatus = CellStatus
 
 function getProgressStatus(ut: UserTask): { label: string; className: string } {
   const s = (ut.status || '').toLowerCase()
@@ -61,38 +59,9 @@ function isTaskRunning(ut: UserTask): boolean {
   return s === 'inprogress' || s === 'in_progress' || (!!ut.started_at && !ut.completed_at)
 }
 
-function getPatrolSlotIndex(ut: UserTask): number {
-  const timeStr = (ut.time || '').trim()
-  if (timeStr) {
-    const h = parseInt(timeStr.split(':')[0], 10)
-    if (!isNaN(h) && SLOT_HOUR_MAP[h] !== undefined) return SLOT_HOUR_MAP[h]
-  }
-  const times = (ut.task as any)?.times
-  if (Array.isArray(times) && times.length > 0) {
-    const h = parseInt(String(times[0]).split(':')[0], 10)
-    if (!isNaN(h) && SLOT_HOUR_MAP[h] !== undefined) return SLOT_HOUR_MAP[h]
-  }
-  const raw = ut.scheduled_at || ut.start_at
-  if (raw) {
-    try {
-      const hourStr = new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hour12: false, timeZone: 'Asia/Jakarta' })
-        .formatToParts(new Date(raw)).find(p => p.type === 'hour')?.value
-      const h = hourStr != null ? parseInt(hourStr, 10) : NaN
-      if (!isNaN(h) && SLOT_HOUR_MAP[h] !== undefined) return SLOT_HOUR_MAP[h]
-    } catch { /* ignore */ }
-  }
-  return -1
-}
-
-function mainMatchesSlot(main: UserTask, col: number): boolean {
-  const times = (main.task as any)?.times
-  if (Array.isArray(times) && times.length > 0) {
-    return times.some((tv: unknown) => {
-      const h = parseInt(String(tv).split(':')[0], 10)
-      return !isNaN(h) && SLOT_HOUR_MAP[h] === col
-    })
-  }
-  return getPatrolSlotIndex(main) === col
+function patrolPointTitle(ut: UserTask, main: UserTask, idx: number): string {
+  if (ut === main) return main.task?.name || 'Patroli'
+  return ut.task?.name || `Titik ${idx + 1}`
 }
 
 function PatrolStatusIcon({ status }: { status: SlotStatus }) {
@@ -790,36 +759,25 @@ function WorkerDetailContent() {
 
   const buildPatrolMatrix = (date: string) => {
     const tasks = getNestedTasksForDate(date)
-    const rowMap = new Map<string, { titik: string; cells: { status: SlotStatus; uts: UserTask[] }[] }>()
+    const groups = tasks.map((main) => ({
+      main,
+      children: (Array.isArray(main.sub_user_task) ? main.sub_user_task : []) as UserTask[],
+    }))
 
-    tasks.forEach(main => {
-      const children = (Array.isArray(main.sub_user_task) ? main.sub_user_task : []) as UserTask[]
-      const points = children.length > 0 ? children : [main]
-
-      points.forEach((pt, ptIdx) => {
-        const titik = pt.task?.name || (children.length > 0 ? `Titik ${ptIdx + 1}` : main.task?.name || 'Patroli')
-        const key = `${pt.task_id ?? pt.task?.id ?? titik}`
-        if (!rowMap.has(key)) {
-          rowMap.set(key, { titik, cells: PATROL_SLOTS.map(() => ({ status: 'belum' as SlotStatus, uts: [] })) })
-        }
-        const row = rowMap.get(key)!
-        PATROL_SLOTS.forEach((_, col) => {
-          const matches = children.length > 0
-            ? (getPatrolSlotIndex(pt) === col || (getPatrolSlotIndex(pt) === -1 && mainMatchesSlot(main, col)))
-            : mainMatchesSlot(main, col)
-          if (matches) {
-            row.cells[col].uts.push(pt)
-            const s = isTaskDone(pt) ? 'selesai' : isTaskRunning(pt) ? 'proses'
-              : (pt.scheduled_at && new Date(pt.scheduled_at) < new Date() ? 'terlewat' : 'belum')
-            if (row.cells[col].status === 'belum' || s === 'selesai') row.cells[col].status = s
-          }
-        })
-      })
+    return buildPatrolScheduleTables(groups, {
+      isRole: () => true,
+      classifyStatus: (ut) =>
+        isTaskDone(ut)
+          ? 'selesai'
+          : isTaskRunning(ut)
+          ? 'proses'
+          : ut.scheduled_at && new Date(ut.scheduled_at) < new Date()
+          ? 'terlewat'
+          : 'belum',
+      getTitikKey: (ut, main, idx) => String(ut.task_id ?? ut.task?.id ?? patrolPointTitle(ut, main, idx)),
+      getTitikTitle: patrolPointTitle,
+      fallbackTitle: 'Patroli',
     })
-
-    return [...rowMap.entries()]
-      .map(([key, v]) => ({ key, titik: v.titik, cells: v.cells }))
-      .sort((a, b) => a.titik.localeCompare(b.titik, 'id'))
   }
 
   const toggleExpandDate = (date: string) => {
@@ -1432,42 +1390,61 @@ function WorkerDetailContent() {
                                             </div>
                                           ) : isSecurityWorker ? (
                                             /* ---- Progress Keamanan (Patrol Matrix) ---- */
-                                            <div className="p-4 pl-6 space-y-2">
+                                            <div className="p-4 pl-6 space-y-4">
                                               <h4 className="text-sm font-semibold">Progress Keamanan — {formatDateShort(stat.date)}</h4>
-                                              <div className="rounded-md border bg-background overflow-x-auto">
-                                                <Table className="min-w-[580px]">
-                                                  <TableHeader>
-                                                    <TableRow className="hover:bg-transparent">
-                                                      <TableHead className="w-10 text-xs uppercase font-semibold text-slate-500">No</TableHead>
-                                                      <TableHead className="min-w-[110px] text-xs uppercase font-semibold text-slate-500">Titik Patroli</TableHead>
-                                                      {PATROL_SLOTS.map(t => (
-                                                        <TableHead key={t} className="text-center text-xs uppercase font-semibold text-slate-500 whitespace-nowrap">{t}</TableHead>
-                                                      ))}
-                                                    </TableRow>
-                                                  </TableHeader>
-                                                  <TableBody>
-                                                    {buildPatrolMatrix(stat.date).length === 0 ? (
-                                                      <TableRow>
-                                                        <TableCell colSpan={8} className="text-center py-4 text-sm text-muted-foreground">
-                                                          Tidak ada tugas untuk tanggal ini.
-                                                        </TableCell>
-                                                      </TableRow>
-                                                    ) : (
-                                                      buildPatrolMatrix(stat.date).map((row, rIdx) => (
-                                                        <TableRow key={row.key}>
-                                                          <TableCell className="text-slate-600">{rIdx + 1}</TableCell>
-                                                          <TableCell className="text-sm text-slate-800">{row.titik}</TableCell>
-                                                          {row.cells.map((c, j) => (
-                                                            <TableCell key={j} className="text-center">
-                                                              <PatrolStatusIcon status={c.status} />
-                                                            </TableCell>
-                                                          ))}
-                                                        </TableRow>
-                                                      ))
+                                              {(() => {
+                                                const tables = buildPatrolMatrix(stat.date)
+                                                if (tables.length === 0) {
+                                                  return (
+                                                    <p className="text-center py-4 text-sm text-muted-foreground">
+                                                      Tidak ada tugas untuk tanggal ini.
+                                                    </p>
+                                                  )
+                                                }
+                                                return tables.map((table) => (
+                                                  <div key={table.key} className="space-y-2">
+                                                    {tables.length > 1 && (
+                                                      <h5 className="text-xs font-semibold text-slate-600">{table.title}</h5>
                                                     )}
-                                                  </TableBody>
-                                                </Table>
-                                              </div>
+                                                    <div className="rounded-md border bg-background overflow-x-auto">
+                                                      <Table className="min-w-[580px]">
+                                                        <TableHeader>
+                                                          <TableRow className="hover:bg-transparent">
+                                                            <TableHead className="w-10 text-xs uppercase font-semibold text-slate-500">No</TableHead>
+                                                            <TableHead className="min-w-[110px] text-xs uppercase font-semibold text-slate-500">Titik Patroli</TableHead>
+                                                            {table.columns.length > 0 ? (
+                                                              table.columns.map(t => (
+                                                                <TableHead key={t} className="text-center text-xs uppercase font-semibold text-slate-500 whitespace-nowrap">{t}</TableHead>
+                                                              ))
+                                                            ) : (
+                                                              <TableHead className="text-center text-xs uppercase font-semibold text-slate-500">Status</TableHead>
+                                                            )}
+                                                          </TableRow>
+                                                        </TableHeader>
+                                                        <TableBody>
+                                                          {table.rows.map((row, rIdx) => (
+                                                            <TableRow key={row.key}>
+                                                              <TableCell className="text-slate-600">{rIdx + 1}</TableCell>
+                                                              <TableCell className="text-sm text-slate-800">{row.titik}</TableCell>
+                                                              {table.columns.length > 0 ? (
+                                                                row.cells.map((c, j) => (
+                                                                  <TableCell key={j} className="text-center">
+                                                                    <PatrolStatusIcon status={c.status} />
+                                                                  </TableCell>
+                                                                ))
+                                                              ) : (
+                                                                <TableCell className="text-center">
+                                                                  <PatrolStatusIcon status={row.overallStatus} />
+                                                                </TableCell>
+                                                              )}
+                                                            </TableRow>
+                                                          ))}
+                                                        </TableBody>
+                                                      </Table>
+                                                    </div>
+                                                  </div>
+                                                ))
+                                              })()}
                                               <div className="flex flex-wrap gap-3 pt-1 text-xs text-slate-600">
                                                 <span className="flex items-center gap-1"><span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white"><Check className="h-3 w-3" strokeWidth={3} /></span>Selesai</span>
                                                 <span className="flex items-center gap-1"><span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white"><X className="h-3 w-3" strokeWidth={3} /></span>Terlewat</span>
