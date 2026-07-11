@@ -11,21 +11,12 @@ import { Badge } from '@/components/ui/badge'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { assetsApi, userTasksApi, type Asset, type UserTask } from '@/lib/api'
 import LoadingSkeleton from '@/components/loading-skeleton'
+import { buildPatrolScheduleTables, type CellStatus } from '@/lib/patrol-schedule'
 
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false })
 
 const PROGRESS = '#345e6f'
 const TRACK = '#f0f2f5'
-const PATROL_TIME_SLOTS = ['07:00', '11:00', '16:00', '19:00', '22:00', '04:00'] as const
-
-const PATROL_SLOT_HOUR_MAP: Record<number, number> = {
-  7: 0,
-  11: 1,
-  16: 2,
-  19: 3,
-  22: 4,
-  4: 5,
-}
 
 interface DailyWorkStatusProps {
   selectedAssetId?: string
@@ -127,69 +118,12 @@ function statusHistogram(tasks: UserTask[]): Record<string, number> {
   return out
 }
 
-function hourFromUserTask(ut: UserTask): number | null {
-  const timeStr = ut.time?.trim()
-  if (timeStr) {
-    const [h] = timeStr.split(':')
-    const hour = parseInt(h, 10)
-    if (!Number.isNaN(hour)) return hour
-  }
-
-  const raw = ut.scheduled_at || ut.start_at || ut.created_at
-  if (!raw) return null
-
-  const hourPart = new Intl.DateTimeFormat('en-GB', {
-    hour: 'numeric',
-    hour12: false,
-    timeZone: 'Asia/Jakarta',
-  }).formatToParts(new Date(raw)).find((p) => p.type === 'hour')?.value
-
-  const hour = hourPart != null ? parseInt(hourPart, 10) : NaN
-  return Number.isNaN(hour) ? null : hour
-}
-
-/** Map jam dari `time` / `scheduled_at` ke indeks slot patroli main task */
-function slotIndexFromUserTask(ut: UserTask): number {
-  const hour = hourFromUserTask(ut)
-  if (hour === null) return -1
-  return PATROL_SLOT_HOUR_MAP[hour] ?? -1
-}
-
-function mainMatchesPatrolSlot(main: UserTask, col: number): boolean {
-  const times = main.task?.times
-  if (Array.isArray(times) && times.length > 0) {
-    return times.some((timeValue) => {
-      const [h] = String(timeValue).split(':')
-      const hour = parseInt(h, 10)
-      if (Number.isNaN(hour)) return false
-      return PATROL_SLOT_HOUR_MAP[hour] === col
-    })
-  }
-  return slotIndexFromUserTask(main) === col
-}
-
-type CellStatus = 'selesai' | 'terlewat' | 'proses' | 'belum'
-
 function cellStatusForPatrol(ut: UserTask | undefined): CellStatus {
   if (!ut) return 'belum'
   if (isCompleted(ut)) return 'selesai'
   if (isInProgress(ut)) return 'proses'
   const deadline = ut.scheduled_at ? new Date(ut.scheduled_at) : null
   if (deadline && deadline < new Date() && !isCompleted(ut)) return 'terlewat'
-  return 'belum'
-}
-
-function taskMatchesPatrolSlot(ut: UserTask, main: UserTask, col: number): boolean {
-  const slot = slotIndexFromUserTask(ut)
-  if (slot >= 0) return slot === col
-  return mainMatchesPatrolSlot(main, col)
-}
-
-function aggregatePatrolStatus(tasks: UserTask[]): CellStatus {
-  if (tasks.length === 0) return 'belum'
-  if (tasks.every(isCompleted)) return 'selesai'
-  if (tasks.some(isInProgress)) return 'proses'
-  if (tasks.some((task) => cellStatusForPatrol(task) === 'terlewat')) return 'terlewat'
   return 'belum'
 }
 
@@ -364,6 +298,16 @@ function visibleChildrenForRole(
 ): UserTask[] {
   if (isRole(main)) return children
   return children.filter(isRole)
+}
+
+/**
+ * `UserTask.start_at` is typed `string | null`, while `PatrolTaskLike.start_at`
+ * (lib/patrol-schedule.ts) is `string | undefined`. Normalize `null` to
+ * `undefined` (both mean "not set") so `UserTask` structurally satisfies
+ * `PatrolTaskLike` without changing any resolution behavior.
+ */
+function asPatrolTaskLike(ut: UserTask): UserTask & { start_at?: string } {
+  return { ...ut, start_at: ut.start_at ?? undefined }
 }
 
 export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkStatusProps) {
@@ -616,70 +560,29 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
    * Satu baris per titik patroli (nama task child). Beberapa user_task dengan
    * task yang sama digabung; hover per sel menampilkan user di slot jam tersebut.
    */
-  const patrolMatrix = useMemo(() => {
-    type PatrolEntry = { ut: UserTask; main: UserTask; titik: string; titikKey: string }
-    const entries: PatrolEntry[] = []
-
-    keamananSecurityGroups.forEach((group, groupIdx) => {
-      const { main, key, children } = group
-      const vis = visibleChildrenForRole(main, children, isKeamanan)
-
-      if (vis.length > 0) {
-        vis.forEach((child, childIdx) => {
-          entries.push({
-            ut: child,
-            main,
-            titik: childTaskPatrolTitle(child, childIdx),
-            titikKey: patrolTitikKey(child),
-          })
-        })
-        return
-      }
-
-      if (isKeamanan(main)) {
-        entries.push({
-          ut: main,
-          main,
-          titik: childTaskPatrolTitle(main, 0),
-          titikKey: patrolTitikKey(main),
-        })
-      }
-    })
-
-    const grouped = new Map<string, { titik: string; items: PatrolEntry[] }>()
-    for (const entry of entries) {
-      const bucket = grouped.get(entry.titikKey)
-      if (bucket) {
-        bucket.items.push(entry)
-      } else {
-        grouped.set(entry.titikKey, { titik: entry.titik, items: [entry] })
-      }
-    }
-
-    return [...grouped.entries()]
-      .map(([titikKey, { titik, items }]) => {
-        const cells = PATROL_TIME_SLOTS.map((_, col) => {
-          const matched = items.filter((entry) => taskMatchesPatrolSlot(entry.ut, entry.main, col))
-          const users = [...new Set(matched.map((entry) => getUserDisplayName(entry.ut)).filter(Boolean))]
-
-          if (matched.length === 0) {
-            return { status: 'belum' as CellStatus, users: [] as string[] }
-          }
-
-          return {
-            status: aggregatePatrolStatus(matched.map((entry) => entry.ut)),
-            users,
-          }
-        })
-
-        return { key: titikKey, titik, cells }
-      })
-      .sort((a, b) => {
-        const orderDiff = titikSortOrder(a.titik) - titikSortOrder(b.titik)
-        if (orderDiff !== 0) return orderDiff
-        return a.titik.localeCompare(b.titik, 'id')
-      })
-  }, [keamananSecurityGroups])
+  const patrolScheduleTables = useMemo(
+    () =>
+      buildPatrolScheduleTables(
+        keamananSecurityGroups.map(({ main, children }) => ({
+          main: asPatrolTaskLike(main),
+          children: children.map(asPatrolTaskLike),
+        })),
+        {
+          isRole: isKeamanan,
+          classifyStatus: cellStatusForPatrol,
+          getUsers: (ut) => [getUserDisplayName(ut)],
+          getTitikKey: (ut) => patrolTitikKey(ut),
+          getTitikTitle: (ut, _main, idx) => childTaskPatrolTitle(ut, idx),
+          sortRows: (a, b) => {
+            const orderDiff = titikSortOrder(a.titik) - titikSortOrder(b.titik)
+            if (orderDiff !== 0) return orderDiff
+            return a.titik.localeCompare(b.titik, 'id')
+          },
+          fallbackTitle: 'Patroli',
+        }
+      ),
+    [keamananSecurityGroups]
+  )
 
   const PatrolIcon = ({ status }: { status: CellStatus }) => {
     if (status === 'selesai') {
@@ -986,64 +889,81 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="overflow-x-auto">
-              <Table className="min-w-[760px]">
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="w-10 text-xs font-semibold uppercase text-slate-500">No</TableHead>
-                    <TableHead className="min-w-[100px] text-xs font-semibold uppercase text-slate-500">
-                      Titik patroli
-                    </TableHead>
-                    {PATROL_TIME_SLOTS.map((t) => (
-                      <TableHead key={t} className="whitespace-nowrap text-center text-xs font-semibold uppercase text-slate-500">
-                        {t}
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {patrolMatrix.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
-                        Tidak ada tugas keamanan hari ini.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    patrolMatrix.map((row, idx) => (
-                      <TableRow key={row.key}>
-                        <TableCell className="text-slate-600">{idx + 1}</TableCell>
-                        <TableCell className="max-w-[140px] text-sm text-slate-800">{row.titik}</TableCell>
-                        {row.cells.map((c, j) => (
-                          <TableCell key={j} className="text-center">
-                            {c.users.length > 0 ? (
-                              <Popover>
-                                <PopoverTrigger asChild>
-                                  <button
-                                    type="button"
-                                    className="mx-auto flex cursor-pointer items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                                    aria-label={`Lihat petugas ${row.titik} jam ${PATROL_TIME_SLOTS[j]}`}
-                                  >
-                                    <PatrolIcon status={c.status} />
-                                  </button>
-                                </PopoverTrigger>
-                                <PopoverContent side="top" className="w-auto max-w-xs px-3 py-2 text-sm">
-                                  <p className="font-medium text-slate-700">Petugas</p>
-                                  <p className="text-slate-600">{c.users.join(', ')}</p>
-                                </PopoverContent>
-                              </Popover>
-                            ) : (
-                              <div className="flex justify-center">
-                                <PatrolIcon status={c.status} />
-                              </div>
-                            )}
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    ))
+            {patrolScheduleTables.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                Tidak ada tugas keamanan hari ini.
+              </p>
+            ) : (
+              patrolScheduleTables.map((table) => (
+                <div key={table.key} className="space-y-2">
+                  {patrolScheduleTables.length > 1 && (
+                    <h4 className="text-sm font-semibold text-slate-700">{table.title}</h4>
                   )}
-                </TableBody>
-              </Table>
-            </div>
+                  <div className="overflow-x-auto">
+                    <Table className="min-w-[760px]">
+                      <TableHeader>
+                        <TableRow className="hover:bg-transparent">
+                          <TableHead className="w-10 text-xs font-semibold uppercase text-slate-500">No</TableHead>
+                          <TableHead className="min-w-[100px] text-xs font-semibold uppercase text-slate-500">
+                            Titik patroli
+                          </TableHead>
+                          {table.columns.length > 0 ? (
+                            table.columns.map((t) => (
+                              <TableHead key={t} className="whitespace-nowrap text-center text-xs font-semibold uppercase text-slate-500">
+                                {t}
+                              </TableHead>
+                            ))
+                          ) : (
+                            <TableHead className="text-center text-xs font-semibold uppercase text-slate-500">Status</TableHead>
+                          )}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {table.rows.map((row, idx) => (
+                          <TableRow key={row.key}>
+                            <TableCell className="text-slate-600">{idx + 1}</TableCell>
+                            <TableCell className="max-w-[140px] text-sm text-slate-800">{row.titik}</TableCell>
+                            {table.columns.length > 0 ? (
+                              row.cells.map((c, j) => (
+                                <TableCell key={j} className="text-center">
+                                  {c.users.length > 0 ? (
+                                    <Popover>
+                                      <PopoverTrigger asChild>
+                                        <button
+                                          type="button"
+                                          className="mx-auto flex cursor-pointer items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                          aria-label={`Lihat petugas ${row.titik} jam ${table.columns[j]}`}
+                                        >
+                                          <PatrolIcon status={c.status} />
+                                        </button>
+                                      </PopoverTrigger>
+                                      <PopoverContent side="top" className="w-auto max-w-xs px-3 py-2 text-sm">
+                                        <p className="font-medium text-slate-700">Petugas</p>
+                                        <p className="text-slate-600">{c.users.join(', ')}</p>
+                                      </PopoverContent>
+                                    </Popover>
+                                  ) : (
+                                    <div className="flex justify-center">
+                                      <PatrolIcon status={c.status} />
+                                    </div>
+                                  )}
+                                </TableCell>
+                              ))
+                            ) : (
+                              <TableCell className="text-center">
+                                <div className="flex justify-center">
+                                  <PatrolIcon status={row.overallStatus} />
+                                </div>
+                              </TableCell>
+                            )}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              ))
+            )}
             <div className="flex flex-wrap gap-4 border-t border-slate-100 pt-3 text-sm text-slate-600">
               <span className="flex items-center gap-2">
                 <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-white">
