@@ -1091,6 +1091,19 @@ export default function TenantDetailDialog({
                               </Badge>
                             </div>
                           </div>
+                          {activeTenant.bank && (
+                            <div>
+                              <label className="text-sm font-medium text-muted-foreground">
+                                Bank
+                              </label>
+                              <div className="mt-1 text-sm">
+                                <p className="font-medium">{activeTenant.bank.bank_name}</p>
+                                <p className="text-muted-foreground">
+                                  {activeTenant.bank.bank_account} — {activeTenant.bank.holder_name}
+                                </p>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </CardContent>
                     </Card>
