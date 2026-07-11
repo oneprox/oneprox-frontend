@@ -1257,6 +1257,13 @@ export interface Tenant {
     id: number
     name: string
   }
+  bank_id?: number | null
+  bank?: {
+    id: number
+    bank_name: string
+    bank_account: string
+    holder_name: string
+  } | null
   categories?: number[] | any[] // Keep for backward compatibility
 }
 
@@ -1270,6 +1277,7 @@ export interface CreateTenantData {
   contract_documents: string[]
   unit_ids: string[]
   category_id: number
+  bank_id?: number | null
   rent_price?: number
   ppn?: number
   total_price?: number
@@ -1295,6 +1303,7 @@ export interface UpdateTenantData {
   unit_ids?: string[]
   asset_ids?: string[]
   category?: string
+  bank_id?: number | null
   sub_category?: string
   categories?: number[]
   rent_price?: number
@@ -1649,6 +1658,30 @@ export interface UpdateTaskGroupData {
   is_active?: boolean
 }
 
+export interface Bank {
+  id: number
+  bank_name: string
+  bank_account: string
+  holder_name: string
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateBankData {
+  bank_name: string
+  bank_account: string
+  holder_name: string
+  is_active?: boolean
+}
+
+export interface UpdateBankData {
+  bank_name?: string
+  bank_account?: string
+  holder_name?: string
+  is_active?: boolean
+}
+
 // Task API interface
 export interface Task {
   id: number | string
@@ -1799,6 +1832,43 @@ export const taskGroupsApi = {
 
   async getTaskGroupsForWork(): Promise<ApiResponse<UserTask[]>> {
     return apiClient.get<UserTask[]>('/api/user-tasks')
+  },
+}
+
+// Banks-specific API functions
+export const banksApi = {
+  async getBanks(params?: {
+    bank_name?: string
+    is_active?: boolean
+    order?: 'newest' | 'oldest' | 'a-z' | 'z-a'
+    limit?: number
+    offset?: number
+  }): Promise<ApiResponse<Bank[]>> {
+    const queryParams = new URLSearchParams()
+    if (params?.bank_name) queryParams.append('bank_name', params.bank_name)
+    if (params?.is_active !== undefined) queryParams.append('is_active', params.is_active.toString())
+    if (params?.order) queryParams.append('order', params.order)
+    if (params?.limit) queryParams.append('limit', params.limit.toString())
+    if (params?.offset) queryParams.append('offset', params.offset.toString())
+
+    const endpoint = `/api/banks${queryParams.toString() ? `?${queryParams.toString()}` : ''}`
+    return apiClient.get<Bank[]>(endpoint)
+  },
+
+  async getBank(id: number): Promise<ApiResponse<Bank>> {
+    return apiClient.get<Bank>(`/api/banks/${id}`)
+  },
+
+  async createBank(data: CreateBankData): Promise<ApiResponse<Bank>> {
+    return apiClient.post<Bank>('/api/banks', data)
+  },
+
+  async updateBank(id: number, data: UpdateBankData): Promise<ApiResponse<Bank>> {
+    return apiClient.put<Bank>(`/api/banks/${id}`, data)
+  },
+
+  async deleteBank(id: number): Promise<ApiResponse<void>> {
+    return apiClient.delete<void>(`/api/banks/${id}`)
   },
 }
 
