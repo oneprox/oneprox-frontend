@@ -300,16 +300,6 @@ function visibleChildrenForRole(
   return children.filter(isRole)
 }
 
-/**
- * `UserTask.start_at` is typed `string | null`, while `PatrolTaskLike.start_at`
- * (lib/patrol-schedule.ts) is `string | undefined`. Normalize `null` to
- * `undefined` (both mean "not set") so `UserTask` structurally satisfies
- * `PatrolTaskLike` without changing any resolution behavior.
- */
-function asPatrolTaskLike(ut: UserTask): UserTask & { start_at?: string } {
-  return { ...ut, start_at: ut.start_at ?? undefined }
-}
-
 export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkStatusProps) {
   const [assets, setAssets] = useState<Asset[]>([])
   const [tasksToday, setTasksToday] = useState<UserTask[]>([])
@@ -563,10 +553,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
   const patrolScheduleTables = useMemo(
     () =>
       buildPatrolScheduleTables(
-        keamananSecurityGroups.map(({ main, children }) => ({
-          main: asPatrolTaskLike(main),
-          children: children.map(asPatrolTaskLike),
-        })),
+        keamananSecurityGroups.map(({ main, children }) => ({ main, children })),
         {
           isRole: isKeamanan,
           classifyStatus: cellStatusForPatrol,

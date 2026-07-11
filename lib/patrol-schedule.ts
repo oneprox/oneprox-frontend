@@ -3,7 +3,7 @@ export type CellStatus = 'selesai' | 'terlewat' | 'proses' | 'belum'
 export interface PatrolTaskLike {
   time?: string
   scheduled_at?: string
-  start_at?: string
+  start_at?: string | null
   created_at?: string
   task_id?: number | string
   task?: {
