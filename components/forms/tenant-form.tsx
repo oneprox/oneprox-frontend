@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Tenant, CreateTenantData, UpdateTenantData, usersApi, unitsApi, tenantsApi, rolesApi, assetsApi, User, Unit, Asset, DURATION_UNITS, DURATION_UNIT_LABELS, TenantPaymentLog, CreateTenantPaymentData, UpdateTenantPaymentData, TenantDepositLog, CreateTenantDepositLogData, UpdateTenantDepositLogData, TenantLegal, CreateTenantLegalData, UpdateTenantLegalData, settingsApi, Setting, normalizeTenantStatus } from '@/lib/api'
+import { Tenant, CreateTenantData, UpdateTenantData, usersApi, unitsApi, tenantsApi, rolesApi, assetsApi, banksApi, User, Unit, Asset, Bank, DURATION_UNITS, DURATION_UNIT_LABELS, TenantPaymentLog, CreateTenantPaymentData, UpdateTenantPaymentData, TenantDepositLog, CreateTenantDepositLogData, UpdateTenantDepositLogData, TenantLegal, CreateTenantLegalData, UpdateTenantLegalData, settingsApi, Setting, normalizeTenantStatus } from '@/lib/api'
 import {
   formatBillingRatePercent,
   storedRateToPercentInput,
@@ -341,12 +341,36 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
     sub_category: '',
     rent_price: 0,
     ppn: 0,
+    bank_id: null as number | null,
     payment_term: '',
     building_area: 0,
     land_area: 0,
     electricity_power: 0,
     status: 'active',
   })
+  const [banks, setBanks] = useState<Bank[]>([])
+  const [banksLoading, setBanksLoading] = useState(true)
+
+  useEffect(() => {
+    const loadBanks = async () => {
+      try {
+        const response = await banksApi.getBanks({ is_active: true })
+        if (response.success && response.data) {
+          const responseData = response.data as any
+          const resData = responseData.data as any
+          const banksData = Array.isArray(resData?.banks)
+            ? resData.banks
+            : (Array.isArray(responseData) ? responseData : [])
+          setBanks(banksData)
+        }
+      } catch (error) {
+        console.error('Load banks error:', error)
+      } finally {
+        setBanksLoading(false)
+      }
+    }
+    loadBanks()
+  }, [])
   const [userSelectionType, setUserSelectionType] = useState<'existing' | 'new'>('new')
   const [showPassword, setShowPassword] = useState(false)
   const [newUserData, setNewUserData] = useState({
@@ -679,6 +703,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
         sub_category: subCategoryName,
         rent_price: tenant.rent_price || 0,
         ppn: tenant.ppn != null ? Number(tenant.ppn) : 0,
+        bank_id: tenant.bank_id ?? null,
         payment_term: tenant.payment_term ? (() => {
           // Convert payment_term from number (0 or 1) to string ('year' or 'month')
           // Database: 0 = year, 1 = month
@@ -1459,6 +1484,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
       submitData.rent_price = formData.rent_price
       submitData.ppn = formData.ppn ?? 0
       submitData.total_price = (formData.rent_price || 0) + (formData.ppn ?? 0)
+      submitData.bank_id = formData.bank_id ?? null
       if (paymentTermValue !== undefined) {
         submitData.payment_term = paymentTermValue
       }
@@ -2465,6 +2491,40 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                 </p>
               </div>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Informasi Bank */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Informasi Bank</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            <Label htmlFor="bank_id">Bank</Label>
+            <Select
+              value={formData.bank_id ? String(formData.bank_id) : 'none'}
+              onValueChange={(value) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  bank_id: value === 'none' ? null : parseInt(value, 10),
+                }))
+              }
+              disabled={banksLoading}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={banksLoading ? 'Memuat bank...' : 'Pilih bank (opsional)'} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Tidak ada</SelectItem>
+                {banks.map((bank) => (
+                  <SelectItem key={bank.id} value={String(bank.id)}>
+                    {bank.bank_name} — {bank.bank_account} — {bank.holder_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>
