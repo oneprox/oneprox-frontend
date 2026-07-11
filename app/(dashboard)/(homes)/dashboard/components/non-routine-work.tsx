@@ -8,10 +8,13 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { dashboardApi, DashboardNonRoutineWorkItem, DashboardNonRoutineWorkResponse, userTasksApi, UserTask } from '@/lib/api'
 import LoadingSkeleton from "@/components/loading-skeleton"
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
 
 interface NonRoutineWorkProps {
   selectedAssetId?: string
 }
+
+const PAGE_SIZE = 15
 
 export default function NonRoutineWork({ selectedAssetId = 'all' }: NonRoutineWorkProps) {
   const [workData, setWorkData] = useState<DashboardNonRoutineWorkItem[]>([])
@@ -19,10 +22,18 @@ export default function NonRoutineWork({ selectedAssetId = 'all' }: NonRoutineWo
   const [selectedItem, setSelectedItem] = useState<DashboardNonRoutineWorkItem | null>(null)
   const [selectedDetail, setSelectedDetail] = useState<UserTask | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
 
   useEffect(() => {
     loadNonRoutineWork()
   }, [selectedAssetId])
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [workData.length])
+
+  const totalPages = Math.max(1, Math.ceil(workData.length / PAGE_SIZE))
+  const paginatedWorkData = workData.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
 
   const loadNonRoutineWork = async () => {
     try {
@@ -167,9 +178,9 @@ export default function NonRoutineWork({ selectedAssetId = 'all' }: NonRoutineWo
                   </TableCell>
                 </TableRow>
               ) : (
-                workData.map((item, index) => (
+                paginatedWorkData.map((item, index) => (
                   <TableRow key={item.id} className={rowAccentClass(item)}>
-                    <TableCell className="text-center">{index + 1}</TableCell>
+                    <TableCell className="text-center">{(currentPage - 1) * PAGE_SIZE + index + 1}</TableCell>
                     <TableCell>{item.nama}</TableCell>
                     <TableCell>{item.aset}</TableCell>
                     <TableCell>{item.area}</TableCell>
@@ -192,6 +203,55 @@ export default function NonRoutineWork({ selectedAssetId = 'all' }: NonRoutineWo
             </TableBody>
           </Table>
         </div>
+
+        {workData.length > 0 && (
+          <div className="flex items-center justify-between mt-4 px-2">
+            <div className="text-sm text-muted-foreground">
+              Menampilkan {(currentPage - 1) * PAGE_SIZE + 1} - {Math.min(currentPage * PAGE_SIZE, workData.length)} dari {workData.length} data
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                className="h-9 w-9 p-0"
+              >
+                <ChevronsLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="h-9 w-9 p-0"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-sm px-2">
+                Halaman {currentPage} dari {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="h-9 w-9 p-0"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages}
+                className="h-9 w-9 p-0"
+              >
+                <ChevronsRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Legend — teks & urutan sesuai permintaan client (desain awal) */}
         <div className="mt-4 flex gap-4 text-sm">

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { complaintReportsApi, ComplaintReport, assetsApi, Asset } from '@/lib/api'
 import LoadingSkeleton from "@/components/loading-skeleton"
 import ComplaintReportDetailDialog from '@/components/dialogs/complaint-report-detail-dialog'
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
 
 interface ReportData {
   id: number
@@ -28,15 +29,25 @@ interface ReportsObstaclesNotesProps {
   selectedAssetId?: string
 }
 
+const PAGE_SIZE = 15
+
 export default function ReportsObstaclesNotes({ selectedAssetId = 'all' }: ReportsObstaclesNotesProps) {
   const [reportData, setReportData] = useState<ReportData[]>([])
   const [loading, setLoading] = useState(true)
   const [detailDialogOpen, setDetailDialogOpen] = useState(false)
   const [selectedReport, setSelectedReport] = useState<ComplaintReport | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
 
   useEffect(() => {
     loadReportsData()
   }, [selectedAssetId])
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [reportData.length])
+
+  const totalPages = Math.max(1, Math.ceil(reportData.length / PAGE_SIZE))
+  const paginatedReportData = reportData.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
 
   const loadReportsData = async () => {
     try {
@@ -233,9 +244,9 @@ export default function ReportsObstaclesNotes({ selectedAssetId = 'all' }: Repor
                   </TableCell>
                 </TableRow>
               ) : (
-                reportData.map((item, index) => (
+                paginatedReportData.map((item, index) => (
                   <TableRow key={item.id}>
-                    <TableCell className="text-center">{index + 1}</TableCell>
+                    <TableCell className="text-center">{(currentPage - 1) * PAGE_SIZE + index + 1}</TableCell>
                     <TableCell>{getStatusBadge(item.status)}</TableCell>
                     <TableCell>{item.tanggal}</TableCell>
                     <TableCell>{item.nama}</TableCell>
@@ -273,6 +284,55 @@ export default function ReportsObstaclesNotes({ selectedAssetId = 'all' }: Repor
             </TableBody>
           </Table>
         </div>
+
+        {reportData.length > 0 && (
+          <div className="flex items-center justify-between mt-4 px-2">
+            <div className="text-sm text-muted-foreground">
+              Menampilkan {(currentPage - 1) * PAGE_SIZE + 1} - {Math.min(currentPage * PAGE_SIZE, reportData.length)} dari {reportData.length} data
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                className="h-9 w-9 p-0"
+              >
+                <ChevronsLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="h-9 w-9 p-0"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-sm px-2">
+                Halaman {currentPage} dari {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="h-9 w-9 p-0"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages}
+                className="h-9 w-9 p-0"
+              >
+                <ChevronsRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
       </CardContent>
       <ComplaintReportDetailDialog
         open={detailDialogOpen}
