@@ -65,6 +65,22 @@ export default function BanksPage() {
             offset: responseData.offset || offset
           }
         }
+        // Fallback: Check responseData.data for nested structure
+        else if (responseData.data && typeof responseData.data === 'object' && responseData.data.total !== undefined) {
+          paginationData = {
+            total: responseData.data.total || 0,
+            limit: responseData.data.limit || limit,
+            offset: responseData.data.offset || offset
+          }
+        }
+        // Fallback: Check responseData.pagination
+        else if (responseData.pagination) {
+          paginationData = {
+            total: responseData.pagination.total || 0,
+            limit: responseData.pagination.limit || limit,
+            offset: responseData.pagination.offset || offset
+          }
+        }
 
         setBanks(banksData)
         setPagination(paginationData)
