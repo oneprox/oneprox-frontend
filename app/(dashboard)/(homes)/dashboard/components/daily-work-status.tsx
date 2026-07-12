@@ -9,9 +9,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { assetsApi, userTasksApi, type Asset, type UserTask } from '@/lib/api'
 import LoadingSkeleton from '@/components/loading-skeleton'
-import { buildPatrolScheduleTables, type CellStatus } from '@/lib/patrol-schedule'
+import { buildPatrolScheduleTables, type CellStatus, type PatrolScheduleTable } from '@/lib/patrol-schedule'
 
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false })
 
@@ -600,6 +601,71 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
     )
   }
 
+  const PatrolGroupTable = ({ table }: { table: PatrolScheduleTable }) => (
+    <div className="overflow-x-auto">
+      <Table className="min-w-[760px]">
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="w-10 text-xs font-semibold uppercase text-slate-500">No</TableHead>
+            <TableHead className="min-w-[100px] text-xs font-semibold uppercase text-slate-500">
+              Titik patroli
+            </TableHead>
+            {table.columns.length > 0 ? (
+              table.columns.map((t) => (
+                <TableHead key={t} className="whitespace-nowrap text-center text-xs font-semibold uppercase text-slate-500">
+                  {t}
+                </TableHead>
+              ))
+            ) : (
+              <TableHead className="text-center text-xs font-semibold uppercase text-slate-500">Status</TableHead>
+            )}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {table.rows.map((row, idx) => (
+            <TableRow key={row.key}>
+              <TableCell className="text-slate-600">{idx + 1}</TableCell>
+              <TableCell className="max-w-[140px] text-sm text-slate-800">{row.titik}</TableCell>
+              {table.columns.length > 0 ? (
+                row.cells.map((c, j) => (
+                  <TableCell key={j} className="text-center">
+                    {c.users.length > 0 ? (
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            className="mx-auto flex cursor-pointer items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                            aria-label={`Lihat petugas ${row.titik} jam ${table.columns[j]}`}
+                          >
+                            <PatrolIcon status={c.status} />
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent side="top" className="w-auto max-w-xs px-3 py-2 text-sm">
+                          <p className="font-medium text-slate-700">Petugas</p>
+                          <p className="text-slate-600">{c.users.join(', ')}</p>
+                        </PopoverContent>
+                      </Popover>
+                    ) : (
+                      <div className="flex justify-center">
+                        <PatrolIcon status={c.status} />
+                      </div>
+                    )}
+                  </TableCell>
+                ))
+              ) : (
+                <TableCell className="text-center">
+                  <div className="flex justify-center">
+                    <PatrolIcon status={row.overallStatus} />
+                  </div>
+                </TableCell>
+              )}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+
   const toggleCleaningExpand = (mainKey: string) => {
     setExpandedCleaningMainIds((prev) => {
       const next = new Set(prev)
@@ -880,76 +946,23 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
               <p className="py-8 text-center text-sm text-muted-foreground">
                 Tidak ada tugas keamanan hari ini.
               </p>
+            ) : patrolScheduleTables.length === 1 ? (
+              <PatrolGroupTable table={patrolScheduleTables[0]} />
             ) : (
-              patrolScheduleTables.map((table) => (
-                <div key={table.key} className="space-y-2">
-                  {patrolScheduleTables.length > 1 && (
-                    <h4 className="text-sm font-semibold text-slate-700">{table.title}</h4>
-                  )}
-                  <div className="overflow-x-auto">
-                    <Table className="min-w-[760px]">
-                      <TableHeader>
-                        <TableRow className="hover:bg-transparent">
-                          <TableHead className="w-10 text-xs font-semibold uppercase text-slate-500">No</TableHead>
-                          <TableHead className="min-w-[100px] text-xs font-semibold uppercase text-slate-500">
-                            Titik patroli
-                          </TableHead>
-                          {table.columns.length > 0 ? (
-                            table.columns.map((t) => (
-                              <TableHead key={t} className="whitespace-nowrap text-center text-xs font-semibold uppercase text-slate-500">
-                                {t}
-                              </TableHead>
-                            ))
-                          ) : (
-                            <TableHead className="text-center text-xs font-semibold uppercase text-slate-500">Status</TableHead>
-                          )}
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {table.rows.map((row, idx) => (
-                          <TableRow key={row.key}>
-                            <TableCell className="text-slate-600">{idx + 1}</TableCell>
-                            <TableCell className="max-w-[140px] text-sm text-slate-800">{row.titik}</TableCell>
-                            {table.columns.length > 0 ? (
-                              row.cells.map((c, j) => (
-                                <TableCell key={j} className="text-center">
-                                  {c.users.length > 0 ? (
-                                    <Popover>
-                                      <PopoverTrigger asChild>
-                                        <button
-                                          type="button"
-                                          className="mx-auto flex cursor-pointer items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                                          aria-label={`Lihat petugas ${row.titik} jam ${table.columns[j]}`}
-                                        >
-                                          <PatrolIcon status={c.status} />
-                                        </button>
-                                      </PopoverTrigger>
-                                      <PopoverContent side="top" className="w-auto max-w-xs px-3 py-2 text-sm">
-                                        <p className="font-medium text-slate-700">Petugas</p>
-                                        <p className="text-slate-600">{c.users.join(', ')}</p>
-                                      </PopoverContent>
-                                    </Popover>
-                                  ) : (
-                                    <div className="flex justify-center">
-                                      <PatrolIcon status={c.status} />
-                                    </div>
-                                  )}
-                                </TableCell>
-                              ))
-                            ) : (
-                              <TableCell className="text-center">
-                                <div className="flex justify-center">
-                                  <PatrolIcon status={row.overallStatus} />
-                                </div>
-                              </TableCell>
-                            )}
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-              ))
+              <Tabs defaultValue={patrolScheduleTables[0].key} className="w-full">
+                <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto whitespace-nowrap">
+                  {patrolScheduleTables.map((table) => (
+                    <TabsTrigger key={table.key} value={table.key} className="shrink-0">
+                      {table.title}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+                {patrolScheduleTables.map((table) => (
+                  <TabsContent key={table.key} value={table.key} className="space-y-2">
+                    <PatrolGroupTable table={table} />
+                  </TabsContent>
+                ))}
+              </Tabs>
             )}
             <div className="flex flex-wrap gap-4 border-t border-slate-100 pt-3 text-sm text-slate-600">
               <span className="flex items-center gap-2">
