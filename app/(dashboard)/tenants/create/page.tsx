@@ -1,17 +1,27 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { CreateTenantData, UpdateTenantData, tenantsApi } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb'
 import { Home, Users, Plus, FileText } from 'lucide-react'
 import TenantForm from '@/components/forms/tenant-form'
+import { useIsTenantRole } from '@/hooks/useIsTenantRole'
 import toast from 'react-hot-toast'
 
 export default function CreateTenantPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
+  const isTenantRole = useIsTenantRole()
+
+  // Role tenant tidak boleh membuat tenant; backend juga menolak dengan 403
+  useEffect(() => {
+    if (isTenantRole === true) {
+      toast.error('Anda tidak memiliki akses untuk membuat tenant')
+      router.replace('/tenants')
+    }
+  }, [isTenantRole, router])
 
   const handleSubmit = async (data: CreateTenantData | UpdateTenantData) => {
     setLoading(true)
@@ -30,6 +40,10 @@ export default function CreateTenantPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  if (isTenantRole !== false) {
+    return null
   }
 
   return (

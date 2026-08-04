@@ -10,6 +10,7 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbP
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Home, Users, Plus, Search, RefreshCw, Loader2, FileText } from 'lucide-react'
 import { useMenuPermissions } from '@/hooks/useMenuPermissions'
+import { useIsTenantRole } from '@/hooks/useIsTenantRole'
 
 // Category options
 const CATEGORY_OPTIONS = [
@@ -66,7 +67,11 @@ export default function TenantsPage() {
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>('all')
   const [order, setOrder] = useState<string>('newest')
   const [currentUser, setCurrentUser] = useState<User | null>(null)
-  const [isTenantUser, setIsTenantUser] = useState(false)
+  // null = role belum diketahui. Selama masih null jangan load data, supaya tidak
+  // ada request tanpa filter user_id yang bisa menampilkan tenant milik user lain.
+  const isTenantUser = useIsTenantRole()
+  // Kontrol khusus admin baru ditampilkan setelah dipastikan bukan role tenant
+  const isAdminView = isTenantUser === false
   const [assets, setAssets] = useState<Asset[]>([])
   
   // Pagination states
@@ -81,7 +86,15 @@ export default function TenantsPage() {
       const filterParams: any = {}
       
       // For tenant users, always filter by their user_id and don't use pagination
-      if (isTenantUser && currentUser?.id) {
+      if (isTenantUser) {
+        // Tanpa id yang valid jangan request apa pun, karena request tanpa filter
+        // user_id berarti meminta seluruh tenant
+        if (!currentUser?.id) {
+          setTenants([])
+          setFilteredTenants([])
+          setPagination(null)
+          return
+        }
         filterParams.user_id = currentUser.id
         // Don't add limit/offset for tenant users - load all their tenants
       } else {
@@ -93,13 +106,13 @@ export default function TenantsPage() {
       if (searchTerm.trim()) {
         filterParams.name = searchTerm.trim()
       }
-      if (!isTenantUser && assetFilter !== 'all') {
+      if (isAdminView && assetFilter !== 'all') {
         filterParams.asset_id = assetFilter
       }
-      if (!isTenantUser && categoryFilter !== 'all') {
+      if (isAdminView && categoryFilter !== 'all') {
         filterParams.category = categoryFilter
       }
-      if (!isTenantUser && statusFilter !== 'all') {
+      if (isAdminView && statusFilter !== 'all') {
         const statusInt = STATUS_TO_INTEGER[statusFilter]
         if (statusInt !== undefined) {
           filterParams.status = statusInt
@@ -184,24 +197,6 @@ export default function TenantsPage() {
     try {
       const user = await authApi.getCurrentUser()
       setCurrentUser(user)
-      
-      // Check if user is a tenant by checking if they have tenants associated with them
-      if (user && user.id) {
-        try {
-          const tenantsResponse = await tenantsApi.getTenants({ user_id: user.id, limit: 1 })
-          if (tenantsResponse.success && tenantsResponse.data) {
-            const tenantsData = tenantsResponse.data as any
-            const tenants = Array.isArray(tenantsData.data) 
-              ? tenantsData.data 
-              : (Array.isArray(tenantsData) ? tenantsData : [])
-            if (tenants.length > 0) {
-              setIsTenantUser(true)
-            }
-          }
-        } catch (error) {
-          console.error('Error checking tenant status:', error)
-        }
-      }
     } catch (error) {
       console.error('Error loading current user:', error)
     }
@@ -212,15 +207,9 @@ export default function TenantsPage() {
     loadAssets()
   }, [])
 
+  // Load data setelah user dan role diketahui, dan setiap filter/pagination berubah
   useEffect(() => {
-    if (currentUser) {
-      loadTenants()
-    }
-  }, [currentUser, isTenantUser])
-
-  // Reload data when filters or pagination change
-  useEffect(() => {
-    if (currentUser) {
+    if (currentUser && isTenantUser !== null) {
       loadTenants()
     }
   }, [searchTerm, assetFilter, categoryFilter, statusFilter, paymentStatusFilter, order, offset, currentUser, isTenantUser])
@@ -371,7 +360,7 @@ export default function TenantsPage() {
               </p>
             </div>
             <div className="flex items-center gap-2">
-              {!isTenantUser && can_add && (
+              {isAdminView && can_add && (
                 <Button onClick={() => router.push('/tenants/create')}>
                   <Plus className="mr-2 h-4 w-4" />
                   Tambah Tenant
@@ -384,7 +373,7 @@ export default function TenantsPage() {
           </div>
           
           {/* Filter Bar - Horizontal Layout */}
-          {!isTenantUser ? (
+          {isAdminView ? (
             <div className="flex flex-wrap items-center gap-4 mt-4 p-4 bg-gray-50 rounded-lg border">
               <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -506,7 +495,7 @@ export default function TenantsPage() {
               onView={handleView}
               onRefresh={handleRefresh}
               loading={loading}
-              pagination={!isTenantUser ? (pagination || undefined) : undefined}
+              pagination={isAdminView ? (pagination || undefined) : undefined}
               onPageChange={handlePageChange}
               can_edit={can_edit}
               can_delete={can_delete}

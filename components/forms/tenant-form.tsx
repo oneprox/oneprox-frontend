@@ -68,6 +68,11 @@ interface TenantFormProps {
   tenant?: Tenant
   onSubmit: (data: CreateTenantData | UpdateTenantData) => Promise<void>
   loading?: boolean
+  /**
+   * Mode lihat-saja: seluruh input dinonaktifkan dan semua kontrol
+   * tambah/ubah/hapus disembunyikan. Semua tab tetap bisa dibuka.
+   */
+  readOnly?: boolean
 }
 
 // Kategori options
@@ -327,7 +332,7 @@ function SortableDepositHead({
   )
 }
 
-export default function TenantForm({ tenant, onSubmit, loading = false }: TenantFormProps) {
+export default function TenantForm({ tenant, onSubmit, loading = false, readOnly = false }: TenantFormProps) {
   const searchParams = useSearchParams()
   const [formData, setFormData] = useState({
     name: '',
@@ -1897,6 +1902,7 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
 
       <TabsContent value="info" className="min-w-0 px-6 py-4">
         <form onSubmit={handleSubmit} className="space-y-6">
+      <fieldset disabled={readOnly} className="min-w-0 space-y-6">
       {/* Informasi Dasar */}
       <Card>
         <CardHeader>
@@ -2847,23 +2853,38 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
 
       
 
-      <Separator />
+      </fieldset>
 
-      {/* Submit Button */}
-      <div className="flex justify-end gap-3">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => window.history.back()}
-          disabled={loading || uploading}
-        >
-          Batal
-        </Button>
-        <Button type="submit" disabled={loading || uploading}>
-          {(loading || uploading) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {uploading ? 'Mengupload file...' : tenant ? 'Perbarui Tenant' : 'Buat Tenant'}
-        </Button>
-      </div>
+      {readOnly ? (
+        <>
+          <Separator />
+          <div className="flex justify-end">
+            <Button type="button" variant="outline" onClick={() => window.history.back()}>
+              Kembali
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <Separator />
+
+          {/* Submit Button */}
+          <div className="flex justify-end gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => window.history.back()}
+              disabled={loading || uploading}
+            >
+              Batal
+            </Button>
+            <Button type="submit" disabled={loading || uploading}>
+              {(loading || uploading) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {uploading ? 'Mengupload file...' : tenant ? 'Perbarui Tenant' : 'Buat Tenant'}
+            </Button>
+          </div>
+        </>
+      )}
         </form>
       </TabsContent>
 
@@ -2871,14 +2892,16 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
         <div className="min-w-0 space-y-4">
           <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h3 className="text-lg font-semibold tracking-tight">Penagihan</h3>
-            <Button
-              onClick={handleCreatePayment}
-              size="sm"
-              className="h-9 w-full shrink-0 sm:w-auto sm:self-center"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Tambah Penagihan
-            </Button>
+            {!readOnly && (
+              <Button
+                onClick={handleCreatePayment}
+                size="sm"
+                className="h-9 w-full shrink-0 sm:w-auto sm:self-center"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Tambah Penagihan
+              </Button>
+            )}
           </div>
 
           {paymentLogsLoading ? (
@@ -2942,22 +2965,28 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                         </TableCell>
                         <TableCell className="z-20 w-[140px] min-w-[140px] max-w-[140px] shrink-0 bg-background group-hover:bg-muted md:sticky md:left-12 md:border-r">
                           <div className="flex justify-center gap-2">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => handleEditPayment(payment)}
-                              className="h-8 w-8 rounded-full text-green-600 bg-green-600/10 hover:bg-green-600/20"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => handleDeletePayment(payment)}
-                              className="h-8 w-8 rounded-full text-red-500 bg-red-500/10 hover:bg-red-500/20"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
+                            {readOnly ? (
+                              <span className="text-muted-foreground text-sm">-</span>
+                            ) : (
+                              <>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => handleEditPayment(payment)}
+                                  className="h-8 w-8 rounded-full text-green-600 bg-green-600/10 hover:bg-green-600/20"
+                                >
+                                  <Edit className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => handleDeletePayment(payment)}
+                                  className="h-8 w-8 rounded-full text-red-500 bg-red-500/10 hover:bg-red-500/20"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell
@@ -3112,14 +3141,16 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
         <div className="min-w-0 space-y-4">
           <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h3 className="text-lg font-semibold tracking-tight">Deposit</h3>
-            <Button
-              onClick={handleCreateDeposit}
-              size="sm"
-              className="h-9 w-full shrink-0 sm:w-auto sm:self-center"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Tambah Deposit
-            </Button>
+            {!readOnly && (
+              <Button
+                onClick={handleCreateDeposit}
+                size="sm"
+                className="h-9 w-full shrink-0 sm:w-auto sm:self-center"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Tambah Deposit
+              </Button>
+            )}
           </div>
 
           {depositLogsLoading ? (
@@ -3170,23 +3201,29 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                           </TableCell>
                           <TableCell>
                             <div className="flex justify-center gap-2">
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                onClick={() => handleEditDeposit(deposit)}
-                                className="h-8 w-8 rounded-full text-green-600 bg-green-600/10 hover:bg-green-600/20"
-                              >
-                                <Edit className="w-4 h-4" />
-                              </Button>
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => handleDeleteDeposit(deposit)}
-                              className="h-8 w-8 rounded-full text-red-500 bg-red-500/10 hover:bg-red-500/20"
-                            >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
+                              {readOnly ? (
+                                <span className="text-muted-foreground text-sm">-</span>
+                              ) : (
+                                <>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={() => handleEditDeposit(deposit)}
+                                    className="h-8 w-8 rounded-full text-green-600 bg-green-600/10 hover:bg-green-600/20"
+                                  >
+                                    <Edit className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={() => handleDeleteDeposit(deposit)}
+                                    className="h-8 w-8 rounded-full text-red-500 bg-red-500/10 hover:bg-red-500/20"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </>
+                              )}
                             </div>
                           </TableCell>
                           <TableCell>
@@ -3321,14 +3358,18 @@ export default function TenantForm({ tenant, onSubmit, loading = false }: Tenant
                         </TableCell>
                         <TableCell>
                           <div className="flex justify-center gap-2">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => handleEditLegal(legal)}
-                              className="h-8 w-8 rounded-full text-green-600 bg-green-600/10 hover:bg-green-600/20"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </Button>
+                            {readOnly ? (
+                              <span className="text-muted-foreground text-sm">-</span>
+                            ) : (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => handleEditLegal(legal)}
+                                className="h-8 w-8 rounded-full text-green-600 bg-green-600/10 hover:bg-green-600/20"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>

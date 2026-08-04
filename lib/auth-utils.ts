@@ -60,6 +60,31 @@ export function getAuthToken(): string | null {
 }
 
 /**
+ * Gets the role name of the current user from the JWT payload (lowercased).
+ * JWT payload is base64 encoded, not encrypted, so it can be read on the client.
+ * Returns null when there is no token or the token cannot be decoded.
+ */
+export function getAuthRoleName(): string | null {
+  const token = getAuthToken()
+  if (!token) {
+    return null
+  }
+
+  try {
+    const parts = token.split('.')
+    if (parts.length !== 3) {
+      return null
+    }
+    const payload = JSON.parse(atob(parts[1]))
+    const roleName = payload?.roleName
+    return typeof roleName === 'string' ? roleName.toLowerCase() : null
+  } catch (error) {
+    console.error('Error decoding auth token:', error)
+    return null
+  }
+}
+
+/**
  * Clears all authentication data
  */
 export function clearAuthData() {

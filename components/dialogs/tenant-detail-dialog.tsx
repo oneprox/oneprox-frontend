@@ -34,6 +34,7 @@ import { Label } from '@/components/ui/label'
 import { History, Building2, X, Edit, CreditCard, DollarSign, ChevronLeft, ChevronRight, Loader2, Plus, Image as ImageIcon, FileText } from 'lucide-react'
 import Link from 'next/link'
 import TenantLogsTable from '@/components/table/tenant-logs-table'
+import { useCanWriteTenantData } from '@/hooks/useIsTenantRole'
 import toast from 'react-hot-toast'
 
 // Category options mapping
@@ -148,6 +149,8 @@ export default function TenantDetailDialog({
   onOpenChange,
   tenant
 }: TenantDetailDialogProps) {
+  // Role tenant hanya boleh melihat: kontrol pencatatan pembayaran disembunyikan
+  const canWrite = useCanWriteTenantData()
   const [mounted, setMounted] = useState(false)
   const [activeTab, setActiveTab] = useState('info')
   const [paymentLogs, setPaymentLogs] = useState<TenantPaymentLog[]>([])
@@ -1242,14 +1245,16 @@ export default function TenantDetailDialog({
                             History Pembayaran
                           </CardTitle>
                           <div className="flex items-center gap-2">
-                            <Button
-                              onClick={handleCreatePayment}
-                              size="sm"
-                              className="flex items-center gap-2"
-                            >
-                              <Plus className="h-4 w-4" />
-                              Sisa Pembayaran
-                            </Button>
+                            {canWrite && (
+                              <Button
+                                onClick={handleCreatePayment}
+                                size="sm"
+                                className="flex items-center gap-2"
+                              >
+                                <Plus className="h-4 w-4" />
+                                Sisa Pembayaran
+                              </Button>
+                            )}
                             <Label htmlFor="status-filter" className="text-sm">Filter Status:</Label>
                             <Select
                               value={paymentStatusFilter !== undefined ? String(paymentStatusFilter) : 'all'}
@@ -1325,7 +1330,7 @@ export default function TenantDetailDialog({
                                           {((paymentPage - 1) * paymentLimit) + logIndex + 1}
                                         </TableCell>
                                         <TableCell className="z-20 w-[140px] min-w-[140px] max-w-[140px] shrink-0 bg-background group-hover:bg-muted md:sticky md:left-12 md:border-r">
-                                          {log.status === 1 ? (
+                                          {log.status === 1 || !canWrite ? (
                                             <span className="text-muted-foreground text-sm flex justify-center">-</span>
                                           ) : (
                                             <div className="flex justify-center">

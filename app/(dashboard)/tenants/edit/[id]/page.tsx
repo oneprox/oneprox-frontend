@@ -7,12 +7,17 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb'
 import { Home, Edit, Loader2, FileText } from 'lucide-react'
 import TenantForm from '@/components/forms/tenant-form'
+import { useIsTenantRole } from '@/hooks/useIsTenantRole'
 import toast from 'react-hot-toast'
 
 export default function EditTenantPage() {
   const router = useRouter()
   const params = useParams()
   const tenantId = params.id as string
+  // Role tenant hanya boleh melihat: form dirender read-only, tab tetap lengkap.
+  // null = role belum diketahui, tetap perlakukan sebagai read-only.
+  const isTenantRole = useIsTenantRole()
+  const readOnly = isTenantRole !== false
   
   const [tenant, setTenant] = useState<Tenant | null>(null)
   const [loading, setLoading] = useState(false)
@@ -111,7 +116,7 @@ export default function EditTenantPage() {
           <BreadcrumbItem>
             <BreadcrumbPage className="flex items-center gap-2">
               <Edit className="h-4 w-4" />
-              Edit: {tenant.name}
+              {readOnly ? 'Detail' : 'Edit'}: {tenant.name}
             </BreadcrumbPage>
           </BreadcrumbItem>
         </BreadcrumbList>
@@ -119,22 +124,26 @@ export default function EditTenantPage() {
 
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Edit Tenant</h1>
+          <h1 className="text-3xl font-bold tracking-tight">
+            {readOnly ? 'Detail Tenant' : 'Edit Tenant'}
+          </h1>
           <p className="text-muted-foreground">
-            Perbarui informasi tenant: <span className="font-medium">{tenant.name}</span>
+            {readOnly ? 'Informasi tenant: ' : 'Perbarui informasi tenant: '}
+            <span className="font-medium">{tenant.name}</span>
           </p>
         </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Form Edit Tenant</CardTitle>
+          <CardTitle>{readOnly ? 'Data Tenant' : 'Form Edit Tenant'}</CardTitle>
         </CardHeader>
         <CardContent className="min-w-0">
           <TenantForm 
             tenant={tenant} 
             onSubmit={handleSubmit} 
             loading={loading} 
+            readOnly={readOnly}
           />
         </CardContent>
       </Card>

@@ -17,12 +17,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { useIsTenantRole } from '@/hooks/useIsTenantRole'
 import toast from 'react-hot-toast'
 
 export default function UpdateTenantPaymentPage() {
   const router = useRouter()
   const params = useParams()
   const tenantId = params.id as string
+  const isTenantRole = useIsTenantRole()
   
   const [tenant, setTenant] = useState<Tenant | null>(null)
   const [loading, setLoading] = useState(false)
@@ -59,6 +61,14 @@ export default function UpdateTenantPaymentPage() {
 
     loadTenant()
   }, [tenantId, router])
+
+  // Role tenant tidak boleh mencatat pembayaran; backend juga menolak dengan 403
+  useEffect(() => {
+    if (isTenantRole === true) {
+      toast.error('Anda tidak memiliki akses untuk mencatat pembayaran')
+      router.replace('/dashboard-tenant')
+    }
+  }, [isTenantRole, router])
 
   const formatPrice = (value: number | string): string => {
     if (value === null || value === undefined || value === '') return ''
@@ -178,6 +188,10 @@ export default function UpdateTenantPaymentPage() {
         </div>
       </div>
     )
+  }
+
+  if (isTenantRole !== false) {
+    return null
   }
 
   return (
