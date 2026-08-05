@@ -2230,6 +2230,8 @@ export const userTasksApi = {
     day_date?: string
     month_from?: string
     month_to?: string
+    /** Batasi rentang yang di-query: 'day' dan 'month' bisa dipanggil paralel. */
+    scope?: 'day' | 'month' | 'both'
     limit?: number
     offset?: number
   }): Promise<ApiResponse<DailyWorkStatusResponse>> {
@@ -2254,6 +2256,7 @@ export const userTasksApi = {
     if (params?.day_date) queryParams.append('day_date', params.day_date)
     if (params?.month_from) queryParams.append('month_from', params.month_from)
     if (params?.month_to) queryParams.append('month_to', params.month_to)
+    if (params?.scope) queryParams.append('scope', params.scope)
     if (params?.limit != null) queryParams.append('limit', String(params.limit))
     if (params?.offset != null) queryParams.append('offset', String(params.offset))
     const endpoint = `/api/user-tasks/daily-status${queryParams.toString() ? `?${queryParams.toString()}` : ''}`

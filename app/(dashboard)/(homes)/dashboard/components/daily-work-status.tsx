@@ -110,13 +110,14 @@ function dateKey(d: Date): string {
   return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' })
 }
 
-function statusHistogram(tasks: UserTask[]): Record<string, number> {
-  const out: Record<string, number> = {}
-  for (const t of tasks) {
-    const key = String(t.status || '(kosong)').toLowerCase().trim() || '(kosong)'
-    out[key] = (out[key] || 0) + 1
-  }
-  return out
+/** Ambil salah satu daftar task dari respons daily-status (datar maupun ter-`data`). */
+function extractTasks(payload: unknown, key: 'today_tasks' | 'month_tasks'): UserTask[] {
+  if (!payload || typeof payload !== 'object') return []
+  const root = payload as Record<string, unknown>
+  const nested = root.data && typeof root.data === 'object'
+    ? (root.data as Record<string, unknown>)[key]
+    : undefined
+  return normalizeUserTasksPayload(root[key] ?? nested)
 }
 
 function cellStatusForPatrol(ut: UserTask | undefined): CellStatus {
@@ -305,7 +306,10 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
   const [assets, setAssets] = useState<Asset[]>([])
   const [tasksToday, setTasksToday] = useState<UserTask[]>([])
   const [tasksMonth, setTasksMonth] = useState<UserTask[]>([])
-  const [loading, setLoading] = useState(true)
+  /** Menahan kartu harian (Kebersihan, Keamanan) dan ring "Harian". */
+  const [loadingDay, setLoadingDay] = useState(true)
+  /** Menahan ring "Bulanan" saja — rentang sebulan jauh lebih berat. */
+  const [loadingMonth, setLoadingMonth] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   /** Main `user_task_id` yang baris anaknya di-expand di tabel kebersihan */
   const [expandedCleaningMainIds, setExpandedCleaningMainIds] = useState<Set<string>>(new Set())
@@ -318,98 +322,103 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
 
   const loadData = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent === true
-    try {
-      if (silent) {
-        setRefreshing(true)
-      } else {
-        setLoading(true)
-      }
-      const todayStr = dateKey(today)
-      const [yearStr, monthStr] = todayStr.split('-')
-      const year = Number(yearStr)
-      const month = Number(monthStr)
-      const monthFromStr = `${yearStr}-${monthStr}-01`
-      const lastDay = new Date(year, month, 0).getDate()
-      const monthToStr = `${yearStr}-${monthStr}-${String(lastDay).padStart(2, '0')}`
-      console.info('[DailyWorkStatus] request range', {
-        selectedAssetId,
-        todayStr,
-        monthFrom: monthFromStr,
-        monthTo: monthToStr,
-      })
+    if (silent) {
+      setRefreshing(true)
+    } else {
+      setLoadingDay(true)
+      setLoadingMonth(true)
+    }
 
-      const [assetsRes, dayRes] = await Promise.all([
-        assetsApi.getAssets({ limit: 1000 }),
-        userTasksApi.getDailyWorkStatus({
+    const todayStr = dateKey(today)
+    const [yearStr, monthStr] = todayStr.split('-')
+    const year = Number(yearStr)
+    const month = Number(monthStr)
+    const monthFromStr = `${yearStr}-${monthStr}-01`
+    const lastDay = new Date(year, month, 0).getDate()
+    const monthToStr = `${yearStr}-${monthStr}-${String(lastDay).padStart(2, '0')}`
+    const assetId = selectedAssetId !== 'all' ? selectedAssetId : undefined
+    console.info('[DailyWorkStatus] request range', {
+      selectedAssetId,
+      todayStr,
+      monthFrom: monthFromStr,
+      monthTo: monthToStr,
+    })
+
+    // Rentang harian dan bulanan ditembak sebagai dua request terpisah agar
+    // kartu harian (termasuk Progress Harian Keamanan) tampil tanpa menunggu
+    // pemindaian sebulan penuh selesai.
+    const dayLoad = (async () => {
+      try {
+        const [assetsRes, dayRes] = await Promise.all([
+          assetsApi.getAssets({ limit: 1000 }),
+          userTasksApi.getDailyWorkStatus({
+            all_users: 1,
+            asset_id: assetId,
+            non_routine: false,
+            day_date: todayStr,
+            scope: 'day',
+            limit: 10000,
+          }),
+        ])
+
+        if (assetsRes.success && assetsRes.data) {
+          const rd = assetsRes.data as unknown
+          const list: Asset[] = Array.isArray(rd)
+            ? (rd as Asset[])
+            : rd && typeof rd === 'object' && Array.isArray((rd as { data: Asset[] }).data)
+              ? (rd as { data: Asset[] }).data
+              : []
+          setAssets(list)
+        } else {
+          setAssets([])
+        }
+
+        if (!dayRes.success) {
+          console.error('[DailyWorkStatus] daily-status (day) request failed', {
+            error: dayRes.error,
+            message: dayRes.message,
+          })
+        }
+
+        setTasksToday(extractTasks(dayRes.success ? dayRes.data : null, 'today_tasks'))
+      } catch (e) {
+        console.error('DailyWorkStatus day load error:', e)
+        setTasksToday([])
+      } finally {
+        setLoadingDay(false)
+      }
+    })()
+
+    const monthLoad = (async () => {
+      try {
+        const monthRes = await userTasksApi.getDailyWorkStatus({
           all_users: 1,
-          asset_id: selectedAssetId !== 'all' ? selectedAssetId : undefined,
+          asset_id: assetId,
           non_routine: false,
-          day_date: todayStr,
           month_from: monthFromStr,
           month_to: monthToStr,
+          scope: 'month',
           limit: 10000,
-        }),
-      ])
-
-      if (assetsRes.success && assetsRes.data) {
-        const rd = assetsRes.data as unknown
-        const list: Asset[] = Array.isArray(rd)
-          ? (rd as Asset[])
-          : rd && typeof rd === 'object' && Array.isArray((rd as { data: Asset[] }).data)
-            ? (rd as { data: Asset[] }).data
-            : []
-        setAssets(list)
-      } else {
-        setAssets([])
-      }
-
-      if (!dayRes.success) {
-        console.error('[DailyWorkStatus] daily-status request failed', {
-          error: dayRes.error,
-          message: dayRes.message,
         })
+
+        if (!monthRes.success) {
+          console.error('[DailyWorkStatus] daily-status (month) request failed', {
+            error: monthRes.error,
+            message: monthRes.message,
+          })
+        }
+
+        setTasksMonth(extractTasks(monthRes.success ? monthRes.data : null, 'month_tasks'))
+      } catch (e) {
+        console.error('DailyWorkStatus month load error:', e)
+        setTasksMonth([])
+      } finally {
+        setLoadingMonth(false)
       }
+    })()
 
-      const payload = dayRes.success && dayRes.data != null ? (dayRes.data as any) : null
-      const todaySource = payload?.today_tasks ?? payload?.data?.today_tasks
-      const monthSource = payload?.month_tasks ?? payload?.data?.month_tasks
-      const dayTasks = normalizeUserTasksPayload(todaySource)
-      const monthTasks = normalizeUserTasksPayload(monthSource)
-
-      setTasksToday(dayTasks)
-      setTasksMonth(monthTasks)
-
-      const flatDayTasks = flattenUserTasks(dayTasks)
-      const completedByRule = flatDayTasks.filter(isCompleted).length
-      const dayTasksDebug = flatDayTasks.map((t) => ({
-        id: t.user_task_id ?? t.id ?? null,
-        task_name: t.task?.name || null,
-        asset_id: getTaskAssetId(t) || null,
-        asset_name: t.task?.asset?.name || null,
-        status: t.status || null,
-        start_at: t.start_at || null,
-        completed_at: t.completed_at || null,
-        created_at: t.created_at || null,
-      }))
-      console.info('[DailyWorkStatus] response summary', {
-        requestSuccess: dayRes.success === true,
-        assetsCount: assetsRes.success ? 'ok' : 'failed',
-        tasksTodayMain: dayTasks.length,
-        tasksTodayFlat: flatDayTasks.length,
-        tasksMonthMain: monthTasks.length,
-        dayStatusHistogram: statusHistogram(flatDayTasks),
-        completedByRule,
-        payloadKeys: payload && typeof payload === 'object' ? Object.keys(payload) : [],
-        dayTasks: dayTasksDebug,
-      })
-    } catch (e) {
-      console.error('DailyWorkStatus load error:', e)
-      setTasksToday([])
-      setTasksMonth([])
-    } finally {
-      setLoading(false)
-      setRefreshing(false)
-    }
+    await Promise.all([dayLoad, monthLoad])
+    setRefreshing(false)
   }, [today, selectedAssetId])
 
   useEffect(() => {
@@ -675,9 +684,19 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
     })
   }
 
-  if (loading) {
+  if (loadingDay) {
     return <LoadingSkeleton height="h-64" text="Memuat status pekerjaan harian..." />
   }
+
+  /** Ring bulanan menunggu request-nya sendiri, terpisah dari kartu harian. */
+  const MonthlyRing = ({ percentage }: { percentage: number }) =>
+    loadingMonth ? (
+      <div className="flex h-[200px] w-full items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-slate-300" />
+      </div>
+    ) : (
+      <Chart options={radialOptions(percentage)} series={[percentage]} type="radialBar" height={200} />
+    )
 
   /* ---------- Tampilan semua aset: grid radial ---------- */
   if (selectedAssetId === 'all') {
@@ -1010,12 +1029,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
                 <p className="-mt-2 text-sm font-semibold text-slate-600">Harian</p>
               </div>
               <div className="flex flex-col items-center">
-                <Chart
-                  options={radialOptions(pctBulananKebersihan)}
-                  series={[pctBulananKebersihan]}
-                  type="radialBar"
-                  height={200}
-                />
+                <MonthlyRing percentage={pctBulananKebersihan} />
                 <p className="-mt-2 text-sm font-semibold text-slate-600">Bulanan</p>
               </div>
             </div>
@@ -1038,12 +1052,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
                 <p className="-mt-2 text-sm font-semibold text-slate-600">Harian</p>
               </div>
               <div className="flex flex-col items-center">
-                <Chart
-                  options={radialOptions(pctBulananKeamanan)}
-                  series={[pctBulananKeamanan]}
-                  type="radialBar"
-                  height={200}
-                />
+                <MonthlyRing percentage={pctBulananKeamanan} />
                 <p className="-mt-2 text-sm font-semibold text-slate-600">Bulanan</p>
               </div>
             </div>
