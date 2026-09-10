@@ -78,6 +78,9 @@ const taskSchema = z.object({
       return
     }
 
+    // Pekerjaan non-rutin muncul bertahap sesuai tanggalnya, jadi tiap slot harus beda tanggal
+    const dueDateFirstIndex = new Map<number, number>()
+
     items.forEach((item, index) => {
       const dueDateRaw = item.due_date?.trim() || ''
       const dueDateNum = Number(dueDateRaw)
@@ -93,6 +96,15 @@ const taskSchema = z.object({
           path: ['non_routine_items', index, 'due_date'],
           message: 'Tanggal jatuh tempo harus angka 1 sampai 28',
         })
+      } else if (dueDateFirstIndex.has(dueDateNum)) {
+        const firstIndex = dueDateFirstIndex.get(dueDateNum) as number
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['non_routine_items', index, 'due_date'],
+          message: `Tanggal ${dueDateNum} sudah dipakai pengerjaan ke-${firstIndex + 1}. Tiap pengerjaan harus beda tanggal agar muncul bertahap di aplikasi petugas.`,
+        })
+      } else {
+        dueDateFirstIndex.set(dueDateNum, index)
       }
       if (!item.area || item.area.trim() === '') {
         ctx.addIssue({

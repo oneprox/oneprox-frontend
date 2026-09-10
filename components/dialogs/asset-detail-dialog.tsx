@@ -62,10 +62,12 @@ export default function AssetDetailDialog({
 
   if (!asset || !open) return null
 
-  // Handle sketch as array or string (backend returns array, interface says string)
-  const sketchValue = Array.isArray(asset.sketch) 
-    ? (asset.sketch.length > 0 ? asset.sketch[0] : null)
+  // Handle sketch as array or string (backend returns array of URLs)
+  const sketches: string[] = Array.isArray(asset.sketch)
+    ? asset.sketch.filter(Boolean)
     : asset.sketch
+      ? [asset.sketch]
+      : []
 
   const formatDate = (dateString: string) => {
     if (!mounted) return 'Loading...'
@@ -300,7 +302,7 @@ export default function AssetDetailDialog({
                     </Card>
 
                     {/* Foto dan Dokumen */}
-                    {(asset.photos && asset.photos.length > 0) || sketchValue ? (
+                    {(asset.photos && asset.photos.length > 0) || sketches.length > 0 ? (
                       <Card>
                         <CardHeader>
                           <CardTitle className="flex items-center gap-2">
@@ -335,24 +337,26 @@ export default function AssetDetailDialog({
                           )}
 
                           {/* Sketsa Denah */}
-                          {sketchValue && (
+                          {sketches.length > 0 && (
                             <div>
                               <label className="text-sm font-medium text-muted-foreground flex items-center gap-2 mb-3">
                                 <FileText className="h-4 w-4" />
                                 Sketsa Denah
                               </label>
                               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                <div className="relative group">
-                                  <img
-                                    src={sketchValue}
-                                    alt="Sketsa denah"
-                                    className="w-full max-h-96 object-contain rounded-lg border shadow-sm hover:shadow-md transition-shadow cursor-pointer"
-                                    onClick={() => window.open(sketchValue, '_blank')}
-                                  />
-                                  <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100">
-                                    <span className="text-white text-sm font-medium">Klik untuk memperbesar</span>
+                                {sketches.map((sketchUrl, index) => (
+                                  <div className="relative group" key={`sketch-${index}`}>
+                                    <img
+                                      src={sketchUrl}
+                                      alt={`Sketsa denah ${index + 1}`}
+                                      className="w-full max-h-96 object-contain rounded-lg border shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                                      onClick={() => window.open(sketchUrl, '_blank')}
+                                    />
+                                    <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                      <span className="text-white text-sm font-medium">Klik untuk memperbesar</span>
+                                    </div>
                                   </div>
-                                </div>
+                                ))}
                               </div>
                             </div>
                           )}

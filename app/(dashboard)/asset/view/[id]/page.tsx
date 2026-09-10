@@ -203,6 +203,13 @@ export default function AssetViewPage() {
 
   const mainPhoto = asset.photos && asset.photos.length > 0 ? asset.photos[0] : null
 
+  // Backend mengirim sketch sebagai array URL; string lama tetap didukung
+  const sketches = Array.isArray(asset.sketch)
+    ? asset.sketch.filter(Boolean)
+    : asset.sketch
+      ? [asset.sketch]
+      : []
+
   return (
     <div className="space-y-6">
       {/* Breadcrumb */}
@@ -471,6 +478,32 @@ export default function AssetViewPage() {
                   )}
                 </div>
               </div>
+
+              {/* Sketsa Denah */}
+              {sketches.length > 0 && (
+                <div className="mt-6 border-t pt-6">
+                  <label className="text-sm font-medium text-gray-700">Sketsa Denah</label>
+                  <div className="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {sketches.map((sketchUrl, index) => (
+                      <button
+                        key={`sketch-${index}`}
+                        type="button"
+                        onClick={() => window.open(sketchUrl, '_blank')}
+                        className="group relative block w-full overflow-hidden rounded-lg border bg-gray-50 shadow-sm transition-shadow hover:shadow-md"
+                      >
+                        <img
+                          src={sketchUrl}
+                          alt={`Sketsa denah ${index + 1}`}
+                          className="h-64 w-full object-contain"
+                        />
+                        <span className="absolute inset-0 flex items-center justify-center bg-black/0 text-sm font-medium text-white opacity-0 transition-colors group-hover:bg-black/10 group-hover:opacity-100">
+                          Klik untuk memperbesar
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </TabsContent>
 
             {/* Tab 3: History Aktivitas */}

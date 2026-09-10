@@ -715,7 +715,8 @@ export interface Asset {
   longitude: number
   latitude: number
   photos?: string[]
-  sketch?: string
+  /** Backend mengirim array URL; string dipertahankan untuk data lama */
+  sketch?: string | string[]
   created_by?: string
   updated_by?: string
   created_at: string
@@ -2480,7 +2481,8 @@ export interface FinancialTableData {
   deskripsi: string
   nomorInvoice: string
   nilaiInvoice: number
-  sisaNilai?: number
+  /** Sisa tagihan invoice ini (nilai invoice - yang sudah dibayar) */
+  outstandingAmount?: number
   tanggalInvoice: string
   /** overdue | reminder_needed | scheduled | paid */
   status: string

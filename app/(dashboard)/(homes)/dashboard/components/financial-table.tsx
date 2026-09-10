@@ -125,6 +125,33 @@ function PaymentStatusBadge({ status }: { status: FinancialPaymentStatus }) {
   )
 }
 
+/** Keterangan status di sisi bawah card, disamakan polanya dengan card Legal. */
+const PAYMENT_STATUS_LEGEND: { label: string; description: string; dotClassName: string }[] = [
+  { label: 'Paid', description: 'sudah dibayar', dotClassName: 'bg-emerald-500' },
+  { label: 'Scheduled', description: 'belum jatuh tempo', dotClassName: 'bg-slate-400' },
+  {
+    label: 'Reminder Needed',
+    description: 'mendekati jatuh tempo, sesuai termin tenant',
+    dotClassName: 'bg-amber-400',
+  },
+  { label: 'Overdue', description: 'telah jatuh tempo', dotClassName: 'bg-red-500' },
+]
+
+function PaymentStatusLegend() {
+  return (
+    <div className="mt-4 flex flex-col gap-2 text-sm text-slate-600 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-6 sm:gap-y-2">
+      {PAYMENT_STATUS_LEGEND.map((item) => (
+        <span className="flex items-center gap-2" key={item.label}>
+          <span className={`h-2 w-2 shrink-0 rounded-full ${item.dotClassName}`} aria-hidden />
+          <span className="font-medium uppercase tracking-wide text-slate-500">
+            {item.label} — {item.description}
+          </span>
+        </span>
+      ))}
+    </div>
+  )
+}
+
 function formatInvoiceRupiah(value: number): string {
   const n = Number.isFinite(value) ? Math.round(value) : 0
   return `Rp ${n.toLocaleString('id-ID')}`
@@ -373,8 +400,10 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                     group.tenantId != null
                       ? (tenantRentById.get(group.tenantId) ?? 0)
                       : 0
-                  const nilaiTunggakan =
-                    group.logs.find((r) => r.sisaNilai !== undefined && r.sisaNilai !== null)?.sisaNilai ?? 0
+                  const nilaiTunggakan = group.logs.reduce(
+                    (total, r) => total + (r.outstandingAmount ?? 0),
+                    0
+                  )
                   const maxAging = Math.max(0, ...group.logs.map((r) => r.aging || 0))
 
                   return (
@@ -560,6 +589,7 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
             </p>
           ) : null}
         </div>
+        <PaymentStatusLegend />
       </CardContent>
     </Card>
   )
