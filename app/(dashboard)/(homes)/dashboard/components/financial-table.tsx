@@ -129,11 +129,7 @@ function PaymentStatusBadge({ status }: { status: FinancialPaymentStatus }) {
 const PAYMENT_STATUS_LEGEND: { label: string; description: string; dotClassName: string }[] = [
   { label: 'Paid', description: 'sudah dibayar', dotClassName: 'bg-emerald-500' },
   { label: 'Scheduled', description: 'belum jatuh tempo', dotClassName: 'bg-slate-400' },
-  {
-    label: 'Reminder Needed',
-    description: 'mendekati jatuh tempo, sesuai termin tenant',
-    dotClassName: 'bg-amber-400',
-  },
+  { label: 'Reminder Needed', description: 'H-7 jatuh tempo', dotClassName: 'bg-amber-400' },
   { label: 'Overdue', description: 'telah jatuh tempo', dotClassName: 'bg-red-500' },
 ]
 
