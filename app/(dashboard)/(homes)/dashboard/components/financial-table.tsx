@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button'
 import { dashboardApi, tenantsApi, type FinancialTableData, type Tenant } from '@/lib/api'
 import LoadingSkeleton from '@/components/loading-skeleton'
+import { useCurrentUrl, withReturnTo } from '@/lib/return-to'
 
 const TABLE_PAGE_SIZE = 10
 
@@ -197,6 +198,7 @@ interface TenantFinancialGroup {
 }
 
 export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTableProps) {
+  const currentUrl = useCurrentUrl()
   const [rows, setRows] = useState<FinancialTableData[]>([])
   const [tenantRentById, setTenantRentById] = useState<Map<string, number>>(new Map())
   const [loading, setLoading] = useState(true)
@@ -460,7 +462,7 @@ export default function FinancialTable({ selectedAssetId = 'all' }: FinancialTab
                               size="sm"
                               className="h-8 max-w-full truncate rounded-md bg-blue-600 px-2 text-sm font-semibold text-white hover:bg-blue-700"
                             >
-                              <Link href={`/tenants/edit/${group.tenantId}?tab=finance`}>Update Data</Link>
+                              <Link href={withReturnTo(`/tenants/edit/${group.tenantId}?tab=finance`, currentUrl)}>Update Data</Link>
                             </Button>
                           ) : (
                             <Button size="sm" disabled className="h-8 max-w-full truncate rounded-md px-2 text-sm font-semibold">

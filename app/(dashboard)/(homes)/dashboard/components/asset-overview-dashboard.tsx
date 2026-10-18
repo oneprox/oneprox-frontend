@@ -3,6 +3,7 @@
 import { Fragment, type RefObject, type WheelEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import FinancialTable from './financial-table'
+import DashboardSectionNav, { type DashboardSection } from './dashboard-section-nav'
 import dynamic from 'next/dynamic'
 import { ApexOptions } from 'apexcharts'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -14,6 +15,7 @@ import { ChevronRight, Mountain, DraftingCompass, MapPinned, Banknote } from "lu
 import LoadingSkeleton from "@/components/loading-skeleton"
 import { useSidebar } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
+import { useCurrentUrl, withReturnTo } from '@/lib/return-to'
 
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false })
 
@@ -145,6 +147,8 @@ const DASHBOARD_LIST_PAGE_SIZE = 10
 interface AssetOverviewDashboardProps {
   selectedAssetId?: string
   onAssetChange?: (assetId: string) => void
+  section?: DashboardSection
+  onSectionChange?: (section: DashboardSection) => void
 }
 
 function parseLooseNumber(value: unknown): number {
@@ -182,8 +186,11 @@ function parseLooseNumber(value: unknown): number {
 
 export default function AssetOverviewDashboard({ 
   selectedAssetId: propSelectedAssetId, 
-  onAssetChange 
+  onAssetChange,
+  section = 'overview',
+  onSectionChange,
 }: AssetOverviewDashboardProps) {
+  const currentUrl = useCurrentUrl()
   const [assets, setAssets] = useState<Asset[]>([])
   const [internalSelectedAssetId, setInternalSelectedAssetId] = useState<string>('all')
   const [loading, setLoading] = useState(true)
@@ -728,524 +735,540 @@ export default function AssetOverviewDashboard({
       {/* Ruang untuk bar fixed (tinggi ≈ judul + py-3 + border) */}
       <div className="h-20 shrink-0 md:h-24" aria-hidden />
 
-      {/* Overview Metrics */}
-      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 md:gap-6 lg:grid-cols-4">
-        {/* Lahan: Aset + Tersewa */}
-        <Card
-          className="gap-0 border-0 py-0 text-white shadow-md overflow-hidden rounded-2xl"
-          style={{ background: '#F97316' }}
-        >
-          <CardContent className="px-8 py-4 h-full">
-            <div className="flex flex-col justify-between h-full gap-3">
-              <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/25">
-                  <Mountain className="h-4 w-4 text-white" strokeWidth={2} />
-                </div>
-                <p className="text-sm font-bold tracking-wide text-white/80 uppercase">Lahan</p>
-              </div>
-              <div>
-                <p className="text-sm text-white/70 uppercase mb-1">Aset</p>
-                <p className="text-2xl font-bold leading-none">
-                  {formatAreaNumber(overviewData.totalLandAreaAsset)}{' '}
-                  <span className="text-sm font-semibold text-white/55">m²</span>
-                </p>
-              </div>
-              <div className="border-t border-white/20 pt-3">
-                <p className="text-sm text-white/70 uppercase mb-1">Tersewa</p>
-                <p className="text-2xl font-bold leading-none">
-                  {formatAreaNumber(overviewData.totalLandAreaTersewa)}{' '}
-                  <span className="text-sm font-semibold text-white/55">m²</span>
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      {onSectionChange ? (
+        <DashboardSectionNav
+          isAllAssets={selectedAssetId === 'all'}
+          activeSection={section}
+          onSectionChange={onSectionChange}
+        />
+      ) : null}
 
-        {/* Bangunan: Aset + Tersewa */}
-        <Card
-          className="gap-0 border-0 py-0 text-white shadow-md overflow-hidden rounded-2xl"
-          style={{ background: '#8B5CF6' }}
-        >
-          <CardContent className="px-8 py-4 h-full">
-            <div className="flex flex-col justify-between h-full gap-3">
-              <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/25">
-                  <DraftingCompass className="h-4 w-4 text-white" strokeWidth={2} />
-                </div>
-                <p className="text-sm font-bold tracking-wide text-white/80 uppercase">Bangunan</p>
-              </div>
-              <div>
-                <p className="text-sm text-white/70 uppercase mb-1">Aset</p>
-                <p className="text-2xl font-bold leading-none">
-                  {formatAreaNumber(overviewData.totalBuildingAreaAsset)}{' '}
-                  <span className="text-sm font-semibold text-white/55">m²</span>
-                </p>
-              </div>
-              <div className="border-t border-white/20 pt-3">
-                <p className="text-sm text-white/70 uppercase mb-1">Tersewa</p>
-                <p className="text-2xl font-bold leading-none">
-                  {formatAreaNumber(overviewData.totalBuildingAreaTersewa)}{' '}
-                  <span className="text-sm font-semibold text-white/55">m²</span>
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card
-          className="gap-0 border-0 py-0 text-white shadow-md overflow-hidden rounded-2xl"
-          style={{ background: '#0F766E' }}
-        >
-          <CardContent className="px-8 py-4">
-            <div className="flex flex-col gap-6">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/25">
-                <MapPinned className="h-6 w-6 text-white" strokeWidth={2} />
-              </div>
-              <div className="space-y-3">
-                <p className="text-lg font-bold tracking-wide text-white uppercase">Okupansi</p>
-                <p className="text-5xl font-bold leading-none tracking-tight sm:text-2xl">
-                  {overviewData.occupancy.toFixed(1)}
-                  <span className="text-2xl font-semibold text-white/55 sm:text-2xl">%</span>
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card
-          className="gap-0 border-0 py-0 text-white shadow-md overflow-hidden rounded-2xl"
-          style={{ background: '#1F2937' }}
-        >
-          <CardContent className="px-8 py-4">
-            <div className="flex flex-col gap-6">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/20">
-                <Banknote className="h-6 w-6 text-white" strokeWidth={2} />
-              </div>
-              <div className="space-y-3">
-                <p className="text-lg font-bold tracking-wide text-white/55 uppercase">Avg. Rate</p>
-                <p className="text-5xl font-bold leading-none tracking-tight sm:text-2xl">
-                  {formatCompactRupiah(overviewData.averageRate)}{' '}
-                  <span className="text-2xl font-semibold text-white/45 sm:text-2xl">/ m²</span>
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Asset Utilization Chart */}
-        <Card className="overflow-hidden">
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between text-xl font-bold tracking-tight">
-              <span>Pemanfaatan Aset</span>
-              <button type="button" className="text-muted-foreground hover:text-foreground">
-                <span className="sr-only">Menu</span>
-                <span aria-hidden>⋮</span>
-              </button>
-            </CardTitle>
-            <p className="text-lg text-muted-foreground -mt-1">
-              Okupansi unit per sektor dan unit tersedia (semua unit dalam cakupan aset)
-            </p>
-          </CardHeader>
-          <CardContent className="pb-6">
-            {utilizationData.length > 0 ? (
-              <div className="grid min-w-0 grid-cols-1 gap-4 items-center">
-                <div className="flex flex-col items-center justify-center">
-                  <Chart
-                    key={utilizationChartKey}
-                    options={utilizationChartOptions}
-                    series={utilizationChartSeries}
-                    type="donut"
-                    height={320}
-                  />
-                </div>
-                <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
-                  {utilizationPercentages.map((item, idx) => (
-                    <div key={`${item.category}-${idx}`} className="flex min-w-0 items-center gap-3 rounded-md border border-slate-100 px-3 py-2">
-                      <span
-                        className="h-3 w-3 shrink-0 rounded-full"
-                        style={{
-                          background:
-                            utilizationChartColors[idx] ?? utilizationAvailableColor,
-                        }}
-                        aria-hidden
-                      />
-                      <div className="min-w-0 flex-1 leading-tight">
-                        <div className="text-sm font-semibold tracking-wide text-muted-foreground uppercase whitespace-normal break-words">
-                          {item.category}
-                        </div>
-                      </div>
-                      <div className="text-xl font-bold text-foreground tabular-nums">
-                          {Math.round(item.pct)}%
-                      </div>
+      {section === 'overview' ? (
+        <>
+          {/* Overview Metrics */}
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 md:gap-6 lg:grid-cols-4">
+            {/* Lahan: Aset + Tersewa */}
+            <Card
+              className="gap-0 border-0 py-0 text-white shadow-md overflow-hidden rounded-2xl"
+              style={{ background: '#F97316' }}
+            >
+              <CardContent className="px-8 py-4 h-full">
+                <div className="flex flex-col justify-between h-full gap-3">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/25">
+                      <Mountain className="h-4 w-4 text-white" strokeWidth={2} />
                     </div>
-                  ))}
+                    <p className="text-sm font-bold tracking-wide text-white/80 uppercase">Lahan</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-white/70 uppercase mb-1">Aset</p>
+                    <p className="text-2xl font-bold leading-none">
+                      {formatAreaNumber(overviewData.totalLandAreaAsset)}{' '}
+                      <span className="text-sm font-semibold text-white/55">m²</span>
+                    </p>
+                  </div>
+                  <div className="border-t border-white/20 pt-3">
+                    <p className="text-sm text-white/70 uppercase mb-1">Tersewa</p>
+                    <p className="text-2xl font-bold leading-none">
+                      {formatAreaNumber(overviewData.totalLandAreaTersewa)}{' '}
+                      <span className="text-sm font-semibold text-white/55">m²</span>
+                    </p>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div className="text-center py-8 text-base text-muted-foreground">
-                Tidak ada data pemanfaatan aset
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
 
-        {/* Financial Performance — Kinerja Keuangan */}
-        <Card className="border border-gray-200 shadow-sm">
-          <CardHeader className="space-y-0 pb-2">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="space-y-1">
-                <CardTitle className="text-xl font-bold tracking-tight text-slate-900">
-                  Kinerja Keuangan {financialYear}
+            {/* Bangunan: Aset + Tersewa */}
+            <Card
+              className="gap-0 border-0 py-0 text-white shadow-md overflow-hidden rounded-2xl"
+              style={{ background: '#8B5CF6' }}
+            >
+              <CardContent className="px-8 py-4 h-full">
+                <div className="flex flex-col justify-between h-full gap-3">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/25">
+                      <DraftingCompass className="h-4 w-4 text-white" strokeWidth={2} />
+                    </div>
+                    <p className="text-sm font-bold tracking-wide text-white/80 uppercase">Bangunan</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-white/70 uppercase mb-1">Aset</p>
+                    <p className="text-2xl font-bold leading-none">
+                      {formatAreaNumber(overviewData.totalBuildingAreaAsset)}{' '}
+                      <span className="text-sm font-semibold text-white/55">m²</span>
+                    </p>
+                  </div>
+                  <div className="border-t border-white/20 pt-3">
+                    <p className="text-sm text-white/70 uppercase mb-1">Tersewa</p>
+                    <p className="text-2xl font-bold leading-none">
+                      {formatAreaNumber(overviewData.totalBuildingAreaTersewa)}{' '}
+                      <span className="text-sm font-semibold text-white/55">m²</span>
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card
+              className="gap-0 border-0 py-0 text-white shadow-md overflow-hidden rounded-2xl"
+              style={{ background: '#0F766E' }}
+            >
+              <CardContent className="px-8 py-4">
+                <div className="flex flex-col gap-6">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/25">
+                    <MapPinned className="h-6 w-6 text-white" strokeWidth={2} />
+                  </div>
+                  <div className="space-y-3">
+                    <p className="text-lg font-bold tracking-wide text-white uppercase">Okupansi</p>
+                    <p className="text-5xl font-bold leading-none tracking-tight sm:text-2xl">
+                      {overviewData.occupancy.toFixed(1)}
+                      <span className="text-2xl font-semibold text-white/55 sm:text-2xl">%</span>
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card
+              className="gap-0 border-0 py-0 text-white shadow-md overflow-hidden rounded-2xl"
+              style={{ background: '#1F2937' }}
+            >
+              <CardContent className="px-8 py-4">
+                <div className="flex flex-col gap-6">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/20">
+                    <Banknote className="h-6 w-6 text-white" strokeWidth={2} />
+                  </div>
+                  <div className="space-y-3">
+                    <p className="text-lg font-bold tracking-wide text-white/55 uppercase">Avg. Rate</p>
+                    <p className="text-5xl font-bold leading-none tracking-tight sm:text-2xl">
+                      {formatCompactRupiah(overviewData.averageRate)}{' '}
+                      <span className="text-2xl font-semibold text-white/45 sm:text-2xl">/ m²</span>
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Charts Section */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Asset Utilization Chart */}
+            <Card className="overflow-hidden">
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between text-xl font-bold tracking-tight">
+                  <span>Pemanfaatan Aset</span>
+                  <button type="button" className="text-muted-foreground hover:text-foreground">
+                    <span className="sr-only">Menu</span>
+                    <span aria-hidden>⋮</span>
+                  </button>
                 </CardTitle>
-                <CardDescription className="text-lg font-normal text-slate-500">
-                  Pelacakan keuangan terhadap proyeksi tahunan (Rp)
-                </CardDescription>
-              </div>
-              {financialData.length > 0 ? (
-                <div className="flex shrink-0 items-stretch gap-0 sm:pt-0.5">
-                  <div className="flex min-w-[7.5rem] flex-col gap-1 pr-5 sm:pr-6">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="h-2.5 w-2.5 shrink-0 rounded-full"
-                        style={{ backgroundColor: FINANCIAL_REALISASI }}
-                        aria-hidden
+                <p className="text-lg text-muted-foreground -mt-1">
+                  Okupansi unit per sektor dan unit tersedia (semua unit dalam cakupan aset)
+                </p>
+              </CardHeader>
+              <CardContent className="pb-6">
+                {utilizationData.length > 0 ? (
+                  <div className="grid min-w-0 grid-cols-1 gap-4 items-center">
+                    <div className="flex flex-col items-center justify-center">
+                      <Chart
+                        key={utilizationChartKey}
+                        options={utilizationChartOptions}
+                        series={utilizationChartSeries}
+                        type="donut"
+                        height={320}
                       />
-                      <span className="text-xs font-semibold tracking-wider text-slate-500">
-                        REALISASI
-                      </span>
                     </div>
-                    <p className="text-2xl font-bold tabular-nums text-slate-900 sm:text-3xl">
-                      {formatFinancialKpi(totalFinancialRealisasi)}
-                    </p>
-                  </div>
-                  <div className="w-px self-stretch bg-slate-200" aria-hidden />
-                  <div className="flex min-w-[7.5rem] flex-col gap-1 pl-5 sm:pl-6">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="h-2.5 w-2.5 shrink-0 rounded-full"
-                        style={{ backgroundColor: FINANCIAL_TARGET }}
-                        aria-hidden
-                      />
-                      <span className="text-xs font-semibold tracking-wider text-slate-500">
-                        TARGET
-                      </span>
+                    <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+                      {utilizationPercentages.map((item, idx) => (
+                        <div key={`${item.category}-${idx}`} className="flex min-w-0 items-center gap-3 rounded-md border border-slate-100 px-3 py-2">
+                          <span
+                            className="h-3 w-3 shrink-0 rounded-full"
+                            style={{
+                              background:
+                                utilizationChartColors[idx] ?? utilizationAvailableColor,
+                            }}
+                            aria-hidden
+                          />
+                          <div className="min-w-0 flex-1 leading-tight">
+                            <div className="text-sm font-semibold tracking-wide text-muted-foreground uppercase whitespace-normal break-words">
+                              {item.category}
+                            </div>
+                          </div>
+                          <div className="text-xl font-bold text-foreground tabular-nums">
+                              {Math.round(item.pct)}%
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                    <p className="text-2xl font-bold tabular-nums text-slate-900 sm:text-3xl">
-                      {formatFinancialKpi(totalFinancialTarget)}
-                    </p>
                   </div>
-                </div>
-              ) : null}
-            </div>
-          </CardHeader>
-          <CardContent className="pt-2">
-            {financialData.length > 0 ? (
-              <div
-                ref={financialScrollRef}
-                className={cn(
-                  'overflow-y-auto overscroll-contain rounded-md',
-                  financialVisibleCount < financialData.length ? 'max-h-[300px]' : 'max-h-[380px]'
+                ) : (
+                  <div className="text-center py-8 text-base text-muted-foreground">
+                    Tidak ada data pemanfaatan aset
+                  </div>
                 )}
-                onScroll={handleFinancialScroll}
-                onWheel={(event) => handleContainerWheel(event, financialScrollRef)}
-              >
-                <Chart
-                  options={financialChartOptions}
-                  series={financialChartSeries}
-                  type="bar"
-                  height={financialChartPixelHeight}
-                />
-                {financialVisibleCount < financialData.length ? (
-                  <p className="py-2 text-center text-base text-slate-500">
-                    Gulir ke bawah untuk memuat periode berikutnya
-                  </p>
-                ) : null}
-              </div>
-            ) : (
-              <div className="rounded-lg border border-dashed border-slate-200 py-12 text-center text-base text-muted-foreground">
-                Tidak ada data kinerja keuangan
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+              </CardContent>
+            </Card>
+
+            {/* Financial Performance — Kinerja Keuangan */}
+            <Card className="border border-gray-200 shadow-sm">
+              <CardHeader className="space-y-0 pb-2">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="space-y-1">
+                    <CardTitle className="text-xl font-bold tracking-tight text-slate-900">
+                      Kinerja Keuangan {financialYear}
+                    </CardTitle>
+                    <CardDescription className="text-lg font-normal text-slate-500">
+                      Pelacakan keuangan terhadap proyeksi tahunan (Rp)
+                    </CardDescription>
+                  </div>
+                  {financialData.length > 0 ? (
+                    <div className="flex shrink-0 items-stretch gap-0 sm:pt-0.5">
+                      <div className="flex min-w-[7.5rem] flex-col gap-1 pr-5 sm:pr-6">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="h-2.5 w-2.5 shrink-0 rounded-full"
+                            style={{ backgroundColor: FINANCIAL_REALISASI }}
+                            aria-hidden
+                          />
+                          <span className="text-xs font-semibold tracking-wider text-slate-500">
+                            REALISASI
+                          </span>
+                        </div>
+                        <p className="text-2xl font-bold tabular-nums text-slate-900 sm:text-3xl">
+                          {formatFinancialKpi(totalFinancialRealisasi)}
+                        </p>
+                      </div>
+                      <div className="w-px self-stretch bg-slate-200" aria-hidden />
+                      <div className="flex min-w-[7.5rem] flex-col gap-1 pl-5 sm:pl-6">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="h-2.5 w-2.5 shrink-0 rounded-full"
+                            style={{ backgroundColor: FINANCIAL_TARGET }}
+                            aria-hidden
+                          />
+                          <span className="text-xs font-semibold tracking-wider text-slate-500">
+                            TARGET
+                          </span>
+                        </div>
+                        <p className="text-2xl font-bold tabular-nums text-slate-900 sm:text-3xl">
+                          {formatFinancialKpi(totalFinancialTarget)}
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </CardHeader>
+              <CardContent className="pt-2">
+                {financialData.length > 0 ? (
+                  <div
+                    ref={financialScrollRef}
+                    className={cn(
+                      'overflow-y-auto overscroll-contain rounded-md',
+                      financialVisibleCount < financialData.length ? 'max-h-[300px]' : 'max-h-[380px]'
+                    )}
+                    onScroll={handleFinancialScroll}
+                    onWheel={(event) => handleContainerWheel(event, financialScrollRef)}
+                  >
+                    <Chart
+                      options={financialChartOptions}
+                      series={financialChartSeries}
+                      type="bar"
+                      height={financialChartPixelHeight}
+                    />
+                    {financialVisibleCount < financialData.length ? (
+                      <p className="py-2 text-center text-base text-slate-500">
+                        Gulir ke bawah untuk memuat periode berikutnya
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-slate-200 py-12 text-center text-base text-muted-foreground">
+                    Tidak ada data kinerja keuangan
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </>
+      ) : null}
 
       {/* Financial Table */}
-      <FinancialTable selectedAssetId={selectedAssetId} />
+      {section === 'finance' || section === 'finance-legal' ? (
+        <FinancialTable selectedAssetId={selectedAssetId} />
+      ) : null}
 
       {/* Status Legalitas Aset */}
-      <Card className="border border-gray-200 shadow-sm">
-        <CardHeader className="space-y-1 pb-4">
-          <CardTitle className="text-xl font-bold tracking-tight text-slate-900">
-            Status Legalitas Aset
-          </CardTitle>
-          <CardDescription className="text-lg text-slate-500">
-            Detail legalitas per tenant, termasuk yang sudah selesai maupun masih berjalan.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div
-            ref={legalScrollRef}
-            className="h-[420px] overflow-auto overscroll-contain rounded-lg border border-slate-100"
-            onWheel={(event) => handleContainerWheel(event, legalScrollRef)}
-          >
-            <Table className="w-full min-w-[1020px] table-fixed">
-              <TableHeader className="sticky top-0 z-10 bg-white">
-                <TableRow className="border-b border-slate-100 hover:bg-transparent">
-                  <TableHead className="w-10 px-2" />
-                  <TableHead className="w-11 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    No
-                  </TableHead>
-                  <TableHead className="min-w-0 w-[20%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    Nama
-                  </TableHead>
-                  <TableHead className="w-28 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    Status
-                  </TableHead>
-                  <TableHead className="min-w-0 w-[16%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    Aset
-                  </TableHead>
-                  <TableHead className="min-w-0 w-[14%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    Unit
-                  </TableHead>
-                  <TableHead className="w-[12rem] whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    Jatuh tempo
-                  </TableHead>
-                  <TableHead className="min-w-0 w-[11%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    Kewajiban mitra
-                  </TableHead>
-                  <TableHead className="w-24 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    Progress
-                  </TableHead>
-                  <TableHead className="w-[132px] whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    Aksi
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {legalTenantGroups.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={11} className="py-10 text-center text-base text-muted-foreground">
-                      Tidak ada data legalitas untuk ditampilkan.
-                    </TableCell>
+      {section === 'legal' || section === 'finance-legal' ? (
+        <Card className="border border-gray-200 shadow-sm">
+          <CardHeader className="space-y-1 pb-4">
+            <CardTitle className="text-xl font-bold tracking-tight text-slate-900">
+              Status Legalitas Aset
+            </CardTitle>
+            <CardDescription className="text-lg text-slate-500">
+              Detail legalitas per tenant, termasuk yang sudah selesai maupun masih berjalan.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div
+              ref={legalScrollRef}
+              className="h-[420px] overflow-auto overscroll-contain rounded-lg border border-slate-100"
+              onWheel={(event) => handleContainerWheel(event, legalScrollRef)}
+            >
+              <Table className="w-full min-w-[1020px] table-fixed">
+                <TableHeader className="sticky top-0 z-10 bg-white">
+                  <TableRow className="border-b border-slate-100 hover:bg-transparent">
+                    <TableHead className="w-10 px-2" />
+                    <TableHead className="w-11 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                      No
+                    </TableHead>
+                    <TableHead className="min-w-0 w-[20%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
+                      Nama
+                    </TableHead>
+                    <TableHead className="w-28 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                      Status
+                    </TableHead>
+                    <TableHead className="min-w-0 w-[16%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
+                      Aset
+                    </TableHead>
+                    <TableHead className="min-w-0 w-[14%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
+                      Unit
+                    </TableHead>
+                    <TableHead className="w-[12rem] whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                      Jatuh tempo
+                    </TableHead>
+                    <TableHead className="min-w-0 w-[11%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-slate-500">
+                      Kewajiban mitra
+                    </TableHead>
+                    <TableHead className="w-24 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                      Progress
+                    </TableHead>
+                    <TableHead className="w-[132px] whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-500">
+                      Aksi
+                    </TableHead>
                   </TableRow>
-                ) : (
-                  visibleLegalGroups.map((group, groupIndex) => {
-                    const isOpen = expandedLegalKeys.has(group.key)
-                    const realLegalLogs = group.logs.filter((r) => !isPlaceholderLegalStatus(r.status))
-                    const hasOnlyPlaceholder = realLegalLogs.length === 0
-                    const groupOverdue = realLegalLogs.some((r) => legalRowDisplayStatus(r) === 'Overdue')
-                    const groupStatusLabel = hasOnlyPlaceholder
-                      ? 'Belum ada dokumen'
-                      : groupOverdue
-                        ? 'Overdue'
-                        : 'On Process'
-                    const earliest = earliestUnfinishedLegalRow(realLegalLogs.length > 0 ? realLegalLogs : group.logs)
-                    const dotClass = dueDateDotClass(earliest?.dueDateIso)
-                    const earliestLabel = earliest?.jatuhTempo || '—'
-                    const progressSummary = legalProgressByTenant.get(group.key) ?? { completed: 0, total: realLegalLogs.length }
-                    const progressPercent = progressSummary.total > 0
-                      ? Math.round((progressSummary.completed / progressSummary.total) * 100)
-                      : null
+                </TableHeader>
+                <TableBody>
+                  {legalTenantGroups.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={11} className="py-10 text-center text-base text-muted-foreground">
+                        Tidak ada data legalitas untuk ditampilkan.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    visibleLegalGroups.map((group, groupIndex) => {
+                      const isOpen = expandedLegalKeys.has(group.key)
+                      const realLegalLogs = group.logs.filter((r) => !isPlaceholderLegalStatus(r.status))
+                      const hasOnlyPlaceholder = realLegalLogs.length === 0
+                      const groupOverdue = realLegalLogs.some((r) => legalRowDisplayStatus(r) === 'Overdue')
+                      const groupStatusLabel = hasOnlyPlaceholder
+                        ? 'Belum ada dokumen'
+                        : groupOverdue
+                          ? 'Overdue'
+                          : 'On Process'
+                      const earliest = earliestUnfinishedLegalRow(realLegalLogs.length > 0 ? realLegalLogs : group.logs)
+                      const dotClass = dueDateDotClass(earliest?.dueDateIso)
+                      const earliestLabel = earliest?.jatuhTempo || '—'
+                      const progressSummary = legalProgressByTenant.get(group.key) ?? { completed: 0, total: realLegalLogs.length }
+                      const progressPercent = progressSummary.total > 0
+                        ? Math.round((progressSummary.completed / progressSummary.total) * 100)
+                        : null
 
-                    return (
-                      <Fragment key={`legal-g-${group.key}`}>
-                        <TableRow className="border-b border-slate-100 bg-slate-50/80 last:border-0">
-                          <TableCell className="w-10 px-2 align-middle">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 shrink-0 text-slate-600"
-                              aria-expanded={isOpen}
-                              aria-label={isOpen ? 'Tutup detail legalitas' : 'Buka detail legalitas'}
-                              onClick={() => toggleExpandedLegal(group.key)}
-                            >
-                              <ChevronRight
-                                className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-90' : ''}`}
-                              />
-                            </Button>
-                          </TableCell>
-                          <TableCell className="text-center text-base font-medium text-slate-700">
-                            {groupIndex + 1}
-                          </TableCell>
-                          <TableCell className="min-w-0 break-words align-middle text-base font-bold whitespace-normal text-slate-900">
-                            {group.nama}
-                          </TableCell>
-                          <TableCell className="align-middle">
-                            {groupStatusLabel === 'Overdue' ? (
-                              <span className="inline-flex rounded-full border border-red-100 bg-red-50 px-2.5 py-0.5 text-sm font-medium text-red-700">
-                                Overdue
-                              </span>
-                            ) : groupStatusLabel === 'Belum ada dokumen' ? (
-                              <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-sm font-medium text-slate-600">
-                                Belum ada dokumen
-                              </span>
-                            ) : (
-                              <span className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-2.5 py-0.5 text-sm font-medium text-blue-700">
-                                On Process
-                              </span>
-                            )}
-                          </TableCell>
-                          <TableCell className="min-w-0 break-words align-middle text-base whitespace-normal text-slate-700">
-                            {group.aset}
-                          </TableCell>
-                          <TableCell className="min-w-0 break-words align-middle text-base whitespace-normal text-slate-700">
-                            {group.unit}
-                          </TableCell>
-                          <TableCell className="min-w-0 align-middle">
-                            <div className="flex min-w-0 flex-wrap items-center gap-2 text-base text-slate-800">
-                              <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${dotClass}`} aria-hidden />
-                              <span className="min-w-0 whitespace-nowrap">{earliestLabel}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="min-w-0 break-words align-middle text-base whitespace-normal text-slate-700">
-                            {hasOnlyPlaceholder ? '—' : `${realLegalLogs.length} item`}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap text-base font-bold tabular-nums text-slate-900">
-                            {progressPercent === null ? '—' : `${progressPercent}%`}
-                          </TableCell>
-                          <TableCell className="min-w-0 align-middle">
-                            {group.tenantId ? (
+                      return (
+                        <Fragment key={`legal-g-${group.key}`}>
+                          <TableRow className="border-b border-slate-100 bg-slate-50/80 last:border-0">
+                            <TableCell className="w-10 px-2 align-middle">
                               <Button
-                                asChild
-                                size="sm"
-                                className="h-8 max-w-full truncate rounded-md bg-blue-600 px-2 text-sm font-semibold text-white hover:bg-blue-700"
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 shrink-0 text-slate-600"
+                                aria-expanded={isOpen}
+                                aria-label={isOpen ? 'Tutup detail legalitas' : 'Buka detail legalitas'}
+                                onClick={() => toggleExpandedLegal(group.key)}
                               >
-                                <Link href={`/tenants/edit/${group.tenantId}?tab=legals`}>Update Data</Link>
+                                <ChevronRight
+                                  className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-90' : ''}`}
+                                />
                               </Button>
-                            ) : (
-                              <Button size="sm" disabled className="h-8 max-w-full truncate rounded-md px-2 text-sm font-semibold">
-                                Update Data
-                              </Button>
-                            )}
-                          </TableCell>
-                        </TableRow>
-
-                        {isOpen && (
-                          <TableRow className="border-b border-slate-100 hover:bg-transparent">
-                            <TableCell colSpan={11} className="p-0 align-middle">
-                              <div className="border-t border-violet-200/70 bg-gradient-to-br from-violet-50/95 via-indigo-50/40 to-white py-3 pl-6 pr-3 sm:pl-8 sm:pr-4 dark:border-violet-800/50 dark:from-violet-950/35 dark:via-indigo-950/20 dark:to-transparent">
-                                <p className="mb-2.5 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-violet-800 dark:text-violet-200">
-                                  <span className="h-3 w-1 shrink-0 rounded-full bg-violet-500" aria-hidden />
-                                  Detail legalitas
-                                </p>
-                                <div className="overflow-x-auto rounded-lg border border-violet-200/60 bg-white/95 shadow-sm ring-1 ring-violet-100/80 dark:border-violet-800/40 dark:bg-slate-950/40 dark:ring-violet-900/30">
-                                  <Table className="min-w-[720px] table-fixed">
-                                    <TableHeader>
-                                      <TableRow className="border-b border-violet-100/80 bg-violet-50/70 hover:bg-violet-50/70 dark:border-violet-900/40 dark:bg-violet-950/30">
-                                        <TableHead className="w-10 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-violet-900/70 dark:text-violet-200/80">
-                                          No
-                                        </TableHead>
-                                        <TableHead className="min-w-0 w-[11rem] whitespace-normal text-xs font-semibold uppercase tracking-wider text-violet-900/70 dark:text-violet-200/80">
-                                          Jatuh tempo
-                                        </TableHead>
-                                        <TableHead className="min-w-0 w-[26%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-violet-900/70 dark:text-violet-200/80">
-                                          Kewajiban mitra
-                                        </TableHead>
-                                        <TableHead className="min-w-0 w-[26%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-violet-900/70 dark:text-violet-200/80">
-                                          Keterangan
-                                        </TableHead>
-                                        <TableHead className="w-36 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-violet-900/70 dark:text-violet-200/80">
-                                          Status penyelesaian
-                                        </TableHead>
-                                        <TableHead className="min-w-0 w-[14%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-violet-900/70 dark:text-violet-200/80">
-                                          Dokumen
-                                        </TableHead>
-                                      </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                      {group.logs.map((row, idx) => {
-                                        const rowDotClass = dueDateDotClass(row.dueDateIso)
-                                        const jenisDokumenLabel =
-                                          (row.description && row.description.trim() !== '' ? row.description : '') ||
-                                          (row.deskripsi && row.deskripsi.trim() !== '' ? row.deskripsi : '') ||
-                                          row.kewajibanMitra ||
-                                          '—'
-                                        const keteranganLabel = row.keterangan && row.keterangan.trim() !== '' ? row.keterangan : '—'
-                                        const isCompleted = isOpenObligationStatus(row.status)
-                                        const isPlaceholder = isPlaceholderLegalStatus(row.status)
-                                        return (
-                                          <TableRow
-                                            key={`legal-${group.key}-${row.id}`}
-                                            className="border-b border-violet-50/80 last:border-0 hover:bg-violet-50/30 dark:border-violet-900/20 dark:hover:bg-violet-950/20"
-                                          >
-                                            <TableCell className="text-center text-base text-slate-600">{idx + 1}</TableCell>
-                                            <TableCell className="min-w-0 align-middle">
-                                              <div className="flex min-w-0 flex-wrap items-center gap-2 text-base text-slate-800">
-                                                <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${rowDotClass}`} aria-hidden />
-                                                <span className="min-w-0 break-words">{row.jatuhTempo}</span>
-                                              </div>
-                                            </TableCell>
-                                            <TableCell className="min-w-0 whitespace-normal break-words align-middle text-base leading-6 text-slate-700">
-                                              {jenisDokumenLabel}
-                                            </TableCell>
-                                            <TableCell className="min-w-0 whitespace-normal break-words align-middle text-base leading-6 text-slate-700">
-                                              {keteranganLabel}
-                                            </TableCell>
-                                            <TableCell className="align-middle">
-                                              {isPlaceholder ? (
-                                                <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-sm font-medium text-slate-600">
-                                                  Belum ada dokumen
-                                                </span>
-                                              ) : isCompleted ? (
-                                                <span className="inline-flex rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-0.5 text-sm font-medium text-emerald-700">
-                                                  Selesai
-                                                </span>
-                                              ) : (
-                                                <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-sm font-medium text-slate-700">
-                                                  Belum selesai
-                                                </span>
-                                              )}
-                                            </TableCell>
-                                            <TableCell className="min-w-0 max-w-[160px] align-middle">
-                                              {row.dokumenUrl && row.dokumen ? (
-                                                <a
-                                                  href={row.dokumenUrl}
-                                                  target="_blank"
-                                                  rel="noopener noreferrer"
-                                                  className="block break-words text-base font-medium text-blue-600 hover:underline"
-                                                >
-                                                  {row.dokumen}
-                                                </a>
-                                              ) : null}
-                                            </TableCell>
-                                          </TableRow>
-                                        )
-                                      })}
-                                    </TableBody>
-                                  </Table>
-                                </div>
+                            </TableCell>
+                            <TableCell className="text-center text-base font-medium text-slate-700">
+                              {groupIndex + 1}
+                            </TableCell>
+                            <TableCell className="min-w-0 break-words align-middle text-base font-bold whitespace-normal text-slate-900">
+                              {group.nama}
+                            </TableCell>
+                            <TableCell className="align-middle">
+                              {groupStatusLabel === 'Overdue' ? (
+                                <span className="inline-flex rounded-full border border-red-100 bg-red-50 px-2.5 py-0.5 text-sm font-medium text-red-700">
+                                  Overdue
+                                </span>
+                              ) : groupStatusLabel === 'Belum ada dokumen' ? (
+                                <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-sm font-medium text-slate-600">
+                                  Belum ada dokumen
+                                </span>
+                              ) : (
+                                <span className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-2.5 py-0.5 text-sm font-medium text-blue-700">
+                                  On Process
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="min-w-0 break-words align-middle text-base whitespace-normal text-slate-700">
+                              {group.aset}
+                            </TableCell>
+                            <TableCell className="min-w-0 break-words align-middle text-base whitespace-normal text-slate-700">
+                              {group.unit}
+                            </TableCell>
+                            <TableCell className="min-w-0 align-middle">
+                              <div className="flex min-w-0 flex-wrap items-center gap-2 text-base text-slate-800">
+                                <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${dotClass}`} aria-hidden />
+                                <span className="min-w-0 whitespace-nowrap">{earliestLabel}</span>
                               </div>
                             </TableCell>
+                            <TableCell className="min-w-0 break-words align-middle text-base whitespace-normal text-slate-700">
+                              {hasOnlyPlaceholder ? '—' : `${realLegalLogs.length} item`}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-base font-bold tabular-nums text-slate-900">
+                              {progressPercent === null ? '—' : `${progressPercent}%`}
+                            </TableCell>
+                            <TableCell className="min-w-0 align-middle">
+                              {group.tenantId ? (
+                                <Button
+                                  asChild
+                                  size="sm"
+                                  className="h-8 max-w-full truncate rounded-md bg-blue-600 px-2 text-sm font-semibold text-white hover:bg-blue-700"
+                                >
+                                  <Link href={withReturnTo(`/tenants/edit/${group.tenantId}?tab=legals`, currentUrl)}>Update Data</Link>
+                                </Button>
+                              ) : (
+                                <Button size="sm" disabled className="h-8 max-w-full truncate rounded-md px-2 text-sm font-semibold">
+                                  Update Data
+                                </Button>
+                              )}
+                            </TableCell>
                           </TableRow>
-                        )}
-                      </Fragment>
-                    )
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </div>
-          <div className="flex flex-col gap-2 text-sm text-slate-600 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-6 sm:gap-y-2">
-            <span className="flex items-center gap-2">
-              <span className="h-2 w-2 shrink-0 rounded-full bg-blue-500" aria-hidden />
-              <span className="font-medium uppercase tracking-wide text-slate-500">3 bulan sebelum jatuh tempo</span>
-            </span>
-            <span className="flex items-center gap-2">
-              <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400" aria-hidden />
-              <span className="font-medium uppercase tracking-wide text-slate-500">1 bulan sebelum jatuh tempo</span>
-            </span>
-            <span className="flex items-center gap-2">
-              <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" aria-hidden />
-              <span className="font-medium uppercase tracking-wide text-slate-500">Telah jatuh tempo</span>
-            </span>
-          </div>
-        </CardContent>
-      </Card>
+
+                          {isOpen && (
+                            <TableRow className="border-b border-slate-100 hover:bg-transparent">
+                              <TableCell colSpan={11} className="p-0 align-middle">
+                                <div className="border-t border-violet-200/70 bg-gradient-to-br from-violet-50/95 via-indigo-50/40 to-white py-3 pl-6 pr-3 sm:pl-8 sm:pr-4 dark:border-violet-800/50 dark:from-violet-950/35 dark:via-indigo-950/20 dark:to-transparent">
+                                  <p className="mb-2.5 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-violet-800 dark:text-violet-200">
+                                    <span className="h-3 w-1 shrink-0 rounded-full bg-violet-500" aria-hidden />
+                                    Detail legalitas
+                                  </p>
+                                  <div className="overflow-x-auto rounded-lg border border-violet-200/60 bg-white/95 shadow-sm ring-1 ring-violet-100/80 dark:border-violet-800/40 dark:bg-slate-950/40 dark:ring-violet-900/30">
+                                    <Table className="min-w-[720px] table-fixed">
+                                      <TableHeader>
+                                        <TableRow className="border-b border-violet-100/80 bg-violet-50/70 hover:bg-violet-50/70 dark:border-violet-900/40 dark:bg-violet-950/30">
+                                          <TableHead className="w-10 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-violet-900/70 dark:text-violet-200/80">
+                                            No
+                                          </TableHead>
+                                          <TableHead className="min-w-0 w-[11rem] whitespace-normal text-xs font-semibold uppercase tracking-wider text-violet-900/70 dark:text-violet-200/80">
+                                            Jatuh tempo
+                                          </TableHead>
+                                          <TableHead className="min-w-0 w-[26%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-violet-900/70 dark:text-violet-200/80">
+                                            Kewajiban mitra
+                                          </TableHead>
+                                          <TableHead className="min-w-0 w-[26%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-violet-900/70 dark:text-violet-200/80">
+                                            Keterangan
+                                          </TableHead>
+                                          <TableHead className="w-36 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-violet-900/70 dark:text-violet-200/80">
+                                            Status penyelesaian
+                                          </TableHead>
+                                          <TableHead className="min-w-0 w-[14%] whitespace-normal text-xs font-semibold uppercase tracking-wider text-violet-900/70 dark:text-violet-200/80">
+                                            Dokumen
+                                          </TableHead>
+                                        </TableRow>
+                                      </TableHeader>
+                                      <TableBody>
+                                        {group.logs.map((row, idx) => {
+                                          const rowDotClass = dueDateDotClass(row.dueDateIso)
+                                          const jenisDokumenLabel =
+                                            (row.description && row.description.trim() !== '' ? row.description : '') ||
+                                            (row.deskripsi && row.deskripsi.trim() !== '' ? row.deskripsi : '') ||
+                                            row.kewajibanMitra ||
+                                            '—'
+                                          const keteranganLabel = row.keterangan && row.keterangan.trim() !== '' ? row.keterangan : '—'
+                                          const isCompleted = isOpenObligationStatus(row.status)
+                                          const isPlaceholder = isPlaceholderLegalStatus(row.status)
+                                          return (
+                                            <TableRow
+                                              key={`legal-${group.key}-${row.id}`}
+                                              className="border-b border-violet-50/80 last:border-0 hover:bg-violet-50/30 dark:border-violet-900/20 dark:hover:bg-violet-950/20"
+                                            >
+                                              <TableCell className="text-center text-base text-slate-600">{idx + 1}</TableCell>
+                                              <TableCell className="min-w-0 align-middle">
+                                                <div className="flex min-w-0 flex-wrap items-center gap-2 text-base text-slate-800">
+                                                  <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${rowDotClass}`} aria-hidden />
+                                                  <span className="min-w-0 break-words">{row.jatuhTempo}</span>
+                                                </div>
+                                              </TableCell>
+                                              <TableCell className="min-w-0 whitespace-normal break-words align-middle text-base leading-6 text-slate-700">
+                                                {jenisDokumenLabel}
+                                              </TableCell>
+                                              <TableCell className="min-w-0 whitespace-normal break-words align-middle text-base leading-6 text-slate-700">
+                                                {keteranganLabel}
+                                              </TableCell>
+                                              <TableCell className="align-middle">
+                                                {isPlaceholder ? (
+                                                  <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-sm font-medium text-slate-600">
+                                                    Belum ada dokumen
+                                                  </span>
+                                                ) : isCompleted ? (
+                                                  <span className="inline-flex rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-0.5 text-sm font-medium text-emerald-700">
+                                                    Selesai
+                                                  </span>
+                                                ) : (
+                                                  <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-sm font-medium text-slate-700">
+                                                    Belum selesai
+                                                  </span>
+                                                )}
+                                              </TableCell>
+                                              <TableCell className="min-w-0 max-w-[160px] align-middle">
+                                                {row.dokumenUrl && row.dokumen ? (
+                                                  <a
+                                                    href={row.dokumenUrl}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="block break-words text-base font-medium text-blue-600 hover:underline"
+                                                  >
+                                                    {row.dokumen}
+                                                  </a>
+                                                ) : null}
+                                              </TableCell>
+                                            </TableRow>
+                                          )
+                                        })}
+                                      </TableBody>
+                                    </Table>
+                                  </div>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </Fragment>
+                      )
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+            <div className="flex flex-col gap-2 text-sm text-slate-600 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-6 sm:gap-y-2">
+              <span className="flex items-center gap-2">
+                <span className="h-2 w-2 shrink-0 rounded-full bg-blue-500" aria-hidden />
+                <span className="font-medium uppercase tracking-wide text-slate-500">3 bulan sebelum jatuh tempo</span>
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400" aria-hidden />
+                <span className="font-medium uppercase tracking-wide text-slate-500">1 bulan sebelum jatuh tempo</span>
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" aria-hidden />
+                <span className="font-medium uppercase tracking-wide text-slate-500">Telah jatuh tempo</span>
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   )
 }

@@ -21,6 +21,10 @@ const TRACK = '#f0f2f5'
 
 interface DailyWorkStatusProps {
   selectedAssetId?: string
+  /** Tanggal acuan `YYYY-MM-DD` (WIB); default hari ini. Ring bulanan memakai bulan dari tanggal ini. */
+  dayDate?: string
+  /** `summary`: hanya ring status (ringkasan dashboard). `full`: progress harian + ring (section Operation). */
+  variant?: 'summary' | 'full'
 }
 
 function normalizeUserTasksPayload(payload: unknown): UserTask[] {
@@ -105,7 +109,7 @@ function isInProgress(ut: UserTask): boolean {
   return s === 'inprogress' || s === 'in_progress' || (!!ut.started_at && !ut.completed_at)
 }
 
-function dateKey(d: Date): string {
+export function dateKey(d: Date): string {
   // Samakan boundary tanggal dengan backend yang memakai WIB.
   return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' })
 }
@@ -302,7 +306,11 @@ function visibleChildrenForRole(
   return children.filter(isRole)
 }
 
-export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkStatusProps) {
+export default function DailyWorkStatus({
+  selectedAssetId = 'all',
+  dayDate,
+  variant = 'full',
+}: DailyWorkStatusProps) {
   const [assets, setAssets] = useState<Asset[]>([])
   const [tasksToday, setTasksToday] = useState<UserTask[]>([])
   const [tasksMonth, setTasksMonth] = useState<UserTask[]>([])
@@ -314,11 +322,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
   /** Main `user_task_id` yang baris anaknya di-expand di tabel kebersihan */
   const [expandedCleaningMainIds, setExpandedCleaningMainIds] = useState<Set<string>>(new Set())
 
-  const today = useMemo(() => {
-    const d = new Date()
-    d.setHours(0, 0, 0, 0)
-    return d
-  }, [])
+  const dayStr = dayDate || dateKey(new Date())
 
   const loadData = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent === true
@@ -329,8 +333,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
       setLoadingMonth(true)
     }
 
-    const todayStr = dateKey(today)
-    const [yearStr, monthStr] = todayStr.split('-')
+    const [yearStr, monthStr] = dayStr.split('-')
     const year = Number(yearStr)
     const month = Number(monthStr)
     const monthFromStr = `${yearStr}-${monthStr}-01`
@@ -339,7 +342,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
     const assetId = selectedAssetId !== 'all' ? selectedAssetId : undefined
     console.info('[DailyWorkStatus] request range', {
       selectedAssetId,
-      todayStr,
+      dayStr,
       monthFrom: monthFromStr,
       monthTo: monthToStr,
     })
@@ -355,7 +358,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
             all_users: 1,
             asset_id: assetId,
             non_routine: false,
-            day_date: todayStr,
+            day_date: dayStr,
             scope: 'day',
             limit: 10000,
           }),
@@ -419,7 +422,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
 
     await Promise.all([dayLoad, monthLoad])
     setRefreshing(false)
-  }, [today, selectedAssetId])
+  }, [dayStr, selectedAssetId])
 
   useEffect(() => {
     void loadData()
@@ -427,7 +430,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
 
   const flatToday = useMemo(() => flattenUserTasks(tasksToday), [tasksToday])
 
-  /** Ring per aset — semua aset, persen dari tugas hari ini (user login) */
+  /** Ring per aset — semua aset, persen dari tugas pada tanggal terpilih */
   const allAssetsRings = useMemo(() => {
     const map = new Map<string, { total: number; done: number; name: string }>()
     assets.forEach((a) => map.set(a.id, { total: 0, done: 0, name: a.name }))
@@ -710,7 +713,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
         <CardContent className="px-6 py-0">
           {allAssetsRings.length === 0 ? (
             <p className="py-6 text-center text-base text-muted-foreground">
-              Tidak ada data aset atau tugas hari ini.
+              Tidak ada data aset atau tugas pada tanggal ini.
             </p>
           ) : (
             <div className="grid grid-cols-2 gap-6 pb-1 md:grid-cols-4 md:gap-8">
@@ -736,6 +739,58 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
 
   /* ---------- Satu aset: 2×2 detail ---------- */
   const selectedAsset = assets.find((a) => a.id === selectedAssetId)
+
+  const statusRings = (
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <Card className="border border-gray-200 shadow-sm">
+        <CardHeader className="space-y-1 pb-4">
+          <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">Status Pekerjaan Kebersihan</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-6">
+            <div className="flex flex-col items-center">
+              <Chart
+                options={radialOptions(pctHarianKebersihan)}
+                series={[pctHarianKebersihan]}
+                type="radialBar"
+                height={200}
+              />
+              <p className="-mt-2 text-sm font-semibold text-slate-600">Harian</p>
+            </div>
+            <div className="flex flex-col items-center">
+              <MonthlyRing percentage={pctBulananKebersihan} />
+              <p className="-mt-2 text-sm font-semibold text-slate-600">Bulanan</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border border-gray-200 shadow-sm">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">Status Pekerjaan Keamanan</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-6">
+            <div className="flex flex-col items-center">
+              <Chart
+                options={radialOptions(pctHarianKeamanan)}
+                series={[pctHarianKeamanan]}
+                type="radialBar"
+                height={200}
+              />
+              <p className="-mt-2 text-sm font-semibold text-slate-600">Harian</p>
+            </div>
+            <div className="flex flex-col items-center">
+              <MonthlyRing percentage={pctBulananKeamanan} />
+              <p className="-mt-2 text-sm font-semibold text-slate-600">Bulanan</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+
+  if (variant === 'summary') return statusRings
 
   return (
     <div className="space-y-6">
@@ -774,7 +829,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
                 {kebersihanCleaningGroups.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">
-                      Tidak ada tugas kebersihan hari ini.
+                      Tidak ada tugas kebersihan pada tanggal ini.
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -963,7 +1018,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
           <CardContent className="space-y-4">
             {patrolScheduleTables.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
-                Tidak ada tugas keamanan hari ini.
+                Tidak ada tugas keamanan pada tanggal ini.
               </p>
             ) : patrolScheduleTables.length === 1 ? (
               <PatrolGroupTable table={patrolScheduleTables[0]} />
@@ -1012,53 +1067,7 @@ export default function DailyWorkStatus({ selectedAssetId = 'all' }: DailyWorkSt
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Card className="border border-gray-200 shadow-sm">
-          <CardHeader className="space-y-1 pb-4">
-            <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">Status Pekerjaan Kebersihan</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-6">
-              <div className="flex flex-col items-center">
-                <Chart
-                  options={radialOptions(pctHarianKebersihan)}
-                  series={[pctHarianKebersihan]}
-                  type="radialBar"
-                  height={200}
-                />
-                <p className="-mt-2 text-sm font-semibold text-slate-600">Harian</p>
-              </div>
-              <div className="flex flex-col items-center">
-                <MonthlyRing percentage={pctBulananKebersihan} />
-                <p className="-mt-2 text-sm font-semibold text-slate-600">Bulanan</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border border-gray-200 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">Status Pekerjaan Keamanan</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-6">
-              <div className="flex flex-col items-center">
-                <Chart
-                  options={radialOptions(pctHarianKeamanan)}
-                  series={[pctHarianKeamanan]}
-                  type="radialBar"
-                  height={200}
-                />
-                <p className="-mt-2 text-sm font-semibold text-slate-600">Harian</p>
-              </div>
-              <div className="flex flex-col items-center">
-                <MonthlyRing percentage={pctBulananKeamanan} />
-                <p className="-mt-2 text-sm font-semibold text-slate-600">Bulanan</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {statusRings}
     </div>
   )
 }

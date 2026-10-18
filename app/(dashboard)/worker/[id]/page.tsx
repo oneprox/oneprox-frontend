@@ -25,6 +25,7 @@ import TaskEvidenceBeforeAfterDialog, {
   hasImageEvidence,
 } from '@/components/dialogs/task-evidence-before-after-dialog'
 import { buildPatrolScheduleTables, type CellStatus } from '@/lib/patrol-schedule'
+import { useReturnTo } from '@/lib/return-to'
 
 function isCleaningRole(roleName?: string | null): boolean {
   const role = (roleName || '').toLowerCase()
@@ -73,6 +74,8 @@ function PatrolStatusIcon({ status }: { status: SlotStatus }) {
 
 function WorkerDetailContent() {
   const router = useRouter()
+  // Dibuka dari dashboard (?returnTo=...): tampilkan tombol kembali ke dashboard.
+  const returnTo = useReturnTo()
   const params = useParams()
   const userId = params.id as string
   
@@ -962,6 +965,12 @@ function WorkerDetailContent() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Detail Pekerja</h1>
         </div>
+        {returnTo ? (
+          <Button variant="outline" onClick={() => router.push(returnTo)}>
+            <ArrowLeft className="h-4 w-4" />
+            Kembali ke Dashboard
+          </Button>
+        ) : null}
       </div>
 
       {/* User Info Card */}

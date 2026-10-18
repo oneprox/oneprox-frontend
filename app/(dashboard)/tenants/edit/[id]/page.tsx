@@ -5,15 +5,19 @@ import { useRouter, useParams } from 'next/navigation'
 import { Tenant, CreateTenantData, UpdateTenantData, tenantsApi } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb'
-import { Home, Edit, Loader2, FileText } from 'lucide-react'
+import { Home, Edit, Loader2, FileText, ArrowLeft } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import TenantForm from '@/components/forms/tenant-form'
 import { useIsTenantRole } from '@/hooks/useIsTenantRole'
 import toast from 'react-hot-toast'
+import { useReturnTo } from '@/lib/return-to'
 
 export default function EditTenantPage() {
   const router = useRouter()
   const params = useParams()
   const tenantId = params.id as string
+  // Dibuka dari dashboard (?returnTo=...): setelah selesai kembali ke dashboard, bukan ke daftar tenant.
+  const returnTo = useReturnTo()
   // Role tenant hanya boleh melihat: form dirender read-only, tab tetap lengkap.
   // null = role belum diketahui, tetap perlakukan sebagai read-only.
   const isTenantRole = useIsTenantRole()
@@ -56,7 +60,7 @@ export default function EditTenantPage() {
       
       if (response.success && response.data) {
         toast.success('Tenant berhasil diperbarui')
-        router.push('/tenants')
+        router.push(returnTo ?? '/tenants')
       } else {
         toast.error(response.error || response.message || 'Gagal memperbarui tenant', {
           duration: 8000,
@@ -132,6 +136,12 @@ export default function EditTenantPage() {
             <span className="font-medium">{tenant.name}</span>
           </p>
         </div>
+        {returnTo ? (
+          <Button variant="outline" onClick={() => router.push(returnTo)}>
+            <ArrowLeft className="h-4 w-4" />
+            Kembali ke Dashboard
+          </Button>
+        ) : null}
       </div>
 
       <Card>

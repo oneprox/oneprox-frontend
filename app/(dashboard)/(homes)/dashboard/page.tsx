@@ -1,38 +1,78 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useCallback } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import AssetOverviewDashboard from "./components/asset-overview-dashboard"
 import DailyWorkStatus from "./components/daily-work-status"
-import NonRoutineWork from "./components/non-routine-work"
+import OperationSection from "./components/operation-section"
 import ReportsObstaclesNotes from "./components/reports-obstacles-notes"
-import DashboardStatCards from "./components/dashboard-stat-cards"
-import AssetCarousel from "./components/asset-carousel"
-import RevenueGrowthChart from "./components/revenue-growth-chart"
-import TopAssetRevenueCard from "./components/top-asset-revenue-card"
-import TenantKontrakTable from "./components/tenant-kontrak-table"
+import AssetDetailContent from "@/components/asset/asset-detail-content"
+import {
+  normalizeDashboardSection,
+  parseDashboardSection,
+  type DashboardSection,
+} from "./components/dashboard-section-nav"
 
-export default function DashboardPage() {
-  const [selectedAssetId, setSelectedAssetId] = useState<string>('all')
+function DashboardContent() {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+
+  // Aset & section disimpan di URL (?asset=..&section=..) agar bertahan saat refresh / dibagikan.
+  const selectedAssetId = searchParams.get('asset') || 'all'
+  const isAllAssets = selectedAssetId === 'all'
+  const section = normalizeDashboardSection(parseDashboardSection(searchParams.get('section')), isAllAssets)
+
+  const updateUrl = useCallback(
+    (assetId: string, nextSection: DashboardSection) => {
+      const params = new URLSearchParams(searchParams.toString())
+      if (assetId === 'all') params.delete('asset')
+      else params.set('asset', assetId)
+      const normalized = normalizeDashboardSection(nextSection, assetId === 'all')
+      if (normalized === 'overview') params.delete('section')
+      else params.set('section', normalized)
+      const query = params.toString()
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false })
+    },
+    [pathname, router, searchParams]
+  )
+
+  const handleSectionChange = (nextSection: DashboardSection) => {
+    updateUrl(selectedAssetId, nextSection)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   return (
     <>
-      {/* Asset Overview Dashboard */}
-      <AssetOverviewDashboard 
+      {/* Header aset, tombol section, dan konten Ringkasan / Finance / Legal */}
+      <AssetOverviewDashboard
         selectedAssetId={selectedAssetId}
-        onAssetChange={setSelectedAssetId}
+        onAssetChange={(assetId) => updateUrl(assetId, section)}
+        section={section}
+        onSectionChange={handleSectionChange}
       />
 
-      {/* Daily Work Status, Non-Routine Work, and Reports Sections */}
       <div className="space-y-6 mt-6">
-        {/* Daily Work Status */}
-        <DailyWorkStatus selectedAssetId={selectedAssetId} />
+        {section === 'overview' ? (
+          <DailyWorkStatus selectedAssetId={selectedAssetId} variant="summary" />
+        ) : null}
 
-        {/* Non-Routine Work */}
-        <NonRoutineWork selectedAssetId={selectedAssetId} />
+        {section === 'operation' ? <OperationSection selectedAssetId={selectedAssetId} /> : null}
 
-        {/* Reports, Obstacles, and Notes */}
-        <ReportsObstaclesNotes selectedAssetId={selectedAssetId} />
+        {section === 'asset' && !isAllAssets ? (
+          <AssetDetailContent key={selectedAssetId} assetId={selectedAssetId} />
+        ) : null}
+
+        {section === 'reports' ? <ReportsObstaclesNotes selectedAssetId={selectedAssetId} /> : null}
       </div>
     </>
   );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={null}>
+      <DashboardContent />
+    </Suspense>
+  )
 }
