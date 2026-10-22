@@ -218,11 +218,20 @@ export default function UnitDetailDialog({
                           )}
                           <div>
                             <label className="text-sm font-medium text-muted-foreground">
-                              Ukuran
+                              Luas Lahan
                             </label>
                             <p className="text-sm font-medium flex items-center gap-1">
                               <Square className="h-4 w-4" />
-                              {unit.size} m²
+                              {unit.size ?? '-'}{unit.size !== undefined && unit.size !== null ? ' m²' : ''}
+                            </p>
+                          </div>
+                          <div>
+                            <label className="text-sm font-medium text-muted-foreground">
+                              Luas Bangunan
+                            </label>
+                            <p className="text-sm font-medium flex items-center gap-1">
+                              <Square className="h-4 w-4" />
+                              {unit.building_area ?? '-'}{unit.building_area !== undefined && unit.building_area !== null ? ' m²' : ''}
                             </p>
                           </div>
                           <div>

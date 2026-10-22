@@ -1,7 +1,8 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Tenant, DURATION_UNIT_LABELS, DURATION_UNITS, TenantDepositLog, TenantPaymentLog, tenantsApi, UpdateTenantPaymentData, CreateTenantPaymentData } from '@/lib/api'
+import { Tenant, Asset, DURATION_UNIT_LABELS, TenantPaymentLog, tenantsApi, UpdateTenantPaymentData, CreateTenantPaymentData, normalizeTenantStatus, TENANT_STATUS_LABELS, ASSET_TYPE_LABELS } from '@/lib/api'
+import { formatBillingRatePercent } from '@/lib/billing-rate'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -30,9 +31,10 @@ import {
 } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { History, Building2, X, Edit, Wallet, CreditCard, DollarSign, ChevronLeft, ChevronRight, Loader2, Plus, Image as ImageIcon, FileText } from 'lucide-react'
+import { History, Building2, X, Edit, CreditCard, DollarSign, ChevronLeft, ChevronRight, Loader2, Plus, Image as ImageIcon, FileText } from 'lucide-react'
 import Link from 'next/link'
 import TenantLogsTable from '@/components/table/tenant-logs-table'
+import { useCanWriteTenantData } from '@/hooks/useIsTenantRole'
 import toast from 'react-hot-toast'
 
 // Category options mapping
@@ -46,6 +48,31 @@ const CATEGORY_MAP: Record<number, string> = {
   7: 'Pendidikan',
   8: 'Jasa Keuangan',
   9: 'Other',
+}
+
+function formatCurrencyIdr(value: number | string | null | undefined): string {
+  if (value == null || value === '') return '-'
+  const n = Number(value)
+  if (Number.isNaN(n) || n === 0) return '-'
+  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n)
+}
+
+function getTenantTotalRentPrice(tenant: Tenant): number {
+  if (tenant.total_price != null && Number(tenant.total_price) > 0) {
+    return Number(tenant.total_price)
+  }
+  return (tenant.rent_price || 0) + (tenant.ppn || 0)
+}
+
+function paymentMethodLabel(method: string | null | undefined): string {
+  if (!method) return '-'
+  switch (method) {
+    case 'cash': return 'Cash'
+    case 'bank_transfer': return 'Bank Transfer'
+    case 'qris': return 'QRIS'
+    case 'other': return 'Other'
+    default: return method
+  }
 }
 
 const getCategoryLabel = (tenant: Tenant): string => {
@@ -82,6 +109,35 @@ const getCategoryLabel = (tenant: Tenant): string => {
   return '-'
 }
 
+const getAssetTypeLabel = (assetType: number | string) => {
+  if (typeof assetType === 'string') {
+    const stringToLabel: Record<string, string> = {
+      ESTATE: 'Estate',
+      OFFICE: 'Office',
+      WAREHOUSE: 'Warehouse',
+      SPORT: 'Sport',
+      ENTERTAINMENTRESTAURANT: 'Entertainment/Restaurant',
+      RESIDENCE: 'Residence',
+      MALL: 'Mall',
+      SUPPORTFACILITYMOSQUEITAL: 'Support Facility/Mosque',
+      PARKINGLOT: 'Parking Lot',
+    }
+    return stringToLabel[assetType] || assetType
+  }
+  return ASSET_TYPE_LABELS[assetType] || 'Unknown'
+}
+
+const resolveBuildingType = (tenant: Tenant): 'unit' | 'asset' | null => {
+  if (tenant.building_type === 'unit' || tenant.building_type === 'asset') {
+    return tenant.building_type
+  }
+  if (tenant.units && tenant.units.length > 0) return 'unit'
+  if (tenant.assets && tenant.assets.length > 0) return 'asset'
+  if (tenant.asset_ids && tenant.asset_ids.length > 0) return 'asset'
+  if (tenant.unit_ids && tenant.unit_ids.length > 0) return 'unit'
+  return null
+}
+
 interface TenantDetailDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -93,9 +149,10 @@ export default function TenantDetailDialog({
   onOpenChange,
   tenant
 }: TenantDetailDialogProps) {
+  // Role tenant hanya boleh melihat: kontrol pencatatan pembayaran disembunyikan
+  const canWrite = useCanWriteTenantData()
   const [mounted, setMounted] = useState(false)
   const [activeTab, setActiveTab] = useState('info')
-  const [depositLogs, setDepositLogs] = useState<TenantDepositLog[]>([])
   const [paymentLogs, setPaymentLogs] = useState<TenantPaymentLog[]>([])
   const [paymentLoading, setPaymentLoading] = useState(false)
   const [paymentPage, setPaymentPage] = useState(1)
@@ -114,37 +171,54 @@ export default function TenantDetailDialog({
   const [updatingPayment, setUpdatingPayment] = useState(false)
   const [allPaidPayments, setAllPaidPayments] = useState<TenantPaymentLog[]>([])
   const [createPaymentDialogOpen, setCreatePaymentDialogOpen] = useState(false)
+
+  const now = new Date()
+  const defaultBillingPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const defaultPaymentDeadline = now.toISOString().slice(0, 10)
+
   const [createPaymentData, setCreatePaymentData] = useState<CreateTenantPaymentData & { payment_date?: string }>({
+    billing_period: defaultBillingPeriod,
     amount: 0,
+    ppn: 0,
+    ppn_percent: 0,
+    billing_amount: 0,
+    payment_deadline: defaultPaymentDeadline,
+    paid_amount: 0,
     payment_method: '',
     notes: '',
     payment_date: ''
   })
   const [creatingPayment, setCreatingPayment] = useState(false)
+  const [displayTenant, setDisplayTenant] = useState<Tenant | null>(tenant)
+  const [tenantDetailLoading, setTenantDetailLoading] = useState(false)
 
   useEffect(() => {
     setMounted(true)
   }, [])
 
-  // Fetch deposit logs when dialog opens and tenant is available
   useEffect(() => {
-    const loadDepositLogs = async () => {
-      if (open && tenant?.id) {
-        try {
-          const response = await tenantsApi.getTenantDepositLogs(tenant.id)
-          if (response.success && response.data) {
-            const logsData = response.data as any
-            const logs = Array.isArray(logsData.data) ? logsData.data : (Array.isArray(logsData) ? logsData : [])
-            console.log('logs', logs)
-            setDepositLogs(logs)
-          }
-        } catch (error) {
-          console.error('Load deposit logs error:', error)
+    const loadTenantDetail = async () => {
+      if (!open || !tenant?.id) {
+        setDisplayTenant(tenant)
+        return
+      }
+
+      setDisplayTenant(tenant)
+      setTenantDetailLoading(true)
+      try {
+        const response = await tenantsApi.getTenant(tenant.id)
+        if (response.success && response.data) {
+          const tenantData = (response.data as any).data ?? response.data
+          setDisplayTenant(tenantData as Tenant)
         }
+      } catch (error) {
+        console.error('Load tenant detail error:', error)
+      } finally {
+        setTenantDetailLoading(false)
       }
     }
 
-    loadDepositLogs()
+    loadTenantDetail()
   }, [open, tenant?.id])
 
   // Fetch all paid payments to calculate total amount due
@@ -200,52 +274,28 @@ export default function TenantDetailDialog({
           })
           if (response.success && response.data) {
             const logsData = response.data as any
-            const logs = Array.isArray(logsData.data) ? logsData.data : (Array.isArray(logsData) ? logsData : [])
+            const logs = Array.isArray(logsData)
+              ? logsData
+              : Array.isArray(logsData.data)
+                ? logsData.data
+                : []
             setPaymentLogs(logs)
-            
-            // Debug: Log the response structure to understand the format
-            console.log('Payment logs response:', { response, logsData, logs })
-            
-            // Try to get total from various possible response formats
-            let total: number | null = logsData.pagination.total
-            
-            // Check response.data directly first (most common format: { data: [...], total: 11 })
-            if (response.data && typeof response.data === 'object') {
-              const responseData = response.data as any
-              if (typeof responseData.total === 'number' && responseData.total > 0) {
-                total = responseData.total
-              } else if (typeof responseData.count === 'number' && responseData.count > 0) {
-                total = responseData.count
-              }
+
+            const envelope = logsData as { pagination?: { total?: number }; total?: number; count?: number }
+            let total: number | null =
+              response.pagination?.total != null ? Number(response.pagination.total) : null
+            if (total == null && envelope?.pagination?.total != null) {
+              total = Number(envelope.pagination.total)
+            } else if (total == null && typeof envelope?.total === 'number') {
+              total = envelope.total
+            } else if (total == null && typeof envelope?.count === 'number') {
+              total = envelope.count
             }
-            
-            // Check logsData (nested data structure: { data: { data: [...], total: 11 } })
-            if (total === null && logsData && typeof logsData === 'object') {
-              if (typeof logsData.total === 'number' && logsData.total > 0) {
-                total = logsData.total
-              } else if (typeof logsData.count === 'number' && logsData.count > 0) {
-                total = logsData.count
-              }
-            }
-            
-            // Check if total is in the message or other fields
-            if (total === null && response && typeof response === 'object') {
-              const responseAny = response as any
-              if (typeof responseAny.total === 'number' && responseAny.total > 0) {
-                total = responseAny.total
-              }
-            }
-            
-            // Update total if we found it, otherwise keep existing total or use current count
-            if (total !== null && total > 0) {
+
+            if (total !== null && !Number.isNaN(total) && total >= 0) {
               setPaymentTotal(total)
-              console.log('Payment total set to:', total)
-            } else {
-              console.log('No total found in response, keeping existing total or using current count')
-              // Only update if we're on first page and don't have a total yet
-              if (paymentPage === 1 && paymentTotal === 0) {
-                setPaymentTotal(logs.length)
-              }
+            } else if (paymentPage === 1) {
+              setPaymentTotal(logs.length)
             }
           }
         } catch (error) {
@@ -304,22 +354,23 @@ export default function TenantDetailDialog({
     })
   }
 
-  const getTenantStatus = (status: string) => {
-    switch (status) {
+  const getTenantStatus = (status: string | number | null | undefined) => {
+    const normalized = normalizeTenantStatus(status)
+    switch (normalized) {
       case 'inactive':
-        return { label: 'Tidak Aktif', variant: 'secondary' as const }
+        return { label: TENANT_STATUS_LABELS.inactive, variant: 'secondary' as const }
       case 'active':
-        return { label: 'Aktif', variant: 'default' as const }
+        return { label: TENANT_STATUS_LABELS.active, variant: 'default' as const }
       case 'pending':
-        return { label: 'Pending', variant: 'outline' as const }
+        return { label: TENANT_STATUS_LABELS.pending, variant: 'outline' as const }
       case 'expired':
-        return { label: 'Expired', variant: 'destructive' as const }
+        return { label: TENANT_STATUS_LABELS.expired, variant: 'destructive' as const }
       case 'terminated':
-        return { label: 'Terminated', variant: 'destructive' as const }
+        return { label: TENANT_STATUS_LABELS.terminated, variant: 'destructive' as const }
       case 'blacklisted':
-        return { label: 'Blacklisted', variant: 'destructive' as const }
+        return { label: TENANT_STATUS_LABELS.blacklisted, variant: 'destructive' as const }
       default:
-        return { label: 'Unknown', variant: 'secondary' as const }
+        return { label: 'Tidak Diketahui', variant: 'secondary' as const }
     }
   }
 
@@ -378,9 +429,10 @@ export default function TenantDetailDialog({
   const handlePaidAmountChange = (value: string) => {
     const parsedValue = parsePrice(value)
     setPaidAmountDisplay(formatPrice(parsedValue))
+    const isEmptyInput = value.trim() === ''
     setUpdatePaymentData(prev => ({ 
       ...prev, 
-      paid_amount: parsedValue > 0 ? parsedValue : undefined 
+      paid_amount: isEmptyInput ? undefined : parsedValue
     }))
   }
 
@@ -389,7 +441,13 @@ export default function TenantDetailDialog({
 
     setUpdatingPayment(true)
     try {
-      const response = await tenantsApi.updateTenantPayment(tenant.id, selectedPayment.id, updatePaymentData)
+      const sanitizedUpdatePaymentData: UpdateTenantPaymentData = {
+        ...updatePaymentData,
+        // Pastikan 0 terkirim agar backend set status unpaid (undefined bisa ter-strip saat serialize)
+        paid_amount: updatePaymentData.paid_amount ?? 0,
+        payment_method: updatePaymentData.payment_method || undefined,
+      }
+      const response = await tenantsApi.updateTenantPayment(tenant.id, selectedPayment.id, sanitizedUpdatePaymentData)
       
       if (response.success) {
         toast.success('Status pembayaran berhasil diperbarui')
@@ -442,7 +500,13 @@ export default function TenantDetailDialog({
 
   const handleCreatePayment = () => {
     setCreatePaymentData({
+      billing_period: defaultBillingPeriod,
       amount: 0,
+      ppn: 0,
+      ppn_percent: 0,
+      billing_amount: 0,
+      payment_deadline: defaultPaymentDeadline,
+      paid_amount: 0,
       payment_method: '',
       notes: '',
       payment_date: ''
@@ -453,8 +517,8 @@ export default function TenantDetailDialog({
   const handleCreatePaymentSubmit = async () => {
     if (!tenant) return
 
-    if (!createPaymentData.amount || createPaymentData.amount <= 0) {
-      toast.error('Jumlah pembayaran harus diisi dan lebih dari 0')
+    if (!createPaymentData.paid_amount || createPaymentData.paid_amount <= 0) {
+      toast.error('Jumlah dibayar harus diisi dan lebih dari 0')
       return
     }
 
@@ -470,18 +534,31 @@ export default function TenantDetailDialog({
 
     setCreatingPayment(true)
     try {
+      const billAmt = createPaymentData.billing_amount || createPaymentData.paid_amount || 0
       const response = await tenantsApi.createTenantPayment(tenant.id, {
-        amount: createPaymentData.amount,
+        billing_period: createPaymentData.billing_period || defaultBillingPeriod,
+        amount: billAmt,
+        ppn_percent: 0,
+        ppn: 0,
+        billing_amount: billAmt,
+        payment_deadline: createPaymentData.payment_deadline || defaultPaymentDeadline,
+        paid_amount: createPaymentData.paid_amount,
         payment_method: createPaymentData.payment_method,
         notes: createPaymentData.notes.trim(),
         ...(createPaymentData.payment_date ? { payment_date: createPaymentData.payment_date } : {})
-      } as CreateTenantPaymentData & { payment_date?: string })
+      })
       
       if (response.success) {
         toast.success('Pembayaran berhasil ditambahkan')
         setCreatePaymentDialogOpen(false)
         setCreatePaymentData({
+          billing_period: defaultBillingPeriod,
           amount: 0,
+          ppn: 0,
+          ppn_percent: 0,
+          billing_amount: 0,
+          payment_deadline: defaultPaymentDeadline,
+          paid_amount: 0,
           payment_method: '',
           notes: '',
           payment_date: ''
@@ -553,99 +630,24 @@ export default function TenantDetailDialog({
 
   const { totalMustPay, totalPaid, remaining } = calculateTotalAmountDue()
 
-  // Calculate price per term (harga bayar sewa)
-  const calculatePricePerTerm = () => {
-    if (!tenant) {
-      console.log("calculatePricePerTerm: no tenant")
-      return null
-    }
-    
-    const rentPrice = tenant.rent_price || 0
-    const downPayment = tenant.down_payment || 0
-    const duration = parseInt(String(tenant.rent_duration)) || 0
-    
-    // Normalize rent_duration_unit to number: 0 = year, 1 = month
-    let durationUnitNum: number
-    if (typeof tenant.rent_duration_unit === 'number') {
-      durationUnitNum = tenant.rent_duration_unit
-    } else if (typeof tenant.rent_duration_unit === 'string') {
-      const unitStr = tenant.rent_duration_unit.toLowerCase()
-      durationUnitNum = (unitStr === 'year' || unitStr === DURATION_UNITS.YEAR) ? 0 : 1
-    } else {
-      durationUnitNum = 1 // default to month
-    }
-    
-    // Normalize payment_term to number: 0 = year, 1 = month
-    let paymentTermNum: number
-    if (typeof tenant.payment_term === 'number') {
-      paymentTermNum = tenant.payment_term
-    } else if (typeof tenant.payment_term === 'string') {
-      const termStr = tenant.payment_term.trim().toLowerCase()
-      if (termStr === '0' || termStr === 'year' || termStr === DURATION_UNITS.YEAR) {
-        paymentTermNum = 0
-      } else if (termStr === '1' || termStr === 'month' || termStr === DURATION_UNITS.MONTH) {
-        paymentTermNum = 1
-      } else {
-        paymentTermNum = 1 // default to month
-      }
-    } else {
-      paymentTermNum = 1 // default to month
-    }
-    
-    console.log("calculatePricePerTerm: durationUnitNum", durationUnitNum, "paymentTermNum", paymentTermNum)
-    
-    let numberOfPayments = 0
-    
-    // Check payment_term first
-    if (paymentTermNum === durationUnitNum) {
-      // If payment_term is same as rent_duration_unit, number of payments is duration
-      numberOfPayments = duration
-      console.log("calculatePricePerTerm: same units, numberOfPayments = duration =", duration)
-    } else {
-      // If payment_term is not the same as rent_duration_unit
-      if (paymentTermNum === 1 && durationUnitNum === 0) {
-        // If payment_term is month (1) and rent_duration_unit is year (0), number of payments is duration * 12
-        numberOfPayments = duration * 12
-        console.log("calculatePricePerTerm: month payment with year duration, numberOfPayments =", numberOfPayments)
-      } else {
-        console.log("calculatePricePerTerm: no matching condition, numberOfPayments stays 0")
-      }
-    }
-    console.log("numberOfPayments", numberOfPayments)
-    
-    // Harga bayar is (rentPrice - downPayment) / number of payments
-    if (numberOfPayments > 0) {
-      return (rentPrice - downPayment) / numberOfPayments
-    }
-    
-    return null
-  }
+  const activeTenant = displayTenant ?? tenant
+  const totalRentPrice = activeTenant ? getTenantTotalRentPrice(activeTenant) : 0
+  const buildingType = activeTenant ? resolveBuildingType(activeTenant) : null
 
-  const pricePerTerm = calculatePricePerTerm()
-  console.log("pricePerTerm", pricePerTerm)
-  const formattedPricePerTerm = pricePerTerm 
-    ? new Intl.NumberFormat('id-ID', {
-        style: 'currency',
-        currency: 'IDR',
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0,
-      }).format(pricePerTerm)
-    : null
-
-  if (!tenant || !open) return null
+  if (!tenant || !open || !activeTenant) return null
 
   return (
     <div 
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
       onClick={handleBackdropClick}
     >
-      <div className="bg-white rounded-lg shadow-2xl max-w-7xl w-[95vw] max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-white rounded-lg shadow-2xl max-w-7xl w-[95vw] max-h-[90vh] overflow-hidden flex flex-col min-w-0">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div>
             <h2 className="text-xl font-semibold flex items-center gap-2">
               <Building2 className="h-5 w-5" />
-              Detail Tenant: {tenant.name}
+              Detail Tenant: {activeTenant.name}
             </h2>
             <p className="text-sm text-gray-600 mt-1">
               Informasi lengkap dan riwayat aktivitas tenant
@@ -662,13 +664,13 @@ export default function TenantDetailDialog({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 min-w-0 overflow-y-auto p-6">
           <div className="space-y-6">
             {/* Header Actions */}
             <div className="flex items-center justify-end">
               <div className="flex items-center gap-2">
                 <Button asChild>
-                  <Link href={`/tenants/edit/${tenant.id}`}>
+                  <Link href={`/tenants/edit/${activeTenant.id}`}>
                     <Edit className="mr-2 h-4 w-4" />
                     Edit Tenant
                   </Link>
@@ -691,28 +693,6 @@ export default function TenantDetailDialog({
                   Informasi Tenant
                 </button>
                 <button
-                  onClick={() => setActiveTab('history')}
-                  className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                    activeTab === 'history'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  <History className="h-4 w-4" />
-                  History Aktivitas
-                </button>
-                <button
-                  onClick={() => setActiveTab('deposit')}
-                  className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                    activeTab === 'deposit'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  <Wallet className="h-4 w-4" />
-                  History Deposito
-                </button>
-                <button
                   onClick={() => setActiveTab('payment')}
                   className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
                     activeTab === 'payment'
@@ -722,6 +702,17 @@ export default function TenantDetailDialog({
                 >
                   <CreditCard className="h-4 w-4" />
                   History Pembayaran
+                </button>
+                <button
+                  onClick={() => setActiveTab('history')}
+                  className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === 'history'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <History className="h-4 w-4" />
+                  History Aktivitas
                 </button>
               </div>
 
@@ -744,14 +735,14 @@ export default function TenantDetailDialog({
                               Kode Tenant
                             </label>
                             <p className="text-sm font-mono bg-muted p-2 rounded">
-                              {tenant.code}
+                              {activeTenant.code}
                             </p>
                           </div>
                           <div>
                             <label className="text-sm font-medium text-muted-foreground">
                               Nama Tenant
                             </label>
-                            <p className="text-sm font-medium">{tenant.name}</p>
+                            <p className="text-sm font-medium">{activeTenant.name}</p>
                           </div>
                           <div>
                             <label className="text-sm font-medium text-muted-foreground">
@@ -760,12 +751,12 @@ export default function TenantDetailDialog({
                             <p className="text-sm font-medium">
                               {(() => {
                                 try {
-                                  if (tenant.user && typeof tenant.user === 'object') {
-                                    return tenant.user.name || tenant.user.email || '-';
+                                  if (activeTenant.user && typeof activeTenant.user === 'object') {
+                                    return activeTenant.user.name || activeTenant.user.email || '-';
                                   }
-                                  return tenant.user || '-';
+                                  return activeTenant.user || '-';
                                 } catch (error) {
-                                  console.error('Error rendering user field:', error, tenant.user);
+                                  console.error('Error rendering user field:', error, activeTenant.user);
                                   return '-';
                                 }
                               })()}
@@ -779,13 +770,13 @@ export default function TenantDetailDialog({
                               {(() => {
                                 // Use status from database if available, otherwise calculate based on contract_end_at
                                 let tenantStatus: string;
-                                if (tenant.status) {
-                                  // Use status from database
-                                  tenantStatus = tenant.status;
+                                const normalizedStatus = normalizeTenantStatus(activeTenant.status);
+                                if (normalizedStatus) {
+                                  tenantStatus = normalizedStatus;
                                 } else {
                                   // Fallback: Calculate tenant status based on contract_end_at
                                   const today = new Date()
-                                  const endDate = new Date(tenant.contract_end_at)
+                                  const endDate = new Date(activeTenant.contract_end_at)
                                   const diffDays = Math.ceil((endDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
                                   tenantStatus = diffDays < 0 ? 'expired' : 'active'
                                 }
@@ -816,20 +807,20 @@ export default function TenantDetailDialog({
                             <label className="text-sm font-medium text-muted-foreground">
                               Mulai Kontrak
                             </label>
-                            <p className="text-sm font-medium">{formatDate(tenant.contract_begin_at)}</p>
+                            <p className="text-sm font-medium">{formatDate(activeTenant.contract_begin_at)}</p>
                           </div>
                           <div>
                             <label className="text-sm font-medium text-muted-foreground">
                               Berakhir Kontrak
                             </label>
-                            <p className="text-sm font-medium">{formatDate(tenant.contract_end_at)}</p>
+                            <p className="text-sm font-medium">{formatDate(activeTenant.contract_end_at)}</p>
                           </div>
                           <div>
                             <label className="text-sm font-medium text-muted-foreground">
                               Durasi Sewa
                             </label>
                             <p className="text-sm font-medium">
-                              {tenant.rent_duration} {DURATION_UNIT_LABELS[tenant.rent_duration_unit] || tenant.rent_duration_unit}
+                              {activeTenant.rent_duration} {DURATION_UNIT_LABELS[activeTenant.rent_duration_unit] || activeTenant.rent_duration_unit}
                             </p>
                           </div>
                           <div>
@@ -837,138 +828,102 @@ export default function TenantDetailDialog({
                               Harga Sewa
                             </label>
                             <p className="text-sm font-medium">
-                              {tenant.rent_price 
-                                ? new Intl.NumberFormat('id-ID', {
-                                    style: 'currency',
-                                    currency: 'IDR',
-                                    minimumFractionDigits: 0,
-                                    maximumFractionDigits: 0,
-                                  }).format(tenant.rent_price)
-                                : '-'}
+                              {formatCurrencyIdr(totalRentPrice)}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Total harga sewa + PPN
                             </p>
                           </div>
-                          {(
-                            <div>
-                              <label className="text-sm font-medium text-muted-foreground">
-                                Harga Bayar Sewa
-                              </label>
-                              <p className="text-sm font-medium">
-                                {(() => {
-                                  const rentPrice = tenant.rent_price || 0
-                                  const downPayment = tenant.down_payment || 0
-                                  const duration = parseInt(String(tenant.rent_duration)) || 0
-                                  
-                                  // Normalize rent_duration_unit to number: 0 = year, 1 = month
-                                  let durationUnitNum: number
-                                  if (typeof tenant.rent_duration_unit === 'number') {
-                                    durationUnitNum = tenant.rent_duration_unit
-                                  } else if (typeof tenant.rent_duration_unit === 'string') {
-                                    const unitStr = tenant.rent_duration_unit.toLowerCase()
-                                    durationUnitNum = (unitStr === 'year' || unitStr === DURATION_UNITS.YEAR) ? 0 : 1
-                                  } else {
-                                    durationUnitNum = 1 // default to month
-                                  }
-                                  
-                                  // Normalize payment_term to number: 0 = year, 1 = month
-                                  let paymentTermNum: number
-                                  if (typeof tenant.payment_term === 'number') {
-                                    paymentTermNum = tenant.payment_term
-                                  } else if (typeof tenant.payment_term === 'string') {
-                                    const termStr = tenant.payment_term.trim().toLowerCase()
-                                    if (termStr === '0' || termStr === 'year' || termStr === DURATION_UNITS.YEAR) {
-                                      paymentTermNum = 0
-                                    } else if (termStr === '1' || termStr === 'month' || termStr === DURATION_UNITS.MONTH) {
-                                      paymentTermNum = 1
-                                    } else {
-                                      paymentTermNum = 1 // default to month
-                                    }
-                                  } else {
-                                    paymentTermNum = 1 // default to month
-                                  }
-                                  
-                                  if (duration > 0) {
-                                    let numberOfPayments = 0
-                                    
-                                    // Check payment_term first
-                                    if (paymentTermNum === durationUnitNum) {
-                                      // If payment_term is same as rent_duration_unit, number of payments is duration
-                                      numberOfPayments = duration
-                                    } else {
-                                      // If payment_term is not the same as rent_duration_unit
-                                      if (paymentTermNum === 1 && durationUnitNum === 0) {
-                                        // If payment_term is month (1) and rent_duration_unit is year (0), number of payments is duration * 12
-                                        numberOfPayments = duration * 12
-                                      }
-                                    }
-                                    
-                                    // Harga bayar is (rentPrice - downPayment) / number of payments
-                                    const pricePerTerm = numberOfPayments > 0 ? (rentPrice - downPayment) / numberOfPayments : 0
-                                    
-                                    if (numberOfPayments > 0 && pricePerTerm > 0) {
-                                      return new Intl.NumberFormat('id-ID', {
-                                        style: 'currency',
-                                        currency: 'IDR',
-                                        minimumFractionDigits: 0,
-                                        maximumFractionDigits: 0,
-                                      }).format(pricePerTerm)
-                                    }
-                                  }
-                                  return '-'
-                                })()}
-                              </p>
-                            </div>
-                          )}
                           <div>
                             <label className="text-sm font-medium text-muted-foreground">
-                              Unit & Asset
+                              Tipe Bangunan
+                            </label>
+                            <div className="mt-1">
+                              {tenantDetailLoading ? (
+                                <span className="text-sm text-muted-foreground">Memuat...</span>
+                              ) : buildingType ? (
+                                <Badge variant="secondary" className="text-sm">
+                                  {buildingType === 'unit' ? 'Unit' : 'Asset'}
+                                </Badge>
+                              ) : (
+                                <span className="text-sm text-muted-foreground">-</span>
+                              )}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-sm font-medium text-muted-foreground">
+                              {buildingType === 'asset' ? 'Asset yang Digunakan' : 'Unit yang Digunakan'}
                             </label>
                             <div className="flex flex-col gap-2 mt-1">
-                              {(() => {
+                              {tenantDetailLoading ? (
+                                <span className="text-sm text-muted-foreground">Memuat...</span>
+                              ) : (() => {
                                 try {
-                                  // Check if units array exists and has items
-                                  if (tenant.units && Array.isArray(tenant.units) && tenant.units.length > 0) {
-                                    return tenant.units.map((unit, index) => {
-                                      if (!unit) return null;
-                                      const unitName = unit.name || unit.id || `Unit ${index + 1}`;
-                                      const assetName = unit.asset?.name || unit.asset?.code || (unit.asset_id ? `Asset ${unit.asset_id}` : null);
-                                      
-                                      return (
-                                        <div key={unit.id || index} className="flex flex-col gap-1">
-                                          <Badge variant="outline" className="text-sm w-fit">
-                                            {unitName}
-                                          </Badge>
-                                          {assetName && (
-                                            <div className="text-xs text-muted-foreground ml-1">
-                                              Asset: {assetName}
-                                            </div>
-                                          )}
-                                        </div>
-                                      );
-                                    }).filter(Boolean);
+                                  if (buildingType === 'unit') {
+                                    if (activeTenant.units && Array.isArray(activeTenant.units) && activeTenant.units.length > 0) {
+                                      return activeTenant.units.map((unit, index) => {
+                                        if (!unit) return null
+                                        const unitName = unit.name || unit.code || unit.id || `Unit ${index + 1}`
+                                        const assetName = unit.asset?.name || unit.asset?.code || null
+
+                                        return (
+                                          <div key={unit.id || index} className="flex flex-col gap-1">
+                                            <Badge variant="outline" className="text-sm w-fit">
+                                              {unitName}
+                                            </Badge>
+                                            {assetName && (
+                                              <div className="text-xs text-muted-foreground ml-1">
+                                                Asset: {assetName}
+                                              </div>
+                                            )}
+                                          </div>
+                                        )
+                                      }).filter(Boolean)
+                                    }
+
+                                    if (activeTenant.unit_ids && Array.isArray(activeTenant.unit_ids) && activeTenant.unit_ids.length > 0) {
+                                      return activeTenant.unit_ids.map((unitId, index) => (
+                                        <Badge key={index} variant="outline" className="text-sm w-fit">
+                                          {unitId}
+                                        </Badge>
+                                      ))
+                                    }
                                   }
-                                  
-                                  // Fallback: check unit_ids
-                                  if (tenant.unit_ids && Array.isArray(tenant.unit_ids) && tenant.unit_ids.length > 0) {
-                                    return tenant.unit_ids.map((unitId, index) => (
-                                      <Badge key={index} variant="outline" className="text-sm w-fit">
-                                        {unitId}
-                                      </Badge>
-                                    ));
+
+                                  if (buildingType === 'asset') {
+                                    if (activeTenant.assets && Array.isArray(activeTenant.assets) && activeTenant.assets.length > 0) {
+                                      return activeTenant.assets.map((asset: Asset, index: number) => {
+                                        const assetName = asset.name || asset.code || asset.id || `Asset ${index + 1}`
+                                        const assetTypeLabel = asset.asset_type != null ? getAssetTypeLabel(asset.asset_type) : null
+
+                                        return (
+                                          <div key={asset.id || index} className="flex flex-col gap-1">
+                                            <Badge variant="outline" className="text-sm w-fit">
+                                              {assetName}
+                                            </Badge>
+                                            {assetTypeLabel && (
+                                              <div className="text-xs text-muted-foreground ml-1">
+                                                Tipe: {assetTypeLabel}
+                                              </div>
+                                            )}
+                                          </div>
+                                        )
+                                      })
+                                    }
+
+                                    if (activeTenant.asset_ids && Array.isArray(activeTenant.asset_ids) && activeTenant.asset_ids.length > 0) {
+                                      return activeTenant.asset_ids.map((assetId, index) => (
+                                        <Badge key={index} variant="outline" className="text-sm w-fit">
+                                          {assetId}
+                                        </Badge>
+                                      ))
+                                    }
                                   }
-                                  
-                                  // If unit_ids is a string
-                                  if (tenant.unit_ids && typeof tenant.unit_ids === 'string') {
-                                    return (
-                                      <Badge variant="outline" className="text-sm w-fit">
-                                        {tenant.unit_ids}
-                                      </Badge>
-                                    );
-                                  }
-                                  
-                                  return <span className="text-sm text-muted-foreground">-</span>;
+
+                                  return <span className="text-sm text-muted-foreground">-</span>
                                 } catch (error) {
-                                  console.error('Error rendering unit field:', error, tenant.units, tenant.unit_ids);
-                                  return <span className="text-sm text-muted-foreground">-</span>;
+                                  console.error('Error rendering building resources:', error, activeTenant.units, activeTenant.assets)
+                                  return <span className="text-sm text-muted-foreground">-</span>
                                 }
                               })()}
                             </div>
@@ -992,9 +947,9 @@ export default function TenantDetailDialog({
                               Dokumen Identitas
                             </label>
                             <div className="mt-2">
-                              {tenant.tenant_identifications && tenant.tenant_identifications.length > 0 ? (
+                              {activeTenant.tenant_identifications && activeTenant.tenant_identifications.length > 0 ? (
                                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                  {tenant.tenant_identifications.map((doc, index) => {
+                                  {activeTenant.tenant_identifications.map((doc, index) => {
                                     const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(doc) || doc.startsWith('data:image')
                                     const isPdf = /\.pdf$/i.test(doc)
                                     const fileName = doc.split('/').pop() || `Dokumen ${index + 1}`
@@ -1063,9 +1018,9 @@ export default function TenantDetailDialog({
                               Dokumen Kontrak
                             </label>
                             <div className="mt-2">
-                              {tenant.contract_documents && tenant.contract_documents.length > 0 ? (
+                              {activeTenant.contract_documents && activeTenant.contract_documents.length > 0 ? (
                                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                  {tenant.contract_documents.map((doc, index) => {
+                                  {activeTenant.contract_documents.map((doc, index) => {
                                     const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(doc) || doc.startsWith('data:image')
                                     const isPdf = /\.pdf$/i.test(doc)
                                     const fileName = doc.split('/').pop() || `Dokumen ${index + 1}`
@@ -1135,10 +1090,23 @@ export default function TenantDetailDialog({
                             </label>
                             <div className="flex flex-wrap gap-1 mt-1">
                               <Badge variant="outline" className="text-sm">
-                                {getCategoryLabel(tenant)}
+                                {getCategoryLabel(activeTenant)}
                               </Badge>
                             </div>
                           </div>
+                          {activeTenant.bank && (
+                            <div>
+                              <label className="text-sm font-medium text-muted-foreground">
+                                Bank
+                              </label>
+                              <div className="mt-1 text-sm">
+                                <p className="font-medium">{activeTenant.bank.bank_name}</p>
+                                <p className="text-muted-foreground">
+                                  {activeTenant.bank.bank_account} — {activeTenant.bank.holder_name}
+                                </p>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </CardContent>
                     </Card>
@@ -1157,20 +1125,20 @@ export default function TenantDetailDialog({
                             <label className="text-sm font-medium text-muted-foreground">
                               Dibuat Pada
                             </label>
-                            <p className="text-sm font-medium">{formatDate(tenant.created_at)}</p>
+                            <p className="text-sm font-medium">{formatDate(activeTenant.created_at)}</p>
                           </div>
                           <div>
                             <label className="text-sm font-medium text-muted-foreground">
                               Diperbarui Pada
                             </label>
-                            <p className="text-sm font-medium">{formatDate(tenant.updated_at)}</p>
+                            <p className="text-sm font-medium">{formatDate(activeTenant.updated_at)}</p>
                           </div>
                           <div>
                             <label className="text-sm font-medium text-muted-foreground">
                               ID Tenant
                             </label>
                             <p className="text-xs font-mono bg-muted p-2 rounded">
-                              {tenant.id}
+                              {activeTenant.id}
                             </p>
                           </div>
                           <div>
@@ -1178,7 +1146,7 @@ export default function TenantDetailDialog({
                               ID User
                             </label>
                             <p className="text-xs font-mono bg-muted p-2 rounded">
-                              {tenant.user_id}
+                              {activeTenant.user_id}
                             </p>
                           </div>
                         </div>
@@ -1197,102 +1165,14 @@ export default function TenantDetailDialog({
                         </CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <TenantLogsTable tenantId={tenant.id} loading={false} />
-                      </CardContent>
-                    </Card>
-                  </div>
-                )}
-
-                {activeTab === 'deposit' && (
-                  <div className="space-y-6">
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                          <Wallet className="h-5 w-5" />
-                          History Deposito
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        {depositLogs.length > 0 ? (
-                          <div className="overflow-x-auto">
-                            <Table>
-                              <TableHeader>
-                                <TableRow>
-                                  <TableHead>Tanggal</TableHead>
-                                  <TableHead>Reason</TableHead>
-                                  <TableHead>Current Deposit</TableHead>
-                                  <TableHead>Dibuat Oleh</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {depositLogs.map((log) => {
-                                  const reason = log.reason || '-'
-                                  const newDeposit = log.new_deposit || 0
-                                  const oldDeposit = log.old_deposit || 0
-                                  const delta = newDeposit - oldDeposit
-                                  const isIncrease = delta > 0
-                                  const isDecrease = delta < 0
-                                  
-                                  return (
-                                    <TableRow key={log.id}>
-                                      <TableCell className="text-sm">
-                                        {formatDate(log.created_at)}
-                                      </TableCell>
-                                      <TableCell>
-                                        <span className="text-sm">{reason}</span>
-                                      </TableCell>
-                                      <TableCell>
-                                        <div className="flex items-center gap-2">
-                                          <span className="text-sm font-medium">
-                                            {new Intl.NumberFormat('id-ID', {
-                                              style: 'currency',
-                                              currency: 'IDR',
-                                              minimumFractionDigits: 0,
-                                            }).format(Number(newDeposit))}
-                                          </span>
-                                          {delta !== 0 && (
-                                            <span className={`text-sm font-semibold ${
-                                              isIncrease ? 'text-green-600' : 'text-red-600'
-                                            }`}>
-                                              ({isIncrease ? '+' : '-'}
-                                              {new Intl.NumberFormat('id-ID', {
-                                                style: 'currency',
-                                                currency: 'IDR',
-                                                minimumFractionDigits: 0,
-                                              }).format(Math.abs(delta))})
-                                            </span>
-                                          )}
-                                        </div>
-                                      </TableCell>
-                                      <TableCell>
-                                        {log.created_by ? (
-                                          <div>
-                                            <p className="font-medium text-sm">{log.created_by.name}</p>
-                                            <p className="text-xs text-muted-foreground">{log.created_by.email}</p>
-                                          </div>
-                                        ) : (
-                                          <span className="text-muted-foreground">-</span>
-                                        )}
-                                      </TableCell>
-                                    </TableRow>
-                                  )
-                                })}
-                              </TableBody>
-                            </Table>
-                          </div>
-                        ) : (
-                          <div className="text-center py-8 text-muted-foreground">
-                            <Wallet className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                            <p>Tidak ada history deposito</p>
-                          </div>
-                        )}
+                        <TenantLogsTable tenantId={activeTenant.id} loading={false} />
                       </CardContent>
                     </Card>
                   </div>
                 )}
 
                 {activeTab === 'payment' && (
-                  <div className="space-y-6">
+                  <div className="min-w-0 space-y-6">
                     {/* Payment Summary Card */}
                     <Card>
                       <CardHeader>
@@ -1365,14 +1245,16 @@ export default function TenantDetailDialog({
                             History Pembayaran
                           </CardTitle>
                           <div className="flex items-center gap-2">
-                            <Button
-                              onClick={handleCreatePayment}
-                              size="sm"
-                              className="flex items-center gap-2"
-                            >
-                              <Plus className="h-4 w-4" />
-                              Sisa Pembayaran
-                            </Button>
+                            {canWrite && (
+                              <Button
+                                onClick={handleCreatePayment}
+                                size="sm"
+                                className="flex items-center gap-2"
+                              >
+                                <Plus className="h-4 w-4" />
+                                Sisa Pembayaran
+                              </Button>
+                            )}
                             <Label htmlFor="status-filter" className="text-sm">Filter Status:</Label>
                             <Select
                               value={paymentStatusFilter !== undefined ? String(paymentStatusFilter) : 'all'}
@@ -1393,7 +1275,7 @@ export default function TenantDetailDialog({
                           </div>
                         </div>
                       </CardHeader>
-                      <CardContent>
+                      <CardContent className="min-w-0">
                         {paymentLoading ? (
                           <div className="flex items-center justify-center py-8">
                             <Loader2 className="h-6 w-6 animate-spin mr-2" />
@@ -1401,49 +1283,115 @@ export default function TenantDetailDialog({
                           </div>
                         ) : paymentLogs.length > 0 ? (
                           <>
-                            <div className="overflow-x-auto">
-                              <Table>
+                            <div className="max-w-full min-w-0 rounded-md border bg-card shadow-sm">
+                              <p className="border-b bg-muted/40 px-3 py-2 text-xs text-muted-foreground md:hidden">
+                                Geser ke samping untuk melihat semua kolom.
+                              </p>
+                              <Table className="min-w-[1200px] w-max">
                                 <TableHeader>
                                   <TableRow>
-                                    <TableHead>Batas Pembayaran</TableHead>
-                                    <TableHead>Jumlah Dibayar</TableHead>
-                                    <TableHead>Status</TableHead>
-                                    <TableHead>Tanggal Pembayaran</TableHead>
-                                    <TableHead>Metode Pembayaran</TableHead>
-                                    <TableHead>Catatan</TableHead>
+                                    <TableHead className="z-30 w-12 min-w-12 max-w-12 shrink-0 bg-muted text-center md:sticky md:left-0 md:border-r">
+                                      No
+                                    </TableHead>
+                                    <TableHead className="z-30 w-[140px] min-w-[140px] max-w-[140px] shrink-0 bg-muted text-center md:sticky md:left-12 md:border-r">
+                                      Aksi
+                                    </TableHead>
+                                    <TableHead className="z-30 w-32 min-w-[8rem] max-w-[8rem] shrink-0 bg-muted whitespace-nowrap md:sticky md:left-[188px] md:border-r">
+                                      No. Invoice
+                                    </TableHead>
+                                    <TableHead className="whitespace-nowrap">Status</TableHead>
+                                    <TableHead className="whitespace-nowrap">Periode Tagihan</TableHead>
+                                    <TableHead className="whitespace-nowrap">Jatuh Tempo</TableHead>
+                                    <TableHead>Jenis Tagihan</TableHead>
+                                    <TableHead>SPK</TableHead>
+                                    <TableHead>Tgl. Invoice</TableHead>
+                                    <TableHead>PPh</TableHead>
+                                    <TableHead>Jumlah Tagihan</TableHead>
+                                    <TableHead>Tanggal Bayar</TableHead>
+                                    <TableHead>Jumlah Bayar</TableHead>
+                                    <TableHead>Metode</TableHead>
+                                    <TableHead className="min-w-[140px]">Catatan</TableHead>
+                                    <TableHead>Outstanding</TableHead>
+                                    <TableHead className="whitespace-nowrap">Overdue (hari)</TableHead>
+                                    <TableHead>Rate</TableHead>
+                                    <TableHead className="whitespace-nowrap">Last Charge</TableHead>
                                     <TableHead>Diubah Oleh</TableHead>
-                                    <TableHead>Aksi</TableHead>
                                   </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                  {paymentLogs.map((log) => {
+                                  {paymentLogs.map((log, logIndex) => {
                                     const paidAmount = log.paid_amount || 0
-                                    const formattedPaidAmount = new Intl.NumberFormat('id-ID', {
-                                      style: 'currency',
-                                      currency: 'IDR',
-                                      minimumFractionDigits: 0,
-                                      maximumFractionDigits: 0,
-                                    }).format(paidAmount)
+                                    const formattedPaidAmount =
+                                      paidAmount > 0 ? formatCurrencyIdr(paidAmount) : '-'
 
                                     return (
-                                      <TableRow key={log.id}>
-                                        <TableCell>
-                                          {log.payment_deadline ? formatDate(log.payment_deadline) : '-'}
+                                      <TableRow key={log.id} className="group hover:bg-muted">
+                                        <TableCell className="z-20 w-12 min-w-12 max-w-12 shrink-0 bg-background text-center text-sm font-medium group-hover:bg-muted md:sticky md:left-0 md:border-r">
+                                          {((paymentPage - 1) * paymentLimit) + logIndex + 1}
                                         </TableCell>
-                                        <TableCell>
-                                          {paidAmount > 0 ? formattedPaidAmount : '-'}
+                                        <TableCell className="z-20 w-[140px] min-w-[140px] max-w-[140px] shrink-0 bg-background group-hover:bg-muted md:sticky md:left-12 md:border-r">
+                                          {log.status === 1 || !canWrite ? (
+                                            <span className="text-muted-foreground text-sm flex justify-center">-</span>
+                                          ) : (
+                                            <div className="flex justify-center">
+                                              <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => handleUpdatePayment(log)}
+                                              >
+                                                <Edit className="h-4 w-4 mr-1" />
+                                                Pelunasan
+                                              </Button>
+                                            </div>
+                                          )}
+                                        </TableCell>
+                                        <TableCell
+                                          className="z-20 w-32 min-w-[8rem] max-w-[8rem] shrink-0 truncate bg-background font-mono text-sm group-hover:bg-muted md:sticky md:left-[188px] md:border-r"
+                                          title={log.invoice_number || undefined}
+                                        >
+                                          {log.invoice_number || '-'}
                                         </TableCell>
                                         <TableCell>
                                           {getPaymentStatusBadge(log.status)}
                                         </TableCell>
+                                        <TableCell>{log.billing_period || '-'}</TableCell>
+                                        <TableCell>
+                                          {log.payment_deadline ? formatDate(log.payment_deadline) : '-'}
+                                        </TableCell>
+                                        <TableCell>{log.billing_type || '-'}</TableCell>
+                                        <TableCell className="whitespace-nowrap">{log.spk || '-'}</TableCell>
+                                        <TableCell>
+                                          {log.invoice_date
+                                            ? formatDate(String(log.invoice_date).slice(0, 10))
+                                            : '-'}
+                                        </TableCell>
+                                        <TableCell>
+                                          {formatCurrencyIdr(log.pph)}
+                                        </TableCell>
+                                        <TableCell>
+                                          {formatCurrencyIdr(log.billing_amount)}
+                                        </TableCell>
                                         <TableCell>
                                           {log.payment_date ? formatDate(log.payment_date) : '-'}
                                         </TableCell>
+                                        <TableCell>{formattedPaidAmount}</TableCell>
+                                        <TableCell>{paymentMethodLabel(log.payment_method)}</TableCell>
+                                        <TableCell className="max-w-[220px] align-top">
+                                          <span className="line-clamp-3 whitespace-pre-wrap break-words text-sm">
+                                            {log.notes?.trim() ? log.notes : '-'}
+                                          </span>
+                                        </TableCell>
+                                        <TableCell>{formatCurrencyIdr(log.outstanding)}</TableCell>
                                         <TableCell>
-                                          {log.payment_method || '-'}
+                                          {log.overdue != null
+                                            ? `${Math.round(Number(log.overdue))} hari`
+                                            : '-'}
                                         </TableCell>
                                         <TableCell>
-                                          {log.notes || '-'}
+                                          {formatBillingRatePercent(log.rate)}
+                                        </TableCell>
+                                        <TableCell>
+                                          {log.last_charge_date ? formatDate(log.last_charge_date) : '-'}
                                         </TableCell>
                                         <TableCell>
                                           {log.updatedBy ? (
@@ -1453,20 +1401,6 @@ export default function TenantDetailDialog({
                                             </div>
                                           ) : (
                                             <span className="text-muted-foreground">-</span>
-                                          )}
-                                        </TableCell>
-                                        <TableCell>
-                                          {log.status === 1 ? (
-                                            <span className="text-muted-foreground text-sm">-</span>
-                                          ) : (
-                                            <Button
-                                              variant="outline"
-                                              size="sm"
-                                              onClick={() => handleUpdatePayment(log)}
-                                            >
-                                              <Edit className="h-4 w-4 mr-1" />
-                                              Pelunasan
-                                            </Button>
                                           )}
                                         </TableCell>
                                       </TableRow>
@@ -1536,11 +1470,11 @@ export default function TenantDetailDialog({
           <DialogHeader>
             <DialogTitle>Pelunasan Pembayaran</DialogTitle>
             <DialogDescription>
-              Perbarui status pembayaran untuk {selectedPayment?.amount ? new Intl.NumberFormat('id-ID', {
+              Perbarui status pembayaran untuk {selectedPayment?.paid_amount ? new Intl.NumberFormat('id-ID', {
                 style: 'currency',
                 currency: 'IDR',
                 minimumFractionDigits: 0,
-              }).format(selectedPayment.amount) : 'pembayaran ini'}
+              }).format(selectedPayment.paid_amount) : 'pembayaran ini'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -1577,7 +1511,7 @@ export default function TenantDetailDialog({
                 type="text"
                 value={paidAmountDisplay}
                 onChange={(e) => handlePaidAmountChange(e.target.value)}
-                placeholder={pricePerTerm ? formatPrice(pricePerTerm) : "Masukkan jumlah yang dibayar"}
+                placeholder="Masukkan jumlah yang dibayar"
                 inputMode="decimal"
               />
             </div>
@@ -1630,20 +1564,20 @@ export default function TenantDetailDialog({
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="create_amount">
-                Jumlah Pembayaran <span className="text-red-500">*</span>
+              <Label htmlFor="create_paid_amount">
+                Jumlah Dibayar <span className="text-red-500">*</span>
               </Label>
               <div className="relative">
                 <span className="absolute left-3 top-2.5 text-muted-foreground">Rp</span>
                 <Input
-                  id="create_amount"
+                  id="create_paid_amount"
                   type="text"
-                  value={formatPrice(createPaymentData.amount || 0)}
+                  value={formatPrice(createPaymentData.paid_amount || 0)}
                   onChange={(e) => {
                     const parsedValue = parsePrice(e.target.value)
-                    setCreatePaymentData(prev => ({ 
-                      ...prev, 
-                      amount: parsedValue
+                    setCreatePaymentData(prev => ({
+                      ...prev,
+                      paid_amount: parsedValue
                     }))
                   }}
                   placeholder="0"

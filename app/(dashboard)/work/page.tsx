@@ -9,81 +9,53 @@ import toast from 'react-hot-toast'
 import { GenerateTaskButton } from '../../../components/work/GenerateTaskButton'
 import { TaskList } from '../../../components/work/TaskList'
 import { CompleteTaskDialog } from '../../../components/work/CompleteTaskDialog'
+import {
+  filterRoutineTasksForActiveShift,
+  isAnyShiftEndingSoon,
+  normalizeFlatUserTask,
+  parseNonRoutineUserTasksResponse,
+  parseRoutineUserTasksResponse,
+} from '@/lib/work/userTasksSplit'
 
 function WorkContent() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const [userTasks, setUserTasks] = useState<UserTask[]>([])
+  const [routineUserTasks, setRoutineUserTasks] = useState<UserTask[]>([])
+  const [nonRoutineUserTasks, setNonRoutineUserTasks] = useState<UserTask[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [selectedUserTask, setSelectedUserTask] = useState<UserTask | null>(null)
   const [isCompleteDialogOpen, setIsCompleteDialogOpen] = useState(false)
-
-  // Filter tasks for today only
-  const filterTasksForToday = (tasks: UserTask[]): UserTask[] => {
-    if (tasks.length === 0) return []
-    
-    // Get today's date string in Jakarta timezone (YYYY-MM-DD format)
-    const now = new Date()
-    const jakartaDateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }) // en-CA gives YYYY-MM-DD format
-    
-    return tasks.filter(task => {
-      // Only include tasks with created_at (format: 2025-11-13T02:19:33.129Z)
-      if (!task.created_at) return false
-      
-      try {
-        // Parse ISO string format (2025-11-13T02:19:33.129Z)
-        const createdDate = new Date(task.created_at)
-        const createdDateStr = createdDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' })
-        
-        // Compare date strings (YYYY-MM-DD format)
-        return createdDateStr === jakartaDateStr
-      } catch {
-        return false // On error, exclude the task
-      }
-    })
-  }
-
-  // Check if user tasks exist for today
-  const hasUserTasksToday = (tasks: UserTask[]): boolean => {
-    return filterTasksForToday(tasks).length > 0
-  }
+  const [now, setNow] = useState<Date>(() => new Date())
 
   const loadUserTasks = async () => {
     try {
       setIsLoading(true)
-      const response = await userTasksApi.getUserTasks()
-      
-      if (response.success && response.data) {
-        const responseData = response.data as any
-        // Handle different response structures
-        let tasks: UserTask[] = []
-        
-        // Check if responseData is directly an array
-        if (Array.isArray(responseData)) {
-          tasks = responseData
-        } 
-        // Check if responseData has a nested data property
-        else if (responseData && typeof responseData === 'object' && Array.isArray(responseData.data)) {
-          tasks = responseData.data
-        }
-        // Check for other nested structures
-        else if (responseData && typeof responseData === 'object' && responseData.tasks && Array.isArray(responseData.tasks)) {
-          tasks = responseData.tasks
-        }
-        
-        if (tasks.length === 0 && responseData) {
-          console.warn('No tasks found in response. Response structure:', responseData)
-        }
-        
-        setUserTasks(tasks)
-      } else {
-        console.error('Failed to load user tasks:', response.error)
-        setUserTasks([])
+      const [routineRes, nonRoutineRes] = await Promise.all([
+        userTasksApi.getUserTasks({ limit: 10000 }),
+        userTasksApi.getNonRoutineUserTasks(),
+      ])
+
+      let routine: UserTask[] = []
+      if (routineRes.success && routineRes.data != null) {
+        routine = parseRoutineUserTasksResponse(routineRes.data)
+      } else if (!routineRes.success) {
+        console.error('Failed to load routine user tasks:', routineRes.error)
       }
+
+      let nonRoutine: UserTask[] = []
+      if (nonRoutineRes.success && nonRoutineRes.data != null) {
+        nonRoutine = parseNonRoutineUserTasksResponse(nonRoutineRes.data).map(normalizeFlatUserTask)
+      } else if (!nonRoutineRes.success) {
+        console.error('Failed to load non-routine user tasks:', nonRoutineRes.error)
+      }
+
+      setRoutineUserTasks(routine)
+      setNonRoutineUserTasks(nonRoutine)
     } catch (error) {
       console.error('Error loading user tasks:', error)
       toast.error('Terjadi kesalahan saat memuat data')
-      setUserTasks([])
+      setRoutineUserTasks([])
+      setNonRoutineUserTasks([])
     } finally {
       setIsLoading(false)
     }
@@ -91,6 +63,11 @@ function WorkContent() {
 
   useEffect(() => {
     loadUserTasks()
+  }, [])
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(new Date()), 30 * 1000)
+    return () => clearInterval(interval)
   }, [])
 
   const handleGenerateSuccess = () => {
@@ -142,8 +119,16 @@ function WorkContent() {
     
   }
 
-  const tasksForToday = filterTasksForToday(userTasks)
-  const hasTasksToday = hasUserTasksToday(userTasks)
+  /**
+   * Task rutin yang masih aktif sekarang (WIB):
+   * - batch hari ini yang jendela shift-nya masih berjalan, atau
+   * - batch kemarin yang shift-nya melewati tengah malam dan belum berakhir.
+   */
+  const activeRoutineTasks = filterRoutineTasksForActiveShift(routineUserTasks, now)
+  const hasActiveRoutineTasks = activeRoutineTasks.length > 0
+  /** ≤ 1 jam sebelum shift aktif berakhir → tampilkan tombol Generate untuk shift berikutnya. */
+  const shiftEndingSoon = isAnyShiftEndingSoon(activeRoutineTasks, now)
+  const hasNonRoutineThisMonth = nonRoutineUserTasks.length > 0
 
   return (
     <div className="space-y-4 md:space-y-6 px-4 md:px-0">
@@ -154,18 +139,28 @@ function WorkContent() {
             {getPageTitle()}
           </h1>
           <p className="text-sm md:text-base text-muted-foreground mt-1">
-            Kelola tugas dan selesaikan task sesuai dengan task group
+            Task non-rutin (bulanan) dan task rutin (generate shift) ditampilkan terpisah
           </p>
         </div>
       </div>
 
-      {/* Generate Button - Show if no tasks for today */}
-      {!isLoading && !hasTasksToday && (
+      {/*
+        Tombol Generate:
+        - Belum ada shift aktif → ajak generate shift baru.
+        - Atau, shift aktif akan berakhir <= 1 jam lagi (mis. 06:00 untuk shift
+          19:00-07:00) → tampilkan tombol agar petugas pengganti bisa
+          men-generate shift berikutnya saat pergantian.
+      */}
+      {!isLoading && (!hasActiveRoutineTasks || shiftEndingSoon) && (
         <Card>
           <CardContent className="flex items-center justify-center py-8 md:py-12 px-4">
             <div className="text-center space-y-4 w-full max-w-md">
               <p className="text-sm md:text-base text-muted-foreground">
-                Belum ada user task untuk hari ini
+                {!hasActiveRoutineTasks
+                  ? hasNonRoutineThisMonth
+                    ? 'Belum ada task rutin yang aktif — generate shift baru. Task non-rutin bulan ini ada di bawah.'
+                    : 'Belum ada task rutin yang aktif — generate shift baru'
+                  : 'Shift saat ini hampir berakhir — generate task untuk shift berikutnya (pergantian shift)'}
               </p>
               <div className="flex justify-center">
                 <GenerateTaskButton onGenerateSuccess={handleGenerateSuccess} />
@@ -175,15 +170,38 @@ function WorkContent() {
         </Card>
       )}
 
-      {/* Task List */}
-      {hasTasksToday && (
-        <TaskList
-          userTasks={tasksForToday}
-          isLoading={isLoading}
-          onStartTask={handleStartTask}
-          onCompleteTask={handleCompleteTask}
-        />
-      )}
+      <div className="space-y-8">
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold tracking-tight">Task rutin (generate)</h2>
+          <p className="text-sm text-muted-foreground">
+            Task rutin shift aktif (WIB): shift hari ini yang sedang berjalan, atau shift kemarin yang melewati tengah malam dan belum mencapai end_time
+          </p>
+          <TaskList
+            userTasks={activeRoutineTasks}
+            isLoading={isLoading}
+            onStartTask={handleStartTask}
+            onCompleteTask={handleCompleteTask}
+            variant="routine"
+            emptyListMessage="Tidak ada task rutin pada shift aktif"
+            filterByTaskRequirement={false}
+          />
+        </section>
+
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold tracking-tight">Task non-rutin</h2>
+          <p className="text-sm text-muted-foreground">
+            Dari API non-rutin: filter bulan berjalan (created_at), jatuh tempo di kolom tanggal
+          </p>
+          <TaskList
+            userTasks={nonRoutineUserTasks}
+            isLoading={isLoading}
+            onStartTask={handleStartTask}
+            onCompleteTask={handleCompleteTask}
+            variant="non-routine"
+            emptyListMessage="Tidak ada task non-rutin untuk hari ini"
+          />
+        </section>
+      </div>
 
       {/* Complete Task Dialog */}
       <CompleteTaskDialog

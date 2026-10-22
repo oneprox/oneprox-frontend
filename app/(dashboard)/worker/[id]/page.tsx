@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, Suspense } from 'react'
+import React, { Fragment, useState, useEffect, Suspense } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -17,25 +17,88 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Loader2, Calendar, Clock, MapPin, CheckCircle2, Eye, RefreshCw, ArrowLeft, User as UserIcon, ChevronDown, ChevronRight, Home, UserRoundPen } from 'lucide-react'
-import { attendanceApi, userTasksApi, usersApi, Attendance, UserTask, User } from '@/lib/api'
+import { Loader2, Calendar, Clock, MapPin, CheckCircle2, Eye, RefreshCw, ArrowLeft, User as UserIcon, ChevronDown, ChevronRight, Home, UserRoundPen, ImageIcon, Check, X, Circle } from 'lucide-react'
+import { attendanceApi, userTasksApi, usersApi, Attendance, UserTask, User, UserAsset } from '@/lib/api'
 import toast from 'react-hot-toast'
 import WorkerTaskDetailDialog from '@/components/dialogs/worker-task-detail-dialog'
+import TaskEvidenceBeforeAfterDialog, {
+  hasImageEvidence,
+} from '@/components/dialogs/task-evidence-before-after-dialog'
+import { buildPatrolScheduleTables, type CellStatus } from '@/lib/patrol-schedule'
+import { useReturnTo } from '@/lib/return-to'
+
+function isCleaningRole(roleName?: string | null): boolean {
+  const role = (roleName || '').toLowerCase()
+  return role.includes('kebersihan') || role.includes('cleaning')
+}
+
+function isSecurityRole(roleName?: string | null): boolean {
+  const role = (roleName || '').toLowerCase()
+  return role.includes('keamanan') || role.includes('security') || role.includes('satpam')
+}
+
+type SlotStatus = CellStatus
+
+function getProgressStatus(ut: UserTask): { label: string; className: string } {
+  const s = (ut.status || '').toLowerCase()
+  if (s === 'completed' || !!ut.completed_at) return { label: 'Selesai', className: 'border border-emerald-200 bg-emerald-50 text-emerald-800' }
+  if (s === 'in_progress' || s === 'inprogress') return { label: 'Dalam proses', className: 'border border-amber-200 bg-amber-50 text-amber-800' }
+  if (s === 'cancelled') return { label: 'Dibatalkan', className: 'border border-slate-200 bg-slate-100 text-slate-700' }
+  return { label: 'Menunggu', className: 'border border-slate-200 bg-white text-slate-600' }
+}
+
+function isTaskDone(ut: UserTask): boolean {
+  const s = (ut.status || '').toLowerCase()
+  if (s === 'completed' || !!ut.completed_at) return true
+  const children = Array.isArray(ut.sub_user_task) ? ut.sub_user_task as UserTask[] : []
+  if (children.length === 0) return false
+  return children.every(c => (c.status || '').toLowerCase() === 'completed' || !!c.completed_at)
+}
+
+function isTaskRunning(ut: UserTask): boolean {
+  const s = (ut.status || '').toLowerCase()
+  return s === 'inprogress' || s === 'in_progress' || (!!ut.started_at && !ut.completed_at)
+}
+
+function patrolPointTitle(ut: UserTask, main: UserTask, idx: number): string {
+  if (ut === main) return main.task?.name || 'Patroli'
+  return ut.task?.name || `Titik ${idx + 1}`
+}
+
+function PatrolStatusIcon({ status }: { status: SlotStatus }) {
+  if (status === 'selesai') return <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-white"><Check className="h-3 w-3" strokeWidth={3} /></span>
+  if (status === 'terlewat') return <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-red-500 text-white"><X className="h-3 w-3" strokeWidth={3} /></span>
+  if (status === 'proses') return <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-blue-500 text-white"><Loader2 className="h-3 w-3 animate-spin" /></span>
+  return <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border-2 border-slate-200 bg-white text-slate-300"><Circle className="h-3 w-3" /></span>
+}
 
 function WorkerDetailContent() {
   const router = useRouter()
+  // Dibuka dari dashboard (?returnTo=...): tampilkan tombol kembali ke dashboard.
+  const returnTo = useReturnTo()
   const params = useParams()
   const userId = params.id as string
   
   const [user, setUser] = useState<User | null>(null)
+  const [userAssets, setUserAssets] = useState<UserAsset[]>([])
   const [activeTab, setActiveTab] = useState('attendance')
   const [attendanceHistory, setAttendanceHistory] = useState<Attendance[]>([])
   const [userTasks, setUserTasks] = useState<UserTask[]>([])
   const [isLoadingUser, setIsLoadingUser] = useState(true)
+  const [isLoadingAssets, setIsLoadingAssets] = useState(true)
   const [isLoadingAttendance, setIsLoadingAttendance] = useState(true)
   const [isLoadingTasks, setIsLoadingTasks] = useState(true)
   const [selectedUserTask, setSelectedUserTask] = useState<UserTask | null>(null)
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false)
+  const [evidenceUserTask, setEvidenceUserTask] = useState<UserTask | null>(null)
+  const [isEvidenceDialogOpen, setIsEvidenceDialogOpen] = useState(false)
+  const toLocalDateInputValue = (date: Date) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
   // Initialize date range to start and end of current month
   // Default dari tanggal selalu tanggal 1
   const getStartOfMonth = () => {
@@ -44,12 +107,13 @@ function WorkerDetailContent() {
     const month = now.getMonth()
     // Always return date 1 of current month
     const date1 = new Date(year, month, 1)
-    return date1.toISOString().split('T')[0]
+    return toLocalDateInputValue(date1)
   }
   
   const getEndOfMonth = () => {
     const now = new Date()
-    return new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0]
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+    return toLocalDateInputValue(endOfMonth)
   }
   
   const [dateFrom, setDateFrom] = useState<string>(getStartOfMonth())
@@ -63,6 +127,33 @@ function WorkerDetailContent() {
   const [allUserTasks, setAllUserTasks] = useState<UserTask[]>([])
   const [isLoadingAllTasks, setIsLoadingAllTasks] = useState(false)
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set())
+
+  const getJakartaDateKey = (value?: string | Date): string | null => {
+    if (!value) return null
+    const date = value instanceof Date ? value : new Date(value)
+    if (Number.isNaN(date.getTime())) return null
+
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Jakarta',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date)
+
+    const year = parts.find((p) => p.type === 'year')?.value
+    const month = parts.find((p) => p.type === 'month')?.value
+    const day = parts.find((p) => p.type === 'day')?.value
+    if (!year || !month || !day) return null
+
+    return `${year}-${month}-${day}`
+  }
+
+  const parseYmdToUtcDate = (ymd?: string): Date | null => {
+    if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null
+    const [year, month, day] = ymd.split('-').map(Number)
+    if (!year || !month || !day) return null
+    return new Date(Date.UTC(year, month - 1, day))
+  }
 
   useEffect(() => {
     setMounted(true)
@@ -107,6 +198,26 @@ function WorkerDetailContent() {
     loadUser()
   }, [userId, router])
 
+  // Load user assets
+  useEffect(() => {
+    const loadAssets = async () => {
+      if (!userId) return
+      setIsLoadingAssets(true)
+      try {
+        const res = await usersApi.getUserAssets(userId)
+        const data = (res.data as any)?.data ?? res.data
+        setUserAssets(Array.isArray(data) ? data : [])
+      } catch (error) {
+        console.error('Load user assets error:', error)
+        setUserAssets([])
+      } finally {
+        setIsLoadingAssets(false)
+      }
+    }
+
+    loadAssets()
+  }, [userId])
+
   // Load attendance history
   const loadAttendanceHistory = async () => {
     if (!userId) return
@@ -146,6 +257,10 @@ function WorkerDetailContent() {
           }
         }
         
+        history.sort(
+          (a, b) =>
+            new Date(a.check_in_time).getTime() - new Date(b.check_in_time).getTime()
+        )
         console.log('Parsed attendance history:', history)
         setAttendanceHistory(history)
         
@@ -330,6 +445,44 @@ function WorkerDetailContent() {
     return allChildrenCompleted
   }
 
+  const getMainTaskId = (task: UserTask) => task.user_task_id ?? task.id
+
+  const getTaskRowKey = (task: UserTask): string =>
+    String(task.user_task_id ?? task.id ?? task.task_id ?? '')
+
+  const isSubTask = (task: UserTask) =>
+    task.is_main_task === false || !!task.parent_user_task_id
+
+  /** Total statistik = sub task + main task yang tidak punya sub task */
+  const mainHasSubTasksInList = (mainTask: UserTask, tasks: UserTask[]) => {
+    const mainId = getMainTaskId(mainTask)
+    return tasks.some(
+      (t) =>
+        isSubTask(t) &&
+        t.parent_user_task_id != null &&
+        (t.parent_user_task_id === mainId || t.parent_user_task_id === mainTask.id)
+    )
+  }
+
+  const isCountableForDailyStats = (task: UserTask, tasksForDate: UserTask[]) => {
+    if (isSubTask(task)) return true
+    const isMain =
+      task.is_main_task === true ||
+      (task.is_main_task !== false && !task.parent_user_task_id)
+    if (isMain) return !mainHasSubTasksInList(task, tasksForDate)
+    return false
+  }
+
+  const isCompletedForDailyStats = (task: UserTask, tasksForDate: UserTask[]) => {
+    if (isSubTask(task)) {
+      return (
+        task.status === 'completed' ||
+        (task.completed_at != null && task.completed_at !== undefined)
+      )
+    }
+    return isMainTaskCompletedByChildren(task, tasksForDate)
+  }
+
   // Group tasks by date and calculate statistics
   const getDailyWorkStatistics = () => {
     console.log('Calculating statistics from allUserTasks:', allUserTasks.length)
@@ -345,8 +498,8 @@ function WorkerDetailContent() {
       }
       
       try {
-        const createdDate = new Date(task.created_at)
-        const dateStr = createdDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' })
+        const dateStr = getJakartaDateKey(task.created_at)
+        if (!dateStr) return
         
         if (!tasksByDate[dateStr]) {
           tasksByDate[dateStr] = []
@@ -372,19 +525,13 @@ function WorkerDetailContent() {
         }
       }
       
-      // Get main tasks only
-      const mainTasks = tasksForDate.filter(task => {
-        return task.is_main_task === true || task.is_main_task === undefined
-      })
-      
-      // Process each main task
-      mainTasks.forEach(mainTask => {
+      const countableTasks = tasksForDate.filter((task) =>
+        isCountableForDailyStats(task, tasksForDate)
+      )
+
+      countableTasks.forEach((task) => {
         dailyStats[dateStr].total++
-        
-        // Check if completed (considering child tasks for tasks without validation/scan)
-        const isCompleted = isMainTaskCompletedByChildren(mainTask, tasksForDate)
-        
-        if (isCompleted) {
+        if (isCompletedForDailyStats(task, tasksForDate)) {
           dailyStats[dateStr].completed++
         } else {
           dailyStats[dateStr].pending++
@@ -392,6 +539,26 @@ function WorkerDetailContent() {
       })
     })
     
+    // Ensure all dates in selected filter range are represented, even if no task exists.
+    const fromUtc = parseYmdToUtcDate(taskDateFrom)
+    const toUtc = parseYmdToUtcDate(taskDateTo)
+    if (fromUtc && toUtc && fromUtc.getTime() <= toUtc.getTime()) {
+      const cursor = new Date(fromUtc)
+      while (cursor.getTime() <= toUtc.getTime()) {
+        const key = cursor.toISOString().slice(0, 10)
+        if (!dailyStats[key]) {
+          dailyStats[key] = {
+            date: key,
+            completed: 0,
+            pending: 0,
+            total: 0,
+            percentage: 0
+          }
+        }
+        cursor.setUTCDate(cursor.getUTCDate() + 1)
+      }
+    }
+
     console.log('Daily stats before percentage calculation:', dailyStats)
     
     // Calculate percentage for each day
@@ -400,9 +567,9 @@ function WorkerDetailContent() {
       stats.percentage = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0
     })
     
-    const result = Object.values(dailyStats).sort((a, b) => {
-      return new Date(b.date).getTime() - new Date(a.date).getTime()
-    })
+    const result = Object.values(dailyStats).sort((a, b) =>
+      a.date.localeCompare(b.date)
+    )
     
     console.log('Final statistics result:', result)
     return result
@@ -577,6 +744,45 @@ function WorkerDetailContent() {
     setIsDetailDialogOpen(true)
   }
 
+  const handleViewTaskEvidence = (userTask: UserTask) => {
+    setEvidenceUserTask(userTask)
+    setIsEvidenceDialogOpen(true)
+  }
+
+  const isCleaningWorker = isCleaningRole(user?.role?.name)
+  const isSecurityWorker = isSecurityRole(user?.role?.name)
+
+  // Get non-flattened tasks for a specific date (use userTasks which retains sub_user_task)
+  const getNestedTasksForDate = (date: string): UserTask[] =>
+    userTasks.filter(task => {
+      if (!task.created_at) return false
+      try { return getJakartaDateKey(task.created_at) === date }
+      catch { return false }
+    })
+
+  const buildPatrolMatrix = (date: string) => {
+    const tasks = getNestedTasksForDate(date)
+    const groups = tasks.map((main) => ({
+      main,
+      children: (Array.isArray(main.sub_user_task) ? main.sub_user_task : []) as UserTask[],
+    }))
+
+    return buildPatrolScheduleTables(groups, {
+      isRole: () => true,
+      classifyStatus: (ut) =>
+        isTaskDone(ut)
+          ? 'selesai'
+          : isTaskRunning(ut)
+          ? 'proses'
+          : ut.scheduled_at && new Date(ut.scheduled_at) < new Date()
+          ? 'terlewat'
+          : 'belum',
+      getTitikKey: (ut, main, idx) => String(ut.task_id ?? ut.task?.id ?? patrolPointTitle(ut, main, idx)),
+      getTitikTitle: patrolPointTitle,
+      fallbackTitle: 'Patroli',
+    })
+  }
+
   const toggleExpandDate = (date: string) => {
     setExpandedDates(prev => {
       const newSet = new Set(prev)
@@ -589,18 +795,121 @@ function WorkerDetailContent() {
     })
   }
 
-  // Get tasks for a specific date
-  const getTasksByDate = (date: string): UserTask[] => {
-    return allUserTasks.filter(task => {
+  // Get tasks for a specific date (selaras dengan penghitungan statistik)
+  const getTaskSortName = (task: UserTask) =>
+    (task.task?.name || '').trim().toLocaleLowerCase('id-ID')
+
+  const parseTimeToMinutes = (timeStr: string | undefined | null): number => {
+    if (!timeStr) return 9999
+    const parts = timeStr.split(':')
+    if (parts.length !== 2) return 9999
+    const hours = parseInt(parts[0], 10)
+    const minutes = parseInt(parts[1], 10)
+    if (isNaN(hours) || isNaN(minutes)) return 9999
+    return hours * 60 + minutes
+  }
+
+  const getTaskDisplayTime = (task: UserTask): string => {
+    const time = task.time?.trim()
+    if (time) return time
+    if (task.scheduled_at) {
+      try {
+        return new Date(task.scheduled_at).toLocaleTimeString('id-ID', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+          timeZone: 'Asia/Jakarta',
+        })
+      } catch {
+        /* ignore */
+      }
+    }
+    return '-'
+  }
+
+  const getSortTimeMinutes = (task: UserTask): number => {
+    const fromTime = parseTimeToMinutes(task.time?.trim())
+    if (fromTime !== 9999) return fromTime
+    if (task.scheduled_at) {
+      try {
+        const formatted = new Date(task.scheduled_at).toLocaleTimeString('en-GB', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+          timeZone: 'Asia/Jakarta',
+        })
+        return parseTimeToMinutes(formatted)
+      } catch {
+        /* ignore */
+      }
+    }
+    return 9999
+  }
+
+  const sortSubsByName = (tasks: UserTask[]) =>
+    [...tasks].sort((a, b) =>
+      getTaskSortName(a).localeCompare(getTaskSortName(b), 'id-ID', { sensitivity: 'base' })
+    )
+
+  type TaskDetailRow =
+    | { type: 'main-header'; task: UserTask }
+    | { type: 'task'; task: UserTask; indent?: boolean }
+
+  const getTasksForDateOnDay = (date: string): UserTask[] =>
+    allUserTasks.filter((task) => {
       if (!task.created_at) return false
       try {
-        const createdDate = new Date(task.created_at)
-        const taskDateStr = createdDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' })
-        return taskDateStr === date
+        return getJakartaDateKey(task.created_at) === date
       } catch {
         return false
       }
     })
+
+  const getTaskDetailRows = (date: string): TaskDetailRow[] => {
+    const tasksForDate = getTasksForDateOnDay(date)
+    const mains = tasksForDate.filter((t) => !isSubTask(t))
+    const subs = tasksForDate.filter((t) => isSubTask(t))
+    const sortedMains = [...mains].sort(
+      (a, b) => getSortTimeMinutes(a) - getSortTimeMinutes(b)
+    )
+    const rows: TaskDetailRow[] = []
+    const usedSubIds = new Set<string>()
+
+    for (const main of sortedMains) {
+      const mainId = getMainTaskId(main)
+      const children = subs.filter((s) => {
+        const pid = s.parent_user_task_id
+        return pid != null && (pid === mainId || pid === main.id)
+      })
+      const countableChildren = children.filter((s) =>
+        isCountableForDailyStats(s, tasksForDate)
+      )
+
+      if (countableChildren.length > 0) {
+        rows.push({ type: 'main-header', task: main })
+        for (const sub of sortSubsByName(countableChildren)) {
+          usedSubIds.add(getTaskRowKey(sub))
+          rows.push({ type: 'task', task: sub, indent: true })
+        }
+      } else if (isCountableForDailyStats(main, tasksForDate)) {
+        rows.push({ type: 'task', task: main, indent: false })
+      }
+    }
+
+    for (const sub of sortSubsByName(
+      subs.filter((s) => !usedSubIds.has(getTaskRowKey(s)))
+    )) {
+      if (isCountableForDailyStats(sub, tasksForDate)) {
+        rows.push({ type: 'task', task: sub, indent: true })
+      }
+    }
+
+    return rows
+  }
+
+  const getTasksByDate = (date: string): UserTask[] => {
+    const tasksForDate = getTasksForDateOnDay(date)
+    return tasksForDate.filter((task) => isCountableForDailyStats(task, tasksForDate))
   }
 
   if (isLoadingUser) {
@@ -656,12 +965,18 @@ function WorkerDetailContent() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Detail Pekerja</h1>
         </div>
+        {returnTo ? (
+          <Button variant="outline" onClick={() => router.push(returnTo)}>
+            <ArrowLeft className="h-4 w-4" />
+            Kembali ke Dashboard
+          </Button>
+        ) : null}
       </div>
 
       {/* User Info Card */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
             <UserIcon className="h-5 w-5" />
             Informasi Pekerja
           </CardTitle>
@@ -687,6 +1002,25 @@ function WorkerDetailContent() {
             <div>
               <Label className="text-sm text-muted-foreground">Status</Label>
               <p className="font-medium">{user.status || '-'}</p>
+            </div>
+            <div className="md:col-span-3">
+              <Label className="text-sm text-muted-foreground">Asset</Label>
+              {isLoadingAssets ? (
+                <p className="font-medium text-muted-foreground">Memuat asset...</p>
+              ) : userAssets.length === 0 ? (
+                <p className="font-medium">-</p>
+              ) : (
+                <div className="mt-1 space-y-1">
+                  {userAssets.map((ua) => {
+                    const name = ua.asset?.name || ua.asset_name || 'Asset'
+                    return (
+                      <div key={ua.id} className="text-sm leading-tight font-medium">
+                        - {name}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </CardContent>
@@ -719,7 +1053,7 @@ function WorkerDetailContent() {
             <TabsContent value="attendance" className="mt-0">
               <div className="p-6 space-y-4">
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
+                  <CardTitle className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
                     <Calendar className="h-5 w-5" />
                     Data Attendance Harian
                   </CardTitle>
@@ -831,7 +1165,7 @@ function WorkerDetailContent() {
             <TabsContent value="work" className="mt-0">
               <div className="p-6 space-y-6">
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
+                  <CardTitle className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
                     <Clock className="h-5 w-5" />
                     Data Kerja Harian
                   </CardTitle>
@@ -866,8 +1200,8 @@ function WorkerDetailContent() {
                       />
                     </div>
                     <Button
-                      onClick={loadAllUserTasks}
-                      disabled={isLoadingAllTasks || !!dateError}
+                      onClick={() => { loadUserTasks(); loadAllUserTasks() }}
+                      disabled={isLoadingAllTasks || isLoadingTasks || !!dateError}
                       variant="outline"
                     >
                       {isLoadingAllTasks ? (
@@ -922,14 +1256,16 @@ function WorkerDetailContent() {
                             ) : (
                               getDailyWorkStatistics().map((stat, index) => {
                                 const isExpanded = expandedDates.has(stat.date)
-                                const tasksForDate = getTasksByDate(stat.date)
-                                const hasTasks = tasksForDate.length > 0
-                                
+                                const taskDetailRows = getTaskDetailRows(stat.date)
+                                const hasExpandContent = (isCleaningWorker || isSecurityWorker)
+                                  ? stat.total > 0
+                                  : taskDetailRows.length > 0
+
                                 return (
                                   <React.Fragment key={index}>
                                     <TableRow className={isExpanded ? 'bg-muted/50' : ''}>
                                       <TableCell>
-                                        {hasTasks ? (
+                                        {hasExpandContent ? (
                                           <Button
                                             variant="ghost"
                                             size="sm"
@@ -983,59 +1319,183 @@ function WorkerDetailContent() {
                                       </TableCell>
                                     </TableRow>
                                     
-                                    {/* Expanded Task List */}
-                                    {isExpanded && hasTasks && (
+                                    {/* Expanded Progress View */}
+                                    {isExpanded && (
                                       <TableRow>
                                         <TableCell colSpan={6} className="p-0 bg-muted/30">
-                                          <div className="p-4">
-                                            <h4 className="text-sm font-semibold mb-3">Daftar Task - {formatDateShort(stat.date)}</h4>
-                                            <div className="rounded-md border bg-background max-h-[200px] overflow-y-auto overflow-x-auto">
-                                              <Table>
-                                                <TableHeader className="sticky top-0 bg-background z-10">
-                                                  <TableRow>
-                                                    <TableHead>Nama Task</TableHead>
-                                                    <TableHead>Waktu</TableHead>
-                                                    <TableHead>Status</TableHead>
-                                                    <TableHead>Aksi</TableHead>
-                                                  </TableRow>
-                                                </TableHeader>
-                                                <TableBody>
-                                                  {tasksForDate.map((userTask) => {
-                                                    const taskId = userTask.user_task_id || userTask.id || userTask.task_id
-                                                    return (
-                                                      <TableRow key={taskId}>
-                                                        <TableCell className="font-medium">
-                                                          {userTask.task?.name || 'Task'}
-                                                          {userTask.is_main_task === false && (
-                                                            <Badge variant="outline" className="ml-2 text-xs">
-                                                              Sub Task
-                                                            </Badge>
-                                                          )}
-                                                        </TableCell>
-                                                        <TableCell>
-                                                          {userTask.time || '-'}
-                                                        </TableCell>
-                                                        <TableCell>
-                                                          {getTaskStatusBadge(userTask)}
-                                                        </TableCell>
-                                                        <TableCell>
-                                                          <Button
-                                                            variant="outline"
-                                                            size="sm"
-                                                            onClick={() => handleViewTaskDetail(userTask)}
-                                                            className="flex items-center gap-2"
-                                                          >
-                                                            <Eye className="h-4 w-4" />
-                                                            Detail
-                                                          </Button>
+                                          {isCleaningWorker ? (
+                                            /* ---- Progress Kebersihan ---- */
+                                            <div className="p-4 pl-6 space-y-2">
+                                              <h4 className="text-sm font-semibold">Progress Kebersihan — {formatDateShort(stat.date)}</h4>
+                                              <div className="rounded-md border bg-background overflow-x-auto">
+                                                <Table className="min-w-[480px] table-fixed">
+                                                  <TableHeader>
+                                                    <TableRow className="hover:bg-transparent">
+                                                      <TableHead className="w-10 text-xs uppercase font-semibold text-slate-500">No</TableHead>
+                                                      <TableHead className="text-xs uppercase font-semibold text-slate-500">Pekerjaan</TableHead>
+                                                      <TableHead className="w-36 text-xs uppercase font-semibold text-slate-500">Status</TableHead>
+                                                      <TableHead className="w-28 text-xs uppercase font-semibold text-slate-500">Aksi</TableHead>
+                                                    </TableRow>
+                                                  </TableHeader>
+                                                  <TableBody>
+                                                    {getNestedTasksForDate(stat.date).length === 0 ? (
+                                                      <TableRow>
+                                                        <TableCell colSpan={4} className="text-center py-4 text-sm text-muted-foreground">
+                                                          Tidak ada tugas untuk tanggal ini.
                                                         </TableCell>
                                                       </TableRow>
-                                                    )
-                                                  })}
-                                                </TableBody>
-                                              </Table>
+                                                    ) : (
+                                                      getNestedTasksForDate(stat.date).map((task, idx) => {
+                                                        const subs = (Array.isArray(task.sub_user_task) ? task.sub_user_task : []) as UserTask[]
+                                                        const st = getProgressStatus(task)
+                                                        return (
+                                                          <Fragment key={task.user_task_id ?? task.id ?? idx}>
+                                                            <TableRow className="bg-slate-50/80">
+                                                              <TableCell className="text-slate-600">{idx + 1}</TableCell>
+                                                              <TableCell className="font-medium text-sm">
+                                                                {task.task?.name || '-'}
+                                                                {subs.length > 0 && <span className="ml-1 font-normal text-muted-foreground">({subs.length})</span>}
+                                                              </TableCell>
+                                                              <TableCell>
+                                                                <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${st.className}`}>{st.label}</span>
+                                                              </TableCell>
+                                                              <TableCell>
+                                                                <Button variant="outline" size="sm" onClick={() => handleViewTaskDetail(task)} className="gap-1 h-7 text-xs">
+                                                                  <Eye className="h-3 w-3" />Detail
+                                                                </Button>
+                                                              </TableCell>
+                                                            </TableRow>
+                                                            {subs.map((sub, sIdx) => {
+                                                              const subSt = getProgressStatus(sub)
+                                                              return (
+                                                                <TableRow key={sub.user_task_id ?? sub.id ?? sIdx} className="bg-white">
+                                                                  <TableCell />
+                                                                  <TableCell className="text-sm pl-8 text-slate-700">↳ {sub.task?.name || '-'}</TableCell>
+                                                                  <TableCell>
+                                                                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${subSt.className}`}>{subSt.label}</span>
+                                                                  </TableCell>
+                                                                  <TableCell>
+                                                                    <div className="flex gap-1">
+                                                                      <Button variant="outline" size="sm" onClick={() => handleViewTaskDetail(sub)} className="gap-1 h-7 text-xs">
+                                                                        <Eye className="h-3 w-3" />Detail
+                                                                      </Button>
+                                                                      {hasImageEvidence(sub) && (
+                                                                        <Button variant="outline" size="sm" onClick={() => handleViewTaskEvidence(sub)} className="gap-1 h-7 text-xs">
+                                                                          <ImageIcon className="h-3 w-3" />Bukti
+                                                                        </Button>
+                                                                      )}
+                                                                    </div>
+                                                                  </TableCell>
+                                                                </TableRow>
+                                                              )
+                                                            })}
+                                                          </Fragment>
+                                                        )
+                                                      })
+                                                    )}
+                                                  </TableBody>
+                                                </Table>
+                                              </div>
                                             </div>
-                                          </div>
+                                          ) : isSecurityWorker ? (
+                                            /* ---- Progress Keamanan (Patrol Matrix) ---- */
+                                            <div className="p-4 pl-6 space-y-4">
+                                              <h4 className="text-sm font-semibold">Progress Keamanan — {formatDateShort(stat.date)}</h4>
+                                              {(() => {
+                                                const tables = buildPatrolMatrix(stat.date)
+                                                if (tables.length === 0) {
+                                                  return (
+                                                    <p className="text-center py-4 text-sm text-muted-foreground">
+                                                      Tidak ada tugas untuk tanggal ini.
+                                                    </p>
+                                                  )
+                                                }
+                                                return tables.map((table) => (
+                                                  <div key={table.key} className="space-y-2">
+                                                    {tables.length > 1 && (
+                                                      <h5 className="text-xs font-semibold text-slate-600">{table.title}</h5>
+                                                    )}
+                                                    <div className="rounded-md border bg-background overflow-x-auto">
+                                                      <Table className="min-w-[580px]">
+                                                        <TableHeader>
+                                                          <TableRow className="hover:bg-transparent">
+                                                            <TableHead className="w-10 text-xs uppercase font-semibold text-slate-500">No</TableHead>
+                                                            <TableHead className="min-w-[110px] text-xs uppercase font-semibold text-slate-500">Titik Patroli</TableHead>
+                                                            {table.columns.length > 0 ? (
+                                                              table.columns.map(t => (
+                                                                <TableHead key={t} className="text-center text-xs uppercase font-semibold text-slate-500 whitespace-nowrap">{t}</TableHead>
+                                                              ))
+                                                            ) : (
+                                                              <TableHead className="text-center text-xs uppercase font-semibold text-slate-500">Status</TableHead>
+                                                            )}
+                                                          </TableRow>
+                                                        </TableHeader>
+                                                        <TableBody>
+                                                          {table.rows.map((row, rIdx) => (
+                                                            <TableRow key={row.key}>
+                                                              <TableCell className="text-slate-600">{rIdx + 1}</TableCell>
+                                                              <TableCell className="text-sm text-slate-800">{row.titik}</TableCell>
+                                                              {table.columns.length > 0 ? (
+                                                                row.cells.map((c, j) => (
+                                                                  <TableCell key={j} className="text-center">
+                                                                    <PatrolStatusIcon status={c.status} />
+                                                                  </TableCell>
+                                                                ))
+                                                              ) : (
+                                                                <TableCell className="text-center">
+                                                                  <PatrolStatusIcon status={row.overallStatus} />
+                                                                </TableCell>
+                                                              )}
+                                                            </TableRow>
+                                                          ))}
+                                                        </TableBody>
+                                                      </Table>
+                                                    </div>
+                                                  </div>
+                                                ))
+                                              })()}
+                                              <div className="flex flex-wrap gap-3 pt-1 text-xs text-slate-600">
+                                                <span className="flex items-center gap-1"><span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white"><Check className="h-3 w-3" strokeWidth={3} /></span>Selesai</span>
+                                                <span className="flex items-center gap-1"><span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white"><X className="h-3 w-3" strokeWidth={3} /></span>Terlewat</span>
+                                                <span className="flex items-center gap-1"><span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-white"><Loader2 className="h-3 w-3 animate-spin" /></span>Proses</span>
+                                                <span className="flex items-center gap-1"><span className="inline-flex h-5 w-5 items-center justify-center rounded-full border-2 border-slate-200 bg-white" />Belum</span>
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            /* ---- Fallback: plain task list ---- */
+                                            <div className="p-4 pl-6">
+                                              <h4 className="text-sm font-semibold mb-3">Daftar Task — {formatDateShort(stat.date)}</h4>
+                                              <div className="rounded-md border bg-background overflow-x-auto">
+                                                <Table>
+                                                  <TableHeader>
+                                                    <TableRow>
+                                                      <TableHead>Nama Task</TableHead>
+                                                      <TableHead>Waktu</TableHead>
+                                                      <TableHead>Status</TableHead>
+                                                    </TableRow>
+                                                  </TableHeader>
+                                                  <TableBody>
+                                                    {getTaskDetailRows(stat.date).map((row, rowIndex) => {
+                                                      if (row.type === 'main-header') return (
+                                                        <TableRow key={`h-${rowIndex}`} className="bg-muted/40">
+                                                          <TableCell className="font-semibold">{row.task.task?.name || 'Task'}</TableCell>
+                                                          <TableCell>{getTaskDisplayTime(row.task)}</TableCell>
+                                                          <TableCell>-</TableCell>
+                                                        </TableRow>
+                                                      )
+                                                      return (
+                                                        <TableRow key={row.task.user_task_id ?? row.task.id ?? rowIndex}>
+                                                          <TableCell className={`font-medium ${row.indent ? 'pl-8' : ''}`}>{row.task.task?.name || 'Task'}</TableCell>
+                                                          <TableCell>{getTaskDisplayTime(row.task)}</TableCell>
+                                                          <TableCell>{getTaskStatusBadge(row.task)}</TableCell>
+                                                        </TableRow>
+                                                      )
+                                                    })}
+                                                  </TableBody>
+                                                </Table>
+                                              </div>
+                                            </div>
+                                          )}
                                         </TableCell>
                                       </TableRow>
                                     )}
@@ -1060,6 +1520,12 @@ function WorkerDetailContent() {
         open={isDetailDialogOpen}
         onOpenChange={setIsDetailDialogOpen}
         userTask={selectedUserTask}
+      />
+
+      <TaskEvidenceBeforeAfterDialog
+        open={isEvidenceDialogOpen}
+        onOpenChange={setIsEvidenceDialogOpen}
+        userTask={evidenceUserTask}
       />
     </div>
   )

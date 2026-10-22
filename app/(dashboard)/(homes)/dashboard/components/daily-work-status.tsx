@@ -1,0 +1,1073 @@
+'use client'
+
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import dynamic from 'next/dynamic'
+import { ApexOptions } from 'apexcharts'
+import { Check, ChevronDown, ChevronRight, Circle, CornerDownRight, Loader2, RefreshCw, X } from 'lucide-react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { assetsApi, userTasksApi, type Asset, type UserTask } from '@/lib/api'
+import LoadingSkeleton from '@/components/loading-skeleton'
+import { buildPatrolScheduleTables, type CellStatus, type PatrolScheduleTable } from '@/lib/patrol-schedule'
+
+const Chart = dynamic(() => import('react-apexcharts'), { ssr: false })
+
+const PROGRESS = '#345e6f'
+const TRACK = '#f0f2f5'
+
+interface DailyWorkStatusProps {
+  selectedAssetId?: string
+  /** Tanggal acuan `YYYY-MM-DD` (WIB); default hari ini. Ring bulanan memakai bulan dari tanggal ini. */
+  dayDate?: string
+  /** `summary`: hanya ring status (ringkasan dashboard). `full`: progress harian + ring (section Operation). */
+  variant?: 'summary' | 'full'
+}
+
+function normalizeUserTasksPayload(payload: unknown): UserTask[] {
+  if (Array.isArray(payload)) return payload as UserTask[]
+  if (payload && typeof payload === 'object' && 'data' in payload) {
+    const inner = (payload as { data: unknown }).data
+    if (Array.isArray(inner)) return inner as UserTask[]
+  }
+  return []
+}
+
+function flattenUserTasks(tasks: UserTask[]): UserTask[] {
+  return tasks.flatMap((t) => [t, ...(t.sub_user_task || [])])
+}
+
+function getRoleName(ut: UserTask): string {
+  return (ut.task?.role?.name || '').toLowerCase().trim()
+}
+
+function getTaskAssetId(ut: UserTask): string {
+  return String(ut.task?.asset_id || ut.task?.asset?.id || '')
+}
+
+function getTaskGroupName(ut: UserTask): string {
+  const t = ut.task as (UserTask['task'] & { taskGroup?: { name?: string } }) | undefined
+  return (t?.task_group?.name || t?.taskGroup?.name || '').toLowerCase()
+}
+
+function isKebersihan(ut: UserTask): boolean {
+  const role = getRoleName(ut)
+  if (role.includes('kebersihan') || role.includes('cleaning')) return true
+  const tg = getTaskGroupName(ut)
+  if (tg.includes('kebersihan') || tg.includes('cleaning')) return true
+  const tn = (ut.task?.name || '').toLowerCase()
+  if (tn.includes('kebersihan') || tn.includes('cleaning')) return true
+  return false
+}
+
+function isKeamanan(ut: UserTask): boolean {
+  const role = getRoleName(ut)
+  if (role.includes('keamanan') || role.includes('security')) return true
+  const tg = getTaskGroupName(ut)
+  if (tg.includes('keamanan') || tg.includes('security') || tg.includes('patrol')) return true
+  const tn = (ut.task?.name || '').toLowerCase()
+  if (tn.includes('keamanan') || tn.includes('security') || tn.includes('patrol')) return true
+  return false
+}
+
+function isCompleted(ut: UserTask): boolean {
+  const s = (ut.status || '').toLowerCase()
+  const selfCompleted =
+    s === 'completed' ||
+    s === 'done' ||
+    s === 'selesai' ||
+    s === 'lunas' ||
+    s === 'paid' ||
+    s.includes('sudah dibayar') ||
+    !!ut.completed_at
+
+  if (selfCompleted) return true
+
+  // Samakan pola dashboard worker: main task bisa dianggap selesai
+  // ketika seluruh sub task sudah selesai meskipun status main belum ter-update.
+  const children = Array.isArray(ut.sub_user_task) ? ut.sub_user_task : []
+  if (children.length === 0) return false
+  return children.every((child) => {
+    const cs = (child.status || '').toLowerCase()
+    return (
+      cs === 'completed' ||
+      cs === 'done' ||
+      cs === 'selesai' ||
+      cs === 'lunas' ||
+      cs === 'paid' ||
+      cs.includes('sudah dibayar') ||
+      !!child.completed_at
+    )
+  })
+}
+
+function isInProgress(ut: UserTask): boolean {
+  const s = (ut.status || '').toLowerCase()
+  return s === 'inprogress' || s === 'in_progress' || (!!ut.started_at && !ut.completed_at)
+}
+
+export function dateKey(d: Date): string {
+  // Samakan boundary tanggal dengan backend yang memakai WIB.
+  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' })
+}
+
+/** Ambil salah satu daftar task dari respons daily-status (datar maupun ter-`data`). */
+function extractTasks(payload: unknown, key: 'today_tasks' | 'month_tasks'): UserTask[] {
+  if (!payload || typeof payload !== 'object') return []
+  const root = payload as Record<string, unknown>
+  const nested = root.data && typeof root.data === 'object'
+    ? (root.data as Record<string, unknown>)[key]
+    : undefined
+  return normalizeUserTasksPayload(root[key] ?? nested)
+}
+
+function cellStatusForPatrol(ut: UserTask | undefined): CellStatus {
+  if (!ut) return 'belum'
+  if (isCompleted(ut)) return 'selesai'
+  if (isInProgress(ut)) return 'proses'
+  const deadline = ut.scheduled_at ? new Date(ut.scheduled_at) : null
+  if (deadline && deadline < new Date() && !isCompleted(ut)) return 'terlewat'
+  return 'belum'
+}
+
+function patrolTitikKey(ut: UserTask): string {
+  const name = (ut.task?.name || '').trim().toLowerCase()
+  if (name) return `name-${name}`
+  const taskId = ut.task_id ?? ut.task?.id
+  if (taskId != null && taskId !== '') return `task-${taskId}`
+  return `unknown-${ut.user_task_id ?? ut.id ?? ''}`
+}
+
+function titikSortOrder(name: string): number {
+  const match = name.match(/titik\s*(\d+)/i)
+  return match ? parseInt(match[1], 10) : 9999
+}
+
+function getUserDisplayName(ut: UserTask): string {
+  return (ut.user?.name || ut.user?.email || '').trim()
+}
+
+function childTaskPatrolTitle(child: UserTask, index: number): string {
+  const name = (child.task?.name || '').trim()
+  if (name) return name
+  return `Titik ${index + 1}`
+}
+
+/** Status tampilan dari field `user_tasks.status` (bukan inferensi terpisah). */
+function userTaskStatusDisplay(ut: UserTask): { label: string; className: string } {
+  const raw = (ut.status != null ? String(ut.status) : '').toLowerCase().trim()
+  if (raw === 'completed') {
+    return { label: 'Selesai', className: 'border border-emerald-200 bg-emerald-50 text-emerald-800' }
+  }
+  if (raw === 'in_progress' || raw === 'inprogress') {
+    return { label: 'Dalam proses', className: 'border border-amber-200 bg-amber-50 text-amber-800' }
+  }
+  if (raw === 'cancelled') {
+    return { label: 'Dibatalkan', className: 'border border-slate-200 bg-slate-100 text-slate-700' }
+  }
+  if (raw === 'pending' || raw === '') {
+    return { label: 'Menunggu', className: 'border border-slate-200 bg-white text-slate-600' }
+  }
+  return {
+    label: ut.status != null ? String(ut.status) : '—',
+    className: 'border border-slate-200 bg-slate-50 text-slate-700',
+  }
+}
+
+/** Daftar bukti dari `user_tasks.evidences` untuk kolom Hasil. */
+function getEvidenceEntries(ut: UserTask): { key: string; href: string | null; label: string; isText: boolean }[] {
+  const ev = ut.evidences
+  if (!Array.isArray(ev) || ev.length === 0) return []
+
+  const out: { key: string; href: string | null; label: string; isText: boolean }[] = []
+
+  ev.forEach((item, idx) => {
+    const urlRaw =
+      typeof item === 'string'
+        ? item
+        : item != null && typeof item === 'object' && 'url' in item && item.url != null
+          ? String((item as { url: unknown }).url)
+          : ''
+    if (!urlRaw) return
+
+    if (urlRaw.startsWith('text:')) {
+      const text = urlRaw.slice(5).trim() || '(catatan)'
+      out.push({
+        key: `text-${idx}`,
+        href: null,
+        label: text.length > 60 ? `${text.slice(0, 60)}…` : text,
+        isText: true,
+      })
+      return
+    }
+
+    let label = `Bukti ${idx + 1}`
+    if (idx === 0) label = 'Before'
+    else if (idx === 1) label = 'After'
+    out.push({
+      key: `url-${idx}-${urlRaw.slice(0, 24)}`,
+      href: urlRaw,
+      label,
+      isText: false,
+    })
+  })
+
+  return out
+}
+
+function radialOptions(percentage: number): ApexOptions {
+  const pct = Math.min(100, Math.max(0, Math.round(percentage)))
+  return {
+    chart: { type: 'radialBar', sparkline: { enabled: true }, toolbar: { show: false } },
+    plotOptions: {
+      radialBar: {
+        hollow: { size: '65%' },
+        track: { background: TRACK, strokeWidth: '100%' },
+        dataLabels: {
+          show: true,
+          name: { show: false },
+          value: {
+            fontSize: '24px',
+            fontWeight: 700,
+            color: '#0f172a',
+            offsetY: 5,
+            formatter: () => `${pct}%`,
+          },
+        },
+      },
+    },
+    colors: [PROGRESS],
+    stroke: { lineCap: 'round' },
+  }
+}
+
+type UserTaskTreeGroup = { key: string; main: UserTask; children: UserTask[] }
+
+function buildUserTaskTreeGroups(
+  tasks: UserTask[] | undefined,
+  selectedAssetId: string,
+  isRole: (ut: UserTask) => boolean
+): UserTaskTreeGroup[] {
+  const mains = (tasks || []).filter((main) => {
+    const subs = (main.sub_user_task || []) as UserTask[]
+    const assetMatch =
+      selectedAssetId === 'all' ||
+      getTaskAssetId(main) === selectedAssetId ||
+      subs.some((s) => getTaskAssetId(s) === selectedAssetId)
+    if (!assetMatch) return false
+    return isRole(main) || subs.some(isRole)
+  })
+
+  const groups = mains.map((main) => {
+    const subs = ((main.sub_user_task || []) as UserTask[]).filter(
+      (s) => selectedAssetId === 'all' || getTaskAssetId(s) === selectedAssetId
+    )
+    const key = String(main.user_task_id ?? main.id ?? '')
+    return { key, main, children: subs }
+  })
+
+  const isRoutineGroup = (group: UserTaskTreeGroup): boolean => {
+    const mainRoutine = group.main.is_routine === true || group.main.task?.is_routine === true
+    if (mainRoutine) return true
+    return group.children.some((child) => child.is_routine === true || child.task?.is_routine === true)
+  }
+
+  return groups.sort((a, b) => {
+    const aRoutine = isRoutineGroup(a)
+    const bRoutine = isRoutineGroup(b)
+    if (aRoutine !== bRoutine) {
+      return aRoutine ? -1 : 1
+    }
+
+    const aTitle = mainTaskGroupTitle(a.main, 'Task')
+    const bTitle = mainTaskGroupTitle(b.main, 'Task')
+    return aTitle.localeCompare(bTitle, 'id')
+  })
+}
+
+function mainTaskGroupTitle(main: UserTask, fallback: string): string {
+  const t = main.task as (UserTask['task'] & { taskGroup?: { name?: string } }) | undefined
+  const g = (t?.task_group?.name || t?.taskGroup?.name || '').trim()
+  if (g) return g
+  const n = (t?.name || '').trim()
+  if (n) return n
+  return fallback
+}
+
+function visibleChildrenForRole(
+  main: UserTask,
+  children: UserTask[],
+  isRole: (ut: UserTask) => boolean
+): UserTask[] {
+  if (isRole(main)) return children
+  return children.filter(isRole)
+}
+
+export default function DailyWorkStatus({
+  selectedAssetId = 'all',
+  dayDate,
+  variant = 'full',
+}: DailyWorkStatusProps) {
+  const [assets, setAssets] = useState<Asset[]>([])
+  const [tasksToday, setTasksToday] = useState<UserTask[]>([])
+  const [tasksMonth, setTasksMonth] = useState<UserTask[]>([])
+  /** Menahan kartu harian (Kebersihan, Keamanan) dan ring "Harian". */
+  const [loadingDay, setLoadingDay] = useState(true)
+  /** Menahan ring "Bulanan" saja — rentang sebulan jauh lebih berat. */
+  const [loadingMonth, setLoadingMonth] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  /** Main `user_task_id` yang baris anaknya di-expand di tabel kebersihan */
+  const [expandedCleaningMainIds, setExpandedCleaningMainIds] = useState<Set<string>>(new Set())
+
+  const dayStr = dayDate || dateKey(new Date())
+
+  const loadData = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true
+    if (silent) {
+      setRefreshing(true)
+    } else {
+      setLoadingDay(true)
+      setLoadingMonth(true)
+    }
+
+    const [yearStr, monthStr] = dayStr.split('-')
+    const year = Number(yearStr)
+    const month = Number(monthStr)
+    const monthFromStr = `${yearStr}-${monthStr}-01`
+    const lastDay = new Date(year, month, 0).getDate()
+    const monthToStr = `${yearStr}-${monthStr}-${String(lastDay).padStart(2, '0')}`
+    const assetId = selectedAssetId !== 'all' ? selectedAssetId : undefined
+    console.info('[DailyWorkStatus] request range', {
+      selectedAssetId,
+      dayStr,
+      monthFrom: monthFromStr,
+      monthTo: monthToStr,
+    })
+
+    // Rentang harian dan bulanan ditembak sebagai dua request terpisah agar
+    // kartu harian (termasuk Progress Harian Keamanan) tampil tanpa menunggu
+    // pemindaian sebulan penuh selesai.
+    const dayLoad = (async () => {
+      try {
+        const [assetsRes, dayRes] = await Promise.all([
+          assetsApi.getAssets({ limit: 1000 }),
+          userTasksApi.getDailyWorkStatus({
+            all_users: 1,
+            asset_id: assetId,
+            non_routine: false,
+            day_date: dayStr,
+            scope: 'day',
+            limit: 10000,
+          }),
+        ])
+
+        if (assetsRes.success && assetsRes.data) {
+          const rd = assetsRes.data as unknown
+          const list: Asset[] = Array.isArray(rd)
+            ? (rd as Asset[])
+            : rd && typeof rd === 'object' && Array.isArray((rd as { data: Asset[] }).data)
+              ? (rd as { data: Asset[] }).data
+              : []
+          setAssets(list)
+        } else {
+          setAssets([])
+        }
+
+        if (!dayRes.success) {
+          console.error('[DailyWorkStatus] daily-status (day) request failed', {
+            error: dayRes.error,
+            message: dayRes.message,
+          })
+        }
+
+        setTasksToday(extractTasks(dayRes.success ? dayRes.data : null, 'today_tasks'))
+      } catch (e) {
+        console.error('DailyWorkStatus day load error:', e)
+        setTasksToday([])
+      } finally {
+        setLoadingDay(false)
+      }
+    })()
+
+    const monthLoad = (async () => {
+      try {
+        const monthRes = await userTasksApi.getDailyWorkStatus({
+          all_users: 1,
+          asset_id: assetId,
+          non_routine: false,
+          month_from: monthFromStr,
+          month_to: monthToStr,
+          scope: 'month',
+          limit: 10000,
+        })
+
+        if (!monthRes.success) {
+          console.error('[DailyWorkStatus] daily-status (month) request failed', {
+            error: monthRes.error,
+            message: monthRes.message,
+          })
+        }
+
+        setTasksMonth(extractTasks(monthRes.success ? monthRes.data : null, 'month_tasks'))
+      } catch (e) {
+        console.error('DailyWorkStatus month load error:', e)
+        setTasksMonth([])
+      } finally {
+        setLoadingMonth(false)
+      }
+    })()
+
+    await Promise.all([dayLoad, monthLoad])
+    setRefreshing(false)
+  }, [dayStr, selectedAssetId])
+
+  useEffect(() => {
+    void loadData()
+  }, [loadData])
+
+  const flatToday = useMemo(() => flattenUserTasks(tasksToday), [tasksToday])
+
+  /** Ring per aset — semua aset, persen dari tugas pada tanggal terpilih */
+  const allAssetsRings = useMemo(() => {
+    const map = new Map<string, { total: number; done: number; name: string }>()
+    assets.forEach((a) => map.set(a.id, { total: 0, done: 0, name: a.name }))
+
+    flatToday.forEach((ut) => {
+      const aid = getTaskAssetId(ut)
+      if (!aid) return
+      if (!map.has(aid)) map.set(aid, { total: 0, done: 0, name: ut.task?.asset?.name || aid })
+      const row = map.get(aid)!
+      row.total++
+      if (isCompleted(ut)) row.done++
+    })
+
+    return [...map.entries()]
+      .map(([assetId, v]) => ({
+        assetId,
+        assetName: v.name,
+        completionPercentage: v.total > 0 ? Math.round((v.done / v.total) * 100) : 0,
+      }))
+      .sort((a, b) => a.assetName.localeCompare(b.assetName, 'id'))
+  }, [assets, flatToday])
+
+  /** Tree: main + `sub_user_task`, sama flow dengan keamanan */
+  const kebersihanCleaningGroups = useMemo(
+    () => buildUserTaskTreeGroups(tasksToday, selectedAssetId, isKebersihan),
+    [tasksToday, selectedAssetId]
+  )
+
+  const keamananSecurityGroups = useMemo(
+    () => buildUserTaskTreeGroups(tasksToday, selectedAssetId, isKeamanan),
+    [tasksToday, selectedAssetId]
+  )
+
+  const kebersihanMonthGroups = useMemo(
+    () => buildUserTaskTreeGroups(tasksMonth, selectedAssetId, isKebersihan),
+    [tasksMonth, selectedAssetId]
+  )
+
+  const keamananMonthGroups = useMemo(
+    () => buildUserTaskTreeGroups(tasksMonth, selectedAssetId, isKeamanan),
+    [tasksMonth, selectedAssetId]
+  )
+
+  /** Daftar datar untuk persen / ringkasan (main + anak yang kebersihan) */
+  const kebersihanToday = useMemo(() => {
+    const out: UserTask[] = []
+    for (const { main, children } of kebersihanCleaningGroups) {
+      // Aturan kebersihan: jika main user_task punya sub_user_task, hanya sub
+      // yang dihitung; jika tidak punya sub_user_task, main yang dihitung.
+      const hasSubUserTask = Array.isArray(main.sub_user_task) && main.sub_user_task.length > 0
+      if (hasSubUserTask) {
+        for (const c of children) {
+          if (isKebersihan(c)) out.push(c)
+        }
+      } else if (isKebersihan(main)) {
+        out.push(main)
+      }
+    }
+    return out
+  }, [kebersihanCleaningGroups])
+
+  useEffect(() => {
+    setExpandedCleaningMainIds(
+      new Set(kebersihanCleaningGroups.map((g) => g.key).filter(Boolean))
+    )
+  }, [kebersihanCleaningGroups])
+  const keamananToday = useMemo(() => {
+    const out: UserTask[] = []
+    for (const { main, children } of keamananSecurityGroups) {
+      // Aturan keamanan: jika main user_task punya sub_user_task, hanya sub
+      // yang dihitung; jika tidak punya sub_user_task, main yang dihitung.
+      const hasSubUserTask = Array.isArray(main.sub_user_task) && main.sub_user_task.length > 0
+      if (hasSubUserTask) {
+        for (const c of children) {
+          if (isKeamanan(c)) out.push(c)
+        }
+      } else if (isKeamanan(main)) {
+        out.push(main)
+      }
+    }
+    return out
+  }, [keamananSecurityGroups])
+
+  const completionRate = (list: UserTask[]) => {
+    if (list.length === 0) return 0
+    const done = list.filter(isCompleted).length
+    return Math.round((done / list.length) * 100)
+  }
+
+  const kebersihanMonthList = useMemo(() => {
+    const out: UserTask[] = []
+    for (const { main, children } of kebersihanMonthGroups) {
+      // Aturan kebersihan: jika main user_task punya sub_user_task, hanya sub
+      // yang dihitung; jika tidak punya sub_user_task, main yang dihitung.
+      const hasSubUserTask = Array.isArray(main.sub_user_task) && main.sub_user_task.length > 0
+      if (hasSubUserTask) {
+        for (const c of children) {
+          if (isKebersihan(c)) out.push(c)
+        }
+      } else if (isKebersihan(main)) {
+        out.push(main)
+      }
+    }
+    return out
+  }, [kebersihanMonthGroups])
+
+  const keamananMonthList = useMemo(() => {
+    const out: UserTask[] = []
+    for (const { main, children } of keamananMonthGroups) {
+      // Aturan keamanan: jika main user_task punya sub_user_task, hanya sub
+      // yang dihitung; jika tidak punya sub_user_task, main yang dihitung.
+      const hasSubUserTask = Array.isArray(main.sub_user_task) && main.sub_user_task.length > 0
+      if (hasSubUserTask) {
+        for (const c of children) {
+          if (isKeamanan(c)) out.push(c)
+        }
+      } else if (isKeamanan(main)) {
+        out.push(main)
+      }
+    }
+    return out
+  }, [keamananMonthGroups])
+
+  const pctHarianKebersihan = completionRate(kebersihanToday)
+  const pctHarianKeamanan = completionRate(keamananToday)
+  const pctBulananKebersihan = completionRate(kebersihanMonthList)
+  const pctBulananKeamanan = completionRate(keamananMonthList)
+
+  /**
+   * Satu baris per titik patroli (nama task child). Beberapa user_task dengan
+   * task yang sama digabung; hover per sel menampilkan user di slot jam tersebut.
+   */
+  const patrolScheduleTables = useMemo(
+    () =>
+      buildPatrolScheduleTables(
+        keamananSecurityGroups.map(({ main, children }) => ({ main, children })),
+        {
+          isRole: isKeamanan,
+          classifyStatus: cellStatusForPatrol,
+          getUsers: (ut) => [getUserDisplayName(ut)],
+          getTitikKey: (ut) => patrolTitikKey(ut),
+          getTitikTitle: (ut, _main, idx) => childTaskPatrolTitle(ut, idx),
+          sortRows: (a, b) => {
+            const orderDiff = titikSortOrder(a.titik) - titikSortOrder(b.titik)
+            if (orderDiff !== 0) return orderDiff
+            return a.titik.localeCompare(b.titik, 'id')
+          },
+          fallbackTitle: 'Patroli',
+        }
+      ),
+    [keamananSecurityGroups]
+  )
+
+  const PatrolIcon = ({ status }: { status: CellStatus }) => {
+    if (status === 'selesai') {
+      return (
+        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500 text-white">
+          <Check className="h-4 w-4" strokeWidth={3} />
+        </span>
+      )
+    }
+    if (status === 'terlewat') {
+      return (
+        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-red-500 text-white">
+          <X className="h-4 w-4" strokeWidth={3} />
+        </span>
+      )
+    }
+    if (status === 'proses') {
+      return (
+        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-blue-500 text-white">
+          <Loader2 className="h-4 w-4 animate-spin" />
+        </span>
+      )
+    }
+    return (
+      <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border-2 border-slate-200 bg-white text-slate-300">
+        <Circle className="h-3 w-3" />
+      </span>
+    )
+  }
+
+  const PatrolGroupTable = ({ table }: { table: PatrolScheduleTable }) => (
+    <div className="overflow-x-auto">
+      <Table className="min-w-[760px]">
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="w-10 text-xs font-semibold uppercase text-slate-500">No</TableHead>
+            <TableHead className="min-w-[100px] text-xs font-semibold uppercase text-slate-500">
+              Titik patroli
+            </TableHead>
+            {table.columns.length > 0 ? (
+              table.columns.map((t) => (
+                <TableHead key={t} className="whitespace-nowrap text-center text-xs font-semibold uppercase text-slate-500">
+                  {t}
+                </TableHead>
+              ))
+            ) : (
+              <TableHead className="text-center text-xs font-semibold uppercase text-slate-500">Status</TableHead>
+            )}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {table.rows.map((row, idx) => (
+            <TableRow key={row.key}>
+              <TableCell className="text-slate-600">{idx + 1}</TableCell>
+              <TableCell className="max-w-[140px] text-sm text-slate-800">{row.titik}</TableCell>
+              {table.columns.length > 0 ? (
+                row.cells.map((c, j) => (
+                  <TableCell key={j} className="text-center">
+                    {c.users.length > 0 ? (
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            className="mx-auto flex cursor-pointer items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                            aria-label={`Lihat petugas ${row.titik} jam ${table.columns[j]}`}
+                          >
+                            <PatrolIcon status={c.status} />
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent side="top" className="w-auto max-w-xs px-3 py-2 text-sm">
+                          <p className="font-medium text-slate-700">Petugas</p>
+                          <p className="text-slate-600">{c.users.join(', ')}</p>
+                        </PopoverContent>
+                      </Popover>
+                    ) : (
+                      <div className="flex justify-center">
+                        <PatrolIcon status={c.status} />
+                      </div>
+                    )}
+                  </TableCell>
+                ))
+              ) : (
+                <TableCell className="text-center">
+                  <div className="flex justify-center">
+                    <PatrolIcon status={row.overallStatus} />
+                  </div>
+                </TableCell>
+              )}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+
+  const toggleCleaningExpand = (mainKey: string) => {
+    setExpandedCleaningMainIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(mainKey)) next.delete(mainKey)
+      else next.add(mainKey)
+      return next
+    })
+  }
+
+  if (loadingDay) {
+    return <LoadingSkeleton height="h-64" text="Memuat status pekerjaan harian..." />
+  }
+
+  /** Ring bulanan menunggu request-nya sendiri, terpisah dari kartu harian. */
+  const MonthlyRing = ({ percentage }: { percentage: number }) =>
+    loadingMonth ? (
+      <div className="flex h-[200px] w-full items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-slate-300" />
+      </div>
+    ) : (
+      <Chart options={radialOptions(percentage)} series={[percentage]} type="radialBar" height={200} />
+    )
+
+  /* ---------- Tampilan semua aset: grid radial ---------- */
+  if (selectedAssetId === 'all') {
+    return (
+      <Card className="border border-gray-200 shadow-sm">
+        <CardHeader className="space-y-1 pb-4">
+          <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">
+            Status Pekerjaan Harian
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-6 py-0">
+          {allAssetsRings.length === 0 ? (
+            <p className="py-6 text-center text-base text-muted-foreground">
+              Tidak ada data aset atau tugas pada tanggal ini.
+            </p>
+          ) : (
+            <div className="grid grid-cols-2 gap-6 pb-1 md:grid-cols-4 md:gap-8">
+              {allAssetsRings.map((row) => (
+                <div key={row.assetId} className="flex flex-col items-center gap-3">
+                  <Chart
+                    options={radialOptions(row.completionPercentage)}
+                    series={[row.completionPercentage]}
+                    type="radialBar"
+                    height={176}
+                  />
+                  <p className="max-w-[12rem] text-center text-base font-medium leading-snug text-slate-800 md:max-w-none">
+                    {row.assetName}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    )
+  }
+
+  /* ---------- Satu aset: 2×2 detail ---------- */
+  const selectedAsset = assets.find((a) => a.id === selectedAssetId)
+
+  const statusRings = (
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <Card className="border border-gray-200 shadow-sm">
+        <CardHeader className="space-y-1 pb-4">
+          <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">Status Pekerjaan Kebersihan</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-6">
+            <div className="flex flex-col items-center">
+              <Chart
+                options={radialOptions(pctHarianKebersihan)}
+                series={[pctHarianKebersihan]}
+                type="radialBar"
+                height={200}
+              />
+              <p className="-mt-2 text-sm font-semibold text-slate-600">Harian</p>
+            </div>
+            <div className="flex flex-col items-center">
+              <MonthlyRing percentage={pctBulananKebersihan} />
+              <p className="-mt-2 text-sm font-semibold text-slate-600">Bulanan</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border border-gray-200 shadow-sm">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">Status Pekerjaan Keamanan</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-6">
+            <div className="flex flex-col items-center">
+              <Chart
+                options={radialOptions(pctHarianKeamanan)}
+                series={[pctHarianKeamanan]}
+                type="radialBar"
+                height={200}
+              />
+              <p className="-mt-2 text-sm font-semibold text-slate-600">Harian</p>
+            </div>
+            <div className="flex flex-col items-center">
+              <MonthlyRing percentage={pctBulananKeamanan} />
+              <p className="-mt-2 text-sm font-semibold text-slate-600">Bulanan</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+
+  if (variant === 'summary') return statusRings
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card className="border border-gray-200 shadow-sm">
+          <CardHeader className="space-y-1 pb-2">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">Progress Harian Kebersihan</CardTitle>
+                <CardDescription className="text-base text-slate-500">Pantau pencapaian pekerjaan kebersihan</CardDescription>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void loadData({ silent: true })}
+                disabled={refreshing}
+                className="shrink-0"
+              >
+                <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+                <span className="ml-2">Refresh</span>
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <Table className="min-w-[640px] table-fixed">
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-10 text-xs font-semibold uppercase text-slate-500">No</TableHead>
+                  <TableHead className="w-[52%] text-xs font-semibold uppercase text-slate-500">Pekerjaan</TableHead>
+                  <TableHead className="w-[18%] text-xs font-semibold uppercase text-slate-500">Status</TableHead>
+                  <TableHead className="w-[24%] text-xs font-semibold uppercase text-slate-500">Hasil</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {kebersihanCleaningGroups.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">
+                      Tidak ada tugas kebersihan pada tanggal ini.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  kebersihanCleaningGroups.map((group, gIdx) => {
+                    const { main, key, children } = group
+                    const vis = visibleChildrenForRole(main, children, isKebersihan)
+                    const hasChildren = vis.length > 0
+                    const expanded = expandedCleaningMainIds.has(key)
+                    const mainSt = userTaskStatusDisplay(main)
+                    const mainEv = getEvidenceEntries(main)
+                    const mainTitle = mainTaskGroupTitle(main, 'Kebersihan')
+
+                    return (
+                      <Fragment key={key}>
+                        {(isKebersihan(main) || hasChildren) && (
+                          <TableRow className="bg-slate-50/80">
+                            <TableCell className="align-middle text-slate-600">{gIdx + 1}</TableCell>
+                            <TableCell className="max-w-[min(100vw,280px)] align-top text-sm text-slate-900">
+                              <div className="flex items-start gap-1">
+                                {hasChildren ? (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="mt-0.5 h-7 w-7 shrink-0 p-0"
+                                    onClick={() => toggleCleaningExpand(key)}
+                                    aria-expanded={expanded}
+                                    aria-label={expanded ? 'Ciutkan' : 'Bentangkan'}
+                                  >
+                                    {expanded ? (
+                                      <ChevronDown className="h-4 w-4 text-slate-600" />
+                                    ) : (
+                                      <ChevronRight className="h-4 w-4 text-slate-600" />
+                                    )}
+                                  </Button>
+                                ) : (
+                                  <span className="inline-block w-7 shrink-0" />
+                                )}
+                                <span className="min-w-0 break-words font-medium leading-snug whitespace-normal">
+                                  {mainTitle}
+                                  {hasChildren ? (
+                                    <span className="ml-2 font-normal text-muted-foreground">({vis.length})</span>
+                                  ) : null}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="align-top whitespace-nowrap">
+                              {isKebersihan(main) ? (
+                                <span
+                                  className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium sm:px-2.5 sm:text-xs ${mainSt.className}`}
+                                >
+                                  {mainSt.label}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="align-middle">
+                              {isKebersihan(main) ? (
+                                mainEv.length === 0 ? (
+                                  <span className="text-xs text-muted-foreground">Belum ada bukti</span>
+                                ) : (
+                                  <div className="flex max-w-[240px] flex-wrap gap-1">
+                                    {mainEv.map((e) =>
+                                      e.isText ? (
+                                        <span
+                                          key={e.key}
+                                          className="inline-flex max-w-full rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-700"
+                                          title={e.label}
+                                        >
+                                          {e.label}
+                                        </span>
+                                      ) : (
+                                        <Button
+                                          key={e.key}
+                                          type="button"
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-6 min-w-[56px] rounded-md bg-blue-600 px-2 text-[10px] font-semibold text-white hover:bg-blue-700 sm:h-7 sm:min-w-[64px] sm:text-xs"
+                                          asChild
+                                        >
+                                          <a href={e.href!} target="_blank" rel="noopener noreferrer">
+                                            {e.label}
+                                          </a>
+                                        </Button>
+                                      )
+                                    )}
+                                  </div>
+                                )
+                              ) : (
+                                <span className="text-xs text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        )}
+                        {hasChildren &&
+                          expanded &&
+                          vis.map((child, cIdx) => {
+                            const st = userTaskStatusDisplay(child)
+                            const evidenceEntries = getEvidenceEntries(child)
+                            return (
+                              <TableRow key={`${key}-sub-${child.user_task_id ?? child.id ?? cIdx}`} className="bg-white">
+                                <TableCell className="text-muted-foreground" />
+                                <TableCell className="max-w-[min(100vw,280px)] align-top text-sm text-slate-800">
+                                  <div className="ml-2 flex items-start gap-2 border-l border-slate-200 pl-3">
+                                    <CornerDownRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                                    <div className="min-w-0 flex flex-wrap items-center gap-2">
+                                      <span className="leading-snug break-words whitespace-normal">{child.task?.name || '—'}</span>
+                                      <Badge variant="secondary" className="text-xs font-normal">
+                                        Sub task
+                                      </Badge>
+                                    </div>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="align-top whitespace-nowrap">
+                                  <span
+                                    className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium sm:px-2.5 sm:text-xs ${st.className}`}
+                                  >
+                                    {st.label}
+                                  </span>
+                                </TableCell>
+                                <TableCell>
+                                  {evidenceEntries.length === 0 ? (
+                                    <span className="text-xs text-muted-foreground">Belum ada bukti</span>
+                                  ) : (
+                                    <div className="flex max-w-[240px] flex-wrap gap-1">
+                                      {evidenceEntries.map((e) =>
+                                        e.isText ? (
+                                          <span
+                                            key={e.key}
+                                            className="inline-flex max-w-full rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-700"
+                                            title={e.label}
+                                          >
+                                            {e.label}
+                                          </span>
+                                        ) : (
+                                          <Button
+                                            key={e.key}
+                                            type="button"
+                                            size="sm"
+                                            variant="ghost"
+                                            className="h-6 min-w-[56px] rounded-md bg-blue-600 px-2 text-[10px] font-semibold text-white hover:bg-blue-700 sm:h-7 sm:min-w-[64px] sm:text-xs"
+                                            asChild
+                                          >
+                                            <a href={e.href!} target="_blank" rel="noopener noreferrer">
+                                              {e.label}
+                                            </a>
+                                          </Button>
+                                        )
+                                      )}
+                                    </div>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })}
+                      </Fragment>
+                    )
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        <Card className="border border-gray-200 shadow-sm">
+          <CardHeader className="space-y-1 pb-2">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">Progress Harian Keamanan</CardTitle>
+                <CardDescription className="text-base text-slate-500">Pantau pencapaian pekerjaan keamanan</CardDescription>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void loadData({ silent: true })}
+                disabled={refreshing}
+                className="shrink-0"
+              >
+                <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+                <span className="ml-2">Refresh</span>
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {patrolScheduleTables.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                Tidak ada tugas keamanan pada tanggal ini.
+              </p>
+            ) : patrolScheduleTables.length === 1 ? (
+              <PatrolGroupTable table={patrolScheduleTables[0]} />
+            ) : (
+              <Tabs defaultValue={patrolScheduleTables[0].key} className="w-full">
+                <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto whitespace-nowrap">
+                  {patrolScheduleTables.map((table) => (
+                    <TabsTrigger key={table.key} value={table.key} className="shrink-0">
+                      {table.title}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+                {patrolScheduleTables.map((table) => (
+                  <TabsContent key={table.key} value={table.key} className="space-y-2">
+                    <PatrolGroupTable table={table} />
+                  </TabsContent>
+                ))}
+              </Tabs>
+            )}
+            <div className="flex flex-wrap gap-4 border-t border-slate-100 pt-3 text-sm text-slate-600">
+              <span className="flex items-center gap-2">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-white">
+                  <Check className="h-3 w-3" strokeWidth={3} />
+                </span>
+                Selesai
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white">
+                  <X className="h-3 w-3" strokeWidth={3} />
+                </span>
+                Terlewat
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-500 text-white">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                </span>
+                Dalam proses
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border-2 border-slate-200 bg-white" />
+                Belum dijalankan
+              </span>
+              <span className="text-slate-500">Klik ikon status untuk melihat petugas</span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {statusRings}
+    </div>
+  )
+}

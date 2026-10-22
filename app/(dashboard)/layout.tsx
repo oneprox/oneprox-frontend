@@ -10,10 +10,11 @@ export default async function DashboardLayout({
 }) {
   try {
     const cookieStore = await cookies();
-    const defaultOpen = cookieStore.get("sidebar_state")?.value === "true";
-
+    const sidebarCookie = cookieStore.get("sidebar_state")?.value;
+    // Tanpa cookie (mis. setelah login pertama), default expanded — selaras dengan SidebarProvider defaultOpen={true}
+    const defaultOpen =
+      sidebarCookie === undefined ? true : sidebarCookie === "true";
     const session = await auth();
-
     return (
       <SessionProvider session={session}>
         <ClientRoot defaultOpen={defaultOpen}>{children}</ClientRoot>

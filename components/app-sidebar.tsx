@@ -33,17 +33,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   // Gunakan data dinamis jika tersedia, fallback ke data minimal
   const sidebarData: SidebarItem[] = React.useMemo(() => {
-    console.log('Nav main:', navMain);
     if (loading || error || !navMain || navMain.length === 0) {
       return fallbackSidebarData.navMain;
     }
-    console.log('Sidebar data:', navMain);
     return navMain;
   }, [navMain, loading, error]);
 
-  console.log('Sidebar data:', sidebarData);
   return (
-    <Sidebar collapsible="icon" {...props} className="hidden xl:block">
+    <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
         <LogoSidebar />
       </SidebarHeader>

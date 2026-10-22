@@ -2,33 +2,37 @@
 
 import React, { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { Tenant, CreateTenantData, UpdateTenantData, TenantDepositLog, tenantsApi } from '@/lib/api'
+import { Tenant, CreateTenantData, UpdateTenantData, tenantsApi } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb'
-import { Home, Users, Edit, Loader2, Menu, FileText } from 'lucide-react'
+import { Home, Edit, Loader2, FileText, ArrowLeft } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import TenantForm from '@/components/forms/tenant-form'
+import { useIsTenantRole } from '@/hooks/useIsTenantRole'
 import toast from 'react-hot-toast'
-import TenantLogsTable from '@/components/table/tenant-logs-table'
+import { useReturnTo } from '@/lib/return-to'
 
 export default function EditTenantPage() {
   const router = useRouter()
   const params = useParams()
   const tenantId = params.id as string
+  // Dibuka dari dashboard (?returnTo=...): setelah selesai kembali ke dashboard, bukan ke daftar tenant.
+  const returnTo = useReturnTo()
+  // Role tenant hanya boleh melihat: form dirender read-only, tab tetap lengkap.
+  // null = role belum diketahui, tetap perlakukan sebagai read-only.
+  const isTenantRole = useIsTenantRole()
+  const readOnly = isTenantRole !== false
   
   const [tenant, setTenant] = useState<Tenant | null>(null)
   const [loading, setLoading] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
-  const [depositLogs, setDepositLogs] = useState<TenantDepositLog[]>([])
 
   useEffect(() => {
     const loadTenant = async () => {
       if (!tenantId) return
       
       try {
-        const [tenantResponse, depositLogsResponse] = await Promise.all([
-          tenantsApi.getTenant(tenantId),
-          tenantsApi.getTenantDepositLogs(tenantId)
-        ])
+        const tenantResponse = await tenantsApi.getTenant(tenantId)
         
         if (tenantResponse.success && tenantResponse.data) {
           const responseData = tenantResponse.data as any
@@ -36,12 +40,6 @@ export default function EditTenantPage() {
         } else {
           toast.error(tenantResponse.error || 'Tenant tidak ditemukan')
           router.push('/tenants')
-        }
-
-        if (depositLogsResponse.success && depositLogsResponse.data) {
-          const logsData = depositLogsResponse.data as any
-          const logs = Array.isArray(logsData.data) ? logsData.data : (Array.isArray(logsData) ? logsData : [])
-          setDepositLogs(logs)
         }
       } catch (error) {
         console.error('Load tenant error:', error)
@@ -62,13 +60,16 @@ export default function EditTenantPage() {
       
       if (response.success && response.data) {
         toast.success('Tenant berhasil diperbarui')
-        router.push('/tenants')
+        router.push(returnTo ?? '/tenants')
       } else {
-        toast.error(response.error || 'Gagal memperbarui tenant')
+        toast.error(response.error || response.message || 'Gagal memperbarui tenant', {
+          duration: 8000,
+        })
       }
     } catch (error) {
       console.error('Update tenant error:', error)
-      toast.error('Terjadi kesalahan saat memperbarui tenant')
+      const errMsg = error instanceof Error ? error.message : 'Terjadi kesalahan saat memperbarui tenant'
+      toast.error(errMsg, { duration: 8000 })
     } finally {
       setLoading(false)
     }
@@ -100,7 +101,6 @@ export default function EditTenantPage() {
 
   return (
     <div className="space-y-6">
-      {/* Breadcrumb */}
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
@@ -120,32 +120,40 @@ export default function EditTenantPage() {
           <BreadcrumbItem>
             <BreadcrumbPage className="flex items-center gap-2">
               <Edit className="h-4 w-4" />
-              Edit: {tenant.name}
+              {readOnly ? 'Detail' : 'Edit'}: {tenant.name}
             </BreadcrumbPage>
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
 
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Edit Tenant</h1>
+          <h1 className="text-3xl font-bold tracking-tight">
+            {readOnly ? 'Detail Tenant' : 'Edit Tenant'}
+          </h1>
           <p className="text-muted-foreground">
-            Perbarui informasi tenant: <span className="font-medium">{tenant.name}</span>
+            {readOnly ? 'Informasi tenant: ' : 'Perbarui informasi tenant: '}
+            <span className="font-medium">{tenant.name}</span>
           </p>
         </div>
+        {returnTo ? (
+          <Button variant="outline" onClick={() => router.push(returnTo)}>
+            <ArrowLeft className="h-4 w-4" />
+            Kembali ke Dashboard
+          </Button>
+        ) : null}
       </div>
 
-      {/* Form */}
       <Card>
         <CardHeader>
-          <CardTitle>Form Edit Tenant</CardTitle>
+          <CardTitle>{readOnly ? 'Data Tenant' : 'Form Edit Tenant'}</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="min-w-0">
           <TenantForm 
             tenant={tenant} 
             onSubmit={handleSubmit} 
             loading={loading} 
+            readOnly={readOnly}
           />
         </CardContent>
       </Card>

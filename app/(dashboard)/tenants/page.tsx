@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Tenant, tenantsApi, User, authApi } from '@/lib/api'
+import { Tenant, tenantsApi, User, authApi, Asset, assetsApi } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -10,6 +10,7 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbP
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Home, Users, Plus, Search, RefreshCw, Loader2, FileText } from 'lucide-react'
 import { useMenuPermissions } from '@/hooks/useMenuPermissions'
+import { useIsTenantRole } from '@/hooks/useIsTenantRole'
 
 // Category options
 const CATEGORY_OPTIONS = [
@@ -61,11 +62,17 @@ export default function TenantsPage() {
   
   // Filter dan sorting states
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
+  const [assetFilter, setAssetFilter] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>('all')
-  const [order, setOrder] = useState<string>('a-z')
+  const [order, setOrder] = useState<string>('newest')
   const [currentUser, setCurrentUser] = useState<User | null>(null)
-  const [isTenantUser, setIsTenantUser] = useState(false)
+  // null = role belum diketahui. Selama masih null jangan load data, supaya tidak
+  // ada request tanpa filter user_id yang bisa menampilkan tenant milik user lain.
+  const isTenantUser = useIsTenantRole()
+  // Kontrol khusus admin baru ditampilkan setelah dipastikan bukan role tenant
+  const isAdminView = isTenantUser === false
+  const [assets, setAssets] = useState<Asset[]>([])
   
   // Pagination states
   const [limit] = useState<number>(10)
@@ -79,7 +86,15 @@ export default function TenantsPage() {
       const filterParams: any = {}
       
       // For tenant users, always filter by their user_id and don't use pagination
-      if (isTenantUser && currentUser?.id) {
+      if (isTenantUser) {
+        // Tanpa id yang valid jangan request apa pun, karena request tanpa filter
+        // user_id berarti meminta seluruh tenant
+        if (!currentUser?.id) {
+          setTenants([])
+          setFilteredTenants([])
+          setPagination(null)
+          return
+        }
         filterParams.user_id = currentUser.id
         // Don't add limit/offset for tenant users - load all their tenants
       } else {
@@ -91,10 +106,13 @@ export default function TenantsPage() {
       if (searchTerm.trim()) {
         filterParams.name = searchTerm.trim()
       }
-      if (!isTenantUser && categoryFilter !== 'all') {
+      if (isAdminView && assetFilter !== 'all') {
+        filterParams.asset_id = assetFilter
+      }
+      if (isAdminView && categoryFilter !== 'all') {
         filterParams.category = categoryFilter
       }
-      if (!isTenantUser && statusFilter !== 'all') {
+      if (isAdminView && statusFilter !== 'all') {
         const statusInt = STATUS_TO_INTEGER[statusFilter]
         if (statusInt !== undefined) {
           filterParams.status = statusInt
@@ -136,6 +154,7 @@ export default function TenantsPage() {
         }
         
         setTenants(tenantsData)
+        // Since filtering is done on backend, filteredTenants should be same as tenants
         setFilteredTenants(tenantsData)
         setPagination(paginationData)
       } else {
@@ -155,29 +174,29 @@ export default function TenantsPage() {
     }
   }
 
+  const loadAssets = async () => {
+    try {
+      const response = await assetsApi.getAssets({ limit: 1000, status: 1 })
+      if (response.success && response.data) {
+        const assetsData = response.data as any
+        const assetList = Array.isArray(assetsData.data)
+          ? assetsData.data
+          : (Array.isArray(assetsData) ? assetsData : [])
+        setAssets(assetList)
+      } else {
+        setAssets([])
+      }
+    } catch (error) {
+      console.error('Load assets error:', error)
+      setAssets([])
+    }
+  }
+
 
   const loadCurrentUser = async () => {
     try {
       const user = await authApi.getCurrentUser()
       setCurrentUser(user)
-      
-      // Check if user is a tenant by checking if they have tenants associated with them
-      if (user && user.id) {
-        try {
-          const tenantsResponse = await tenantsApi.getTenants({ user_id: user.id, limit: 1 })
-          if (tenantsResponse.success && tenantsResponse.data) {
-            const tenantsData = tenantsResponse.data as any
-            const tenants = Array.isArray(tenantsData.data) 
-              ? tenantsData.data 
-              : (Array.isArray(tenantsData) ? tenantsData : [])
-            if (tenants.length > 0) {
-              setIsTenantUser(true)
-            }
-          }
-        } catch (error) {
-          console.error('Error checking tenant status:', error)
-        }
-      }
     } catch (error) {
       console.error('Error loading current user:', error)
     }
@@ -185,20 +204,15 @@ export default function TenantsPage() {
 
   useEffect(() => {
     loadCurrentUser()
+    loadAssets()
   }, [])
 
+  // Load data setelah user dan role diketahui, dan setiap filter/pagination berubah
   useEffect(() => {
-    if (currentUser) {
+    if (currentUser && isTenantUser !== null) {
       loadTenants()
     }
-  }, [currentUser, isTenantUser])
-
-  // Reload data when filters or pagination change
-  useEffect(() => {
-    if (currentUser) {
-      loadTenants()
-    }
-  }, [searchTerm, categoryFilter, statusFilter, paymentStatusFilter, order, offset, currentUser, isTenantUser])
+  }, [searchTerm, assetFilter, categoryFilter, statusFilter, paymentStatusFilter, order, offset, currentUser, isTenantUser])
 
   const handlePageChange = (newOffset: number) => {
     setOffset(newOffset)
@@ -263,7 +277,7 @@ export default function TenantsPage() {
   const stats = getStats()
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 overflow-x-hidden w-full max-w-full min-w-0">
       {/* Breadcrumb */}
       <Breadcrumb>
         <BreadcrumbList>
@@ -282,22 +296,6 @@ export default function TenantsPage() {
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
-
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Tenants</h1>
-          <p className="text-muted-foreground">
-            Kelola data tenant dan kontrak sewa
-          </p>
-        </div>
-        {!isTenantUser && can_add && (
-          <Button onClick={() => router.push('/tenants/create')}>
-            <Plus className="mr-2 h-4 w-4" />
-            Tambah Tenant
-          </Button>
-        )}
-      </div>
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 hidden">
@@ -353,18 +351,29 @@ export default function TenantsPage() {
 
       {/* Search and Actions */}
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
-            <CardTitle>Daftar Tenants</CardTitle>
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">Tenants</h1>
+              <p className="text-muted-foreground">
+                Kelola data tenant dan kontrak sewa
+              </p>
+            </div>
             <div className="flex items-center gap-2">
+              {isAdminView && can_add && (
+                <Button onClick={() => router.push('/tenants/create')}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Tambah Tenant
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={handleRefresh} disabled={loading}>
                 <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               </Button>
             </div>
           </div>
           
-          {/* Filter Bar - Hidden for tenant users */}
-          {!isTenantUser && (
+          {/* Filter Bar - Horizontal Layout */}
+          {isAdminView ? (
             <div className="flex flex-wrap items-center gap-4 mt-4 p-4 bg-gray-50 rounded-lg border">
               <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -384,6 +393,20 @@ export default function TenantsPage() {
                   {CATEGORY_OPTIONS.map((category) => (
                     <SelectItem key={category.value} value={category.value}>
                       {category.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select value={assetFilter} onValueChange={setAssetFilter}>
+                <SelectTrigger className="w-[220px] bg-white">
+                  <SelectValue placeholder="Asset" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Asset</SelectItem>
+                  {assets.map((asset) => (
+                    <SelectItem key={asset.id} value={asset.id}>
+                      {asset.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -432,6 +455,7 @@ export default function TenantsPage() {
                 size="sm" 
                 onClick={() => {
                   setSearchTerm('')
+                  setAssetFilter('all')
                   setCategoryFilter('all')
                   setStatusFilter('all')
                   setPaymentStatusFilter('all')
@@ -442,12 +466,9 @@ export default function TenantsPage() {
                 Reset
               </Button>
             </div>
-          )}
-          
-          {/* Simple search for tenant users */}
-          {isTenantUser && (
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg border">
-              <div className="relative">
+          ) : (
+            <div className="flex flex-wrap items-center gap-4 mt-4 p-4 bg-gray-50 rounded-lg border">
+              <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder="Cari tenant..."
@@ -474,7 +495,7 @@ export default function TenantsPage() {
               onView={handleView}
               onRefresh={handleRefresh}
               loading={loading}
-              pagination={!isTenantUser ? (pagination || undefined) : undefined}
+              pagination={isAdminView ? (pagination || undefined) : undefined}
               onPageChange={handlePageChange}
               can_edit={can_edit}
               can_delete={can_delete}

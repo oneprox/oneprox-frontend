@@ -21,6 +21,7 @@ export default function UsersPage() {
   const [filteredUsers, setFilteredUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
   
@@ -43,8 +44,8 @@ export default function UsersPage() {
         limit,
         offset
       }
-      if (searchTerm.trim()) {
-        filterParams.name = searchTerm.trim()
+      if (debouncedSearch.trim()) {
+        filterParams.name = debouncedSearch.trim()
       }
       if (roleFilter !== 'all') {
         filterParams.role_id = roleFilter
@@ -129,14 +130,21 @@ export default function UsersPage() {
   }
 
   useEffect(() => {
-    loadUsers()
     loadRoles()
   }, [])
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm)
+      setOffset(0)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchTerm])
 
   // Reload data when filters or pagination change
   useEffect(() => {
     loadUsers()
-  }, [searchTerm, roleFilter, statusFilter, order, offset])
+  }, [debouncedSearch, roleFilter, statusFilter, order, offset])
 
   const handlePageChange = (newOffset: number) => {
     setOffset(newOffset)
@@ -206,22 +214,6 @@ export default function UsersPage() {
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
-
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Users</h1>
-          <p className="text-muted-foreground">
-            Kelola pengguna dan akses sistem
-          </p>
-        </div>
-        {can_add && (
-          <Button onClick={() => router.push('/users/create')}>
-            <Plus className="mr-2 h-4 w-4" />
-            Tambah User
-          </Button>
-        )}
-      </div>
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6 hidden">
@@ -301,10 +293,21 @@ export default function UsersPage() {
 
       {/* Search and Actions */}
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
-            <CardTitle>Daftar Users</CardTitle>
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">Users</h1>
+              <p className="text-muted-foreground">
+                Kelola pengguna dan akses sistem
+              </p>
+            </div>
             <div className="flex items-center gap-2">
+              {can_add && (
+                <Button onClick={() => router.push('/users/create')}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Tambah User
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={handleRefresh} disabled={loading}>
                 <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               </Button>
@@ -316,14 +319,14 @@ export default function UsersPage() {
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Cari user..."
+                placeholder="Cari nama atau email..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-8 bg-white"
               />
             </div>
             
-            <Select value={roleFilter} onValueChange={setRoleFilter}>
+            <Select value={roleFilter} onValueChange={(value) => { setRoleFilter(value); setOffset(0) }}>
               <SelectTrigger className="w-[150px] bg-white">
                 <SelectValue placeholder="Role" />
               </SelectTrigger>
@@ -337,7 +340,7 @@ export default function UsersPage() {
               </SelectContent>
             </Select>
             
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <Select value={statusFilter} onValueChange={(value) => { setStatusFilter(value); setOffset(0) }}>
               <SelectTrigger className="w-[150px] bg-white">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
@@ -348,7 +351,7 @@ export default function UsersPage() {
               </SelectContent>
             </Select>
             
-            <Select value={order} onValueChange={setOrder}>
+            <Select value={order} onValueChange={(value) => { setOrder(value); setOffset(0) }}>
               <SelectTrigger className="w-[180px] bg-white">
                 <SelectValue placeholder="Urutkan" />
               </SelectTrigger>

@@ -21,7 +21,7 @@ export default function AttendanceCard() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [lastAttendance, setLastAttendance] = useState<string | null>(null);
   const [todayAttendanceStatus, setTodayAttendanceStatus] = useState<TodayAttendanceStatus | null>(null);
-  const [radiusDistance, setRadiusDistance] = useState<number>(20000); // Default 20000 meters
+  const [radiusDistance, setRadiusDistance] = useState<number>(5); // Default 20000 meters
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [attendanceHistory, setAttendanceHistory] = useState<Attendance[]>([]);
   const [currentDistance, setCurrentDistance] = useState<number | null>(null);

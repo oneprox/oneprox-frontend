@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useMemo } from 'react'
-import { Tenant, tenantsApi, DURATION_UNIT_LABELS, DURATION_UNITS } from '@/lib/api'
+import { Tenant, tenantsApi, DURATION_UNIT_LABELS, DURATION_UNITS, normalizeTenantStatus, TENANT_STATUS_LABELS } from '@/lib/api'
 import {
   Table,
   TableBody,
@@ -117,6 +117,13 @@ export default function TenantsTable({
     setMounted(true)
   }, [])
 
+  // Debug: Log tenants data
+  useEffect(() => {
+    console.log('TenantsTable - tenants:', tenants)
+    console.log('TenantsTable - tenants length:', Array.isArray(tenants) ? tenants.length : 'not array')
+    console.log('TenantsTable - paymentStatusFilter:', paymentStatusFilter)
+  }, [tenants, paymentStatusFilter])
+
 
   const handleDeleteClick = (tenant: Tenant) => {
     setTenantToDelete(tenant)
@@ -157,6 +164,11 @@ export default function TenantsTable({
     })
   }
 
+  const formatRupiah = (value?: number | null) => {
+    if (value === undefined || value === null || Number.isNaN(Number(value))) return '-'
+    return `Rp ${Number(value).toLocaleString('id-ID')}`
+  }
+
   const formatDateOnly = (dateString: string) => {
     if (!mounted) return 'Loading...'
     return new Date(dateString).toLocaleDateString('id-ID', {
@@ -166,22 +178,23 @@ export default function TenantsTable({
     })
   }
 
-  const getTenantStatus = (status: string) => {
-    switch (status) {
+  const getTenantStatus = (status: string | number | null | undefined) => {
+    const normalized = normalizeTenantStatus(status)
+    switch (normalized) {
       case 'inactive':
-        return { label: 'Tidak Aktif', variant: 'secondary' as const }
+        return { label: TENANT_STATUS_LABELS.inactive, variant: 'secondary' as const }
       case 'active':
-        return { label: 'Aktif', variant: 'default' as const }
+        return { label: TENANT_STATUS_LABELS.active, variant: 'default' as const }
       case 'pending':
-        return { label: 'Pending', variant: 'outline' as const }
+        return { label: TENANT_STATUS_LABELS.pending, variant: 'outline' as const }
       case 'expired':
-        return { label: 'Expired', variant: 'destructive' as const }
+        return { label: TENANT_STATUS_LABELS.expired, variant: 'destructive' as const }
       case 'terminated':
-        return { label: 'Terminated', variant: 'destructive' as const }
+        return { label: TENANT_STATUS_LABELS.terminated, variant: 'destructive' as const }
       case 'blacklisted':
-        return { label: 'Blacklisted', variant: 'destructive' as const }
+        return { label: TENANT_STATUS_LABELS.blacklisted, variant: 'destructive' as const }
       default:
-        return { label: 'Unknown', variant: 'secondary' as const }
+        return { label: 'Tidak Diketahui', variant: 'secondary' as const }
     }
   }
 
@@ -211,6 +224,12 @@ export default function TenantsTable({
             Overdue
           </span>
         )
+      default:
+        return (
+          <span className="px-3 py-1.5 rounded text-xs font-medium bg-gray-100 text-gray-700 border border-gray-300">
+            Scheduled
+          </span>
+        )
     }
   }
 
@@ -232,7 +251,12 @@ export default function TenantsTable({
 
   const getPageStart = () => {
     if (!pagination) return 0
-    return pagination.offset + 1
+    // Ensure offset is valid (not negative and reasonable)
+    // Maximum offset should be (totalPages - 1) * limit
+    const maxPages = Math.ceil(pagination.total / pagination.limit)
+    const maxOffset = Math.max(0, (maxPages - 1) * pagination.limit)
+    const validOffset = Math.max(0, Math.min(pagination.offset, maxOffset))
+    return validOffset + 1
   }
 
   const getPageEnd = () => {
@@ -244,6 +268,12 @@ export default function TenantsTable({
   // Note: Payment status filtering is primarily handled by the backend via paymentStatusFilter query param
   // This client-side filter is a fallback for cases where payment status is already in the tenant data
   const filteredTenantsWithPayment = useMemo(() => {
+    // If no tenants, return empty array
+    if (!Array.isArray(tenants) || tenants.length === 0) {
+      return []
+    }
+    
+    // If filter is 'all', return all tenants
     if (paymentStatusFilter === 'all') {
       return tenants
     }
@@ -251,8 +281,8 @@ export default function TenantsTable({
     // Filter by payment_status if it exists on the tenant object
     return tenants.filter((tenant) => {
       const paymentStatus = (tenant as any).payment_status || (tenant as TenantWithPaymentStatus).paymentStatus
+      // If no payment status and filter is not 'all', exclude it
       if (!paymentStatus) {
-        // If no payment status, include it only if filter is 'all' (already handled above)
         return false
       }
       return paymentStatus === paymentStatusFilter
@@ -284,27 +314,33 @@ export default function TenantsTable({
               <TableHead>User</TableHead>
               <TableHead>Status Tenant</TableHead>
               <TableHead>Status Pembayaran</TableHead>
+              <TableHead className="text-right">Total Harga</TableHead>
               <TableHead>Kontrak</TableHead>
-              <TableHead>Dibuat</TableHead>
-              <TableHead>Diubah pada</TableHead>
+              {/* <TableHead>Dibuat</TableHead>
+              <TableHead>Diubah pada</TableHead> */}
               <TableHead className="w-[70px]">Aksi</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {!Array.isArray(tenants) || tenants.length === 0 ? (
+            {filteredTenantsWithPayment.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
-                  Tidak ada data tenant
+                <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                  {!Array.isArray(tenants) || tenants.length === 0 
+                    ? 'Tidak ada data tenant' 
+                    : 'Tidak ada data tenant yang sesuai dengan filter'}
                 </TableCell>
               </TableRow>
             ) : (
               filteredTenantsWithPayment.map((tenant, index) => {
                 const isLast = index === filteredTenantsWithPayment.length - 1;
+                const rowNumber = pagination 
+                  ? getPageStart() + index
+                  : index + 1;
                 // Use status from database if available, otherwise calculate based on contract_end_at
                 let tenantStatus: string;
-                if (tenant.status) {
-                  // Use status from database
-                  tenantStatus = tenant.status;
+                const normalizedStatus = normalizeTenantStatus(tenant.status);
+                if (normalizedStatus) {
+                  tenantStatus = normalizedStatus;
                 } else {
                   // Fallback: Calculate tenant status based on contract_end_at
                   const endDate = new Date(tenant.contract_end_at);
@@ -318,7 +354,7 @@ export default function TenantsTable({
                 
                 return (
                 <TableRow key={tenant.id}>
-                  <TableCell className="font-medium">{String(index + 1)}</TableCell>
+                  <TableCell className="font-medium">{String(rowNumber)}</TableCell>
                   <TableCell className="font-medium">
                     {tenant.name}
                   </TableCell>
@@ -349,6 +385,13 @@ export default function TenantsTable({
                     {/* Payment status diambil langsung dari tabel tenant, tidak dihitung manual */}
                     {getPaymentStatusBadge((tenant.payment_status as 'paid' | 'scheduled' | 'reminder_needed' | 'overdue') || 'scheduled')}
                   </TableCell>
+                  <TableCell className="text-right text-sm font-medium whitespace-nowrap">
+                    {formatRupiah(
+                      tenant.total_price != null
+                        ? tenant.total_price
+                        : (tenant.rent_price ?? 0) + (tenant.ppn ?? 0)
+                    )}
+                  </TableCell>
                   <TableCell className="text-sm">
                     <div className="space-y-1">
                       <div className="text-muted-foreground">
@@ -360,42 +403,42 @@ export default function TenantsTable({
                       <div className="text-muted-foreground">
                         <span className="font-medium">Durasi:</span> {(() => {
                           try {
-                            const duration = tenant.rent_duration || 0;
-                            let unit = '';
-                            if (tenant.rent_duration_unit !== undefined && tenant.rent_duration_unit !== null) {
-                              // Handle numeric format: 0 = month, 1 = year
-                              const unitValue = Number(tenant.rent_duration_unit);
-                              if (unitValue === 1) {
-                                unit = 'tahun';
-                              } else if (unitValue === 0) {
-                                unit = 'bulan';
+                            // Calculate duration from contract dates
+                            const beginDate = new Date(tenant.contract_begin_at);
+                            const endDate = new Date(tenant.contract_end_at);
+                            const diffTime = endDate.getTime() - beginDate.getTime();
+                            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                            
+                            if (diffDays > 0) {
+                              const months = Math.floor(diffDays / 30);
+                              const years = Math.floor(months / 12);
+                              const remainingMonths = months % 12;
+                              
+                              if (years > 0 && remainingMonths > 0) {
+                                return `${years} tahun ${remainingMonths} bulan`;
+                              } else if (years > 0) {
+                                return `${years} tahun`;
+                              } else if (months > 0) {
+                                return `${months} bulan`;
                               } else {
-                                // Fallback: handle string format
-                                const unitString = String(tenant.rent_duration_unit).toLowerCase();
-                                if (unitString === 'year' || unitString === DURATION_UNITS.YEAR) {
-                                  unit = 'tahun';
-                                } else if (unitString === 'month' || unitString === DURATION_UNITS.MONTH) {
-                                  unit = 'bulan';
-                                } else {
-                                  unit = tenant.rent_duration_unit;
-                                }
+                                return `${diffDays} hari`;
                               }
                             }
-                            return duration > 0 && unit ? `${duration} ${unit}` : '-';
+                            return '-';
                           } catch (error) {
-                            console.error('Error rendering duration field:', error, tenant.rent_duration, tenant.rent_duration_unit);
+                            console.error('Error calculating duration:', error);
                             return '-';
                           }
                         })()}
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
+                  {/* <TableCell className="text-sm text-muted-foreground">
                     {formatDate(tenant.created_at)}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {formatDate(tenant.updated_at)}
-                  </TableCell>
+                  </TableCell> */}
                   <TableCell
                       className={`py-4 px-4 border-b text-center first:border-s last:border-e border-neutral-200 dark:border-slate-600 ${isLast ? "rounded-bl-lg" : ""
                           }`}

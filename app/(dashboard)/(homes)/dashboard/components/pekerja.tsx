@@ -1,5 +1,6 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -11,11 +12,17 @@ interface PekerjaProps {
 }
 
 export default function Pekerja({ workers }: PekerjaProps) {
+  const router = useRouter()
+
+  const handleWorkerClick = (workerId: string | number) => {
+    router.push(`/worker/${workerId}`)
+  }
+
   const getRoleColor = (role: string) => {
     const roleLower = role.toLowerCase()
-    if (roleLower === 'cleaning') {
+    if (roleLower === 'cleaning' || roleLower === 'kebersihan') {
       return 'bg-blue-500'
-    } else if (roleLower === 'security') {
+    } else if (roleLower === 'security' || roleLower === 'keamanan') {
       return 'bg-yellow-500'
     }
     return 'bg-gray-500'
@@ -23,9 +30,9 @@ export default function Pekerja({ workers }: PekerjaProps) {
 
   const getRoleBadge = (role: string) => {
     const roleLower = role.toLowerCase()
-    if (roleLower === 'cleaning') {
+    if (roleLower === 'cleaning' || roleLower === 'kebersihan') {
       return <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-200 border-0">Cleaning</Badge>
-    } else if (roleLower === 'security') {
+    } else if (roleLower === 'security' || roleLower === 'keamanan') {
       return <Badge className="bg-yellow-100 text-yellow-700 hover:bg-yellow-200 border-0">Security</Badge>
     }
     return <Badge>{role}</Badge>
@@ -53,7 +60,8 @@ export default function Pekerja({ workers }: PekerjaProps) {
             workers.map((worker) => (
               <div
                 key={worker.id}
-                className="p-4 bg-white rounded-lg border border-gray-200 shadow-sm"
+                className="p-4 bg-white rounded-lg border border-gray-200 shadow-sm cursor-pointer hover:bg-gray-50 hover:shadow-md transition-all"
+                onClick={() => handleWorkerClick(worker.id)}
               >
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">

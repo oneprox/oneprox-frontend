@@ -1,5 +1,7 @@
 // Utility functions for API calls to oripro-backend
 
+import { getJakartaCalendarMonthIsoRange } from './work/jakartaMonthRange'
+
 // Determine API URL based on environment
 // For development (localhost), always use localhost:3001
 // For production, use NEXT_PUBLIC_API_URL environment variable
@@ -148,10 +150,28 @@ export class ApiClient {
           }
         }
         
+        if (response.status === 413) {
+          return {
+            success: false,
+            error:
+              data.message ||
+              data.error ||
+              'Ukuran upload terlalu besar. Perkecil foto lalu coba lagi.',
+            message: data.message,
+          }
+        }
+
+        const apiError =
+          data.message ||
+          (typeof data.error === 'string'
+            ? data.error
+            : data.error?.message) ||
+          `HTTP ${response.status}`
+
         return {
           success: false,
-          error: data.message || data.error || `HTTP ${response.status}`,
-          message: data.message,
+          error: apiError,
+          message: data.message || apiError,
         }
       }
 
@@ -179,7 +199,15 @@ export class ApiClient {
       }
 
       // Handle nested response format (when backend wraps response in another data object)
-      if (data && typeof data === 'object' && 'data' in data && typeof data.data === 'object' && 'data' in data.data) {
+      if (
+        data &&
+        typeof data === 'object' &&
+        'data' in data &&
+        data.data != null &&
+        typeof data.data === 'object' &&
+        !Array.isArray(data.data) &&
+        'data' in data.data
+      ) {
         return {
           success: data.data.success || true,
           data: data.data.data,
@@ -305,6 +333,7 @@ export interface User {
   phone?: string
   gender?: string
   role_id?: number
+  assetIds?: string[]
   status?: string
   role?: {
     id: number
@@ -427,20 +456,33 @@ export interface TenantLog {
 export interface TenantDepositLog {
   id: number
   tenant_id: string
-  reason?: string
-  new_deposit?: number
-  old_deposit?: number
-  old_data?: {
-    deposit?: number
-    old_deposit?: number
-    amount?: number
-  }
+  deposit_date: string
+  amount: number
+  notes?: string
   created_by?: {
     id: string
     name: string
     email: string
   }
+  updated_by?: {
+    id: string
+    name: string
+    email: string
+  } | null
   created_at: string
+  updated_at?: string | null
+}
+
+export interface CreateTenantDepositLogData {
+  deposit_date: string
+  amount: number
+  notes?: string
+}
+
+export interface UpdateTenantDepositLogData {
+  deposit_date?: string
+  amount?: number
+  notes?: string
 }
 
 // Tenant Payment Log interface
@@ -454,6 +496,19 @@ export interface TenantPaymentLog {
   payment_method?: string
   notes?: string
   status?: number // 0 for unpaid, 1 for paid, 2 for expired
+  billing_type?: string // jenis tagihan
+  billing_period?: string // periode tagihan
+  billing_amount?: number // total tagihan (amount + ppn)
+  ppn?: number
+  ppn_percent?: number // fraksi desimal (0.11 = 11%)
+  outstanding?: number
+  overdue?: number
+  rate?: number // fraksi per hari/periode: 0.02 = 2%, default 0.01 = 1%
+  last_charge_date?: string // ISO date
+  spk?: string
+  invoice_number?: string
+  invoice_date?: string
+  pph?: number
   updatedBy?: {
     id: string
     name: string
@@ -464,17 +519,94 @@ export interface TenantPaymentLog {
 
 // Create Tenant Payment Data interface
 export interface CreateTenantPaymentData {
-  amount: number
-  payment_method: string
+  billing_period: string // mandatory
+  amount: number // mandatory — jumlah tagihan dasar
+  billing_amount: number // mandatory — total (amount + ppn)
+  ppn?: number
+  ppn_percent?: number // fraksi desimal
+  payment_deadline: string // mandatory
+  /** Nilai yang dibayar; jika lebih dari 0 penagihan tercatat sebagai dibayar */
+  paid_amount?: number
+  /** ISO date string; jika diisi saat create maka status otomatis paid */
+  payment_date?: string
+  payment_method?: string
   notes?: string
+  billing_type?: string
+  outstanding?: number
+  overdue?: number
+  /** Fraksi (0.02 = 2%); default backend 0.01 = 1% */
+  rate?: number
+  last_charge_date?: string // ISO date
+  spk?: string
+  invoice_number?: string
+  invoice_date?: string
+  pph?: number
 }
 
 // Update Tenant Payment Data interface
 export interface UpdateTenantPaymentData {
+  payment_deadline?: string
   payment_date?: string
   payment_method?: string
   notes?: string
   paid_amount?: number
+  billing_type?: string
+  billing_period?: string
+  amount?: number
+  billing_amount?: number
+  ppn?: number | null
+  ppn_percent?: number | null
+  outstanding?: number
+  overdue?: number
+  /** Fraksi (0.02 = 2%) */
+  rate?: number
+  last_charge_date?: string // ISO date
+  spk?: string | null
+  invoice_number?: string | null
+  invoice_date?: string | null
+  pph?: number | null
+}
+
+// Tenant Legal interface
+export interface TenantLegal {
+  id: number
+  tenant_id: string
+  doc_type: string
+  due_date?: string
+  keterangan?: string
+  document_url?: string
+  description?: string // Description from settings
+  status?: 'belum_selesai' | 'selesai'
+  created_by?: {
+    id: string
+    name: string
+    email: string
+  }
+  updated_by?: {
+    id: string
+    name: string
+    email: string
+  }
+  created_at: string
+  updated_at?: string
+}
+
+// Create Tenant Legal Data interface
+export interface CreateTenantLegalData {
+  doc_type: string
+  due_date?: string
+  keterangan?: string
+  document_url?: string
+  status?: 'belum_selesai' | 'selesai'
+}
+
+// Update Tenant Legal Data interface
+export interface UpdateTenantLegalData {
+  doc_type?: string
+  due_date?: string
+  keterangan?: string
+  document_url?: string
+  status?: 'belum_selesai' | 'selesai'
 }
 
 // Roles-specific API functions
@@ -506,6 +638,7 @@ export const usersApi = {
     name?: string
     email?: string
     role_id?: string
+    asset_id?: string
     status?: string
     order?: string
     limit?: number
@@ -515,6 +648,7 @@ export const usersApi = {
     if (params?.name) queryParams.append('name', params.name)
     if (params?.email) queryParams.append('email', params.email)
     if (params?.role_id) queryParams.append('role_id', params.role_id)
+    if (params?.asset_id) queryParams.append('asset_id', params.asset_id)
     if (params?.status) queryParams.append('status', params.status)
     if (params?.order) queryParams.append('order', params.order)
     if (params?.limit) queryParams.append('limit', params.limit.toString())
@@ -581,11 +715,13 @@ export interface Asset {
   longitude: number
   latitude: number
   photos?: string[]
-  sketch?: string
+  /** Backend mengirim array URL; string dipertahankan untuk data lama */
+  sketch?: string | string[]
   created_by?: string
   updated_by?: string
   created_at: string
   updated_at: string
+  total_units?: number
 }
 
 export interface CreateAssetData {
@@ -886,11 +1022,19 @@ export const attendanceApi = {
     return apiClient.get<Attendance[]>(`/api/attendances/history${queryParams}`)
   },
 
-  async getUserAttendanceHistoryByDate(userId?: string, dateFrom?: string, dateTo?: string): Promise<ApiResponse<Attendance[]>> {
+  async getUserAttendanceHistoryByDate(
+    userId?: string,
+    dateFrom?: string,
+    dateTo?: string,
+    limit?: number,
+    offset?: number
+  ): Promise<ApiResponse<Attendance[]>> {
     const queryParams = new URLSearchParams()
     if (userId) queryParams.append('user_id', userId)
     if (dateFrom) queryParams.append('date_from', dateFrom)
     if (dateTo) queryParams.append('date_to', dateTo)
+    if (limit != null) queryParams.append('limit', String(limit))
+    if (offset != null) queryParams.append('offset', String(offset))
     const queryString = queryParams.toString()
     return apiClient.get<Attendance[]>(`/api/attendances/history${queryString ? `?${queryString}` : ''}`)
   },
@@ -916,7 +1060,9 @@ export interface Unit {
   id: string
   asset_id: string
   name: string
+  code?: string
   size: number
+  building_area?: number
   rent_price: number
   lamp: number
   electric_socket: number
@@ -933,22 +1079,79 @@ export interface Unit {
   asset?: Asset
 }
 
+export type UnitStatus =
+  | 'available'
+  | 'occupied'
+  | 'maintenance'
+  | 'reserved'
+  | 'inactive'
+  | 'out_of_order'
+
+export const UNIT_STATUS_LABELS: Record<UnitStatus, string> = {
+  available: 'Tersedia',
+  occupied: 'Terisi',
+  maintenance: 'Perawatan',
+  reserved: 'Dipesan',
+  inactive: 'Tidak Aktif',
+  out_of_order: 'Tidak Beroperasi',
+}
+
+const UNIT_STATUS_INT_TO_VALUE: Record<number, UnitStatus> = {
+  0: 'available',
+  1: 'occupied',
+  2: 'maintenance',
+  3: 'reserved',
+  4: 'inactive',
+  5: 'out_of_order',
+}
+
+/** Normalisasi status unit dari angka (0–5) atau string ke nilai form/tampilan */
+export function normalizeUnitStatus(
+  status: string | number | null | undefined
+): UnitStatus | undefined {
+  if (status === undefined || status === null || status === '') return undefined
+
+  const asNumber = typeof status === 'number' ? status : parseInt(String(status), 10)
+  if (!Number.isNaN(asNumber) && UNIT_STATUS_INT_TO_VALUE[asNumber] !== undefined) {
+    const raw = String(status).trim()
+    if (typeof status === 'number' || /^\d+$/.test(raw)) {
+      return UNIT_STATUS_INT_TO_VALUE[asNumber]
+    }
+  }
+
+  const s = String(status).toLowerCase() as UnitStatus
+  return UNIT_STATUS_LABELS[s] !== undefined ? s : undefined
+}
+
+export const UNIT_STATUS_OPTIONS: { value: UnitStatus; label: string }[] = [
+  { value: 'available', label: UNIT_STATUS_LABELS.available },
+  { value: 'occupied', label: UNIT_STATUS_LABELS.occupied },
+  { value: 'maintenance', label: UNIT_STATUS_LABELS.maintenance },
+  { value: 'reserved', label: UNIT_STATUS_LABELS.reserved },
+  { value: 'inactive', label: UNIT_STATUS_LABELS.inactive },
+  { value: 'out_of_order', label: UNIT_STATUS_LABELS.out_of_order },
+]
+
 export interface CreateUnitData {
   name: string
   asset_id: string
   size: number
+  building_area?: number
   rent_price: number
   lamp?: number
   electric_socket?: number
-  electrical_power: number
+  electrical_power?: number
   electrical_unit?: string
-  is_toilet_exist: boolean
+  is_toilet_exist?: boolean
   description?: string
+  status?: UnitStatus
 }
 
 export interface UpdateUnitData {
   name?: string
+  asset_id?: string
   size?: number
+  building_area?: number
   rent_price?: number
   lamp?: number
   electric_socket?: number
@@ -956,6 +1159,7 @@ export interface UpdateUnitData {
   electrical_unit?: string
   is_toilet_exist?: boolean
   description?: string
+  status?: UnitStatus
 }
 
 // Units-specific API functions
@@ -965,6 +1169,8 @@ export const unitsApi = {
     asset_id?: string
     is_deleted?: boolean
     status?: number
+    assignable?: boolean | number | string
+    for_tenant_id?: string
     size_min?: number
     size_max?: number
     order?: string
@@ -976,6 +1182,14 @@ export const unitsApi = {
     if (params?.asset_id) queryParams.append('asset_id', params.asset_id)
     if (params?.is_deleted !== undefined) queryParams.append('is_deleted', params.is_deleted.toString())
     if (params?.status !== undefined && params?.status !== null) queryParams.append('status', params.status.toString())
+    if (params?.assignable !== undefined && params?.assignable !== null) {
+      const v = params.assignable
+      queryParams.append(
+        'assignable',
+        v === true || v === 1 || v === '1' || v === 'true' ? '1' : '0'
+      )
+    }
+    if (params?.for_tenant_id) queryParams.append('for_tenant_id', params.for_tenant_id)
     if (params?.size_min) queryParams.append('size_min', params.size_min.toString())
     if (params?.size_max) queryParams.append('size_max', params.size_max.toString())
     if (params?.order) queryParams.append('order', params.order)
@@ -1018,9 +1232,14 @@ export interface Tenant {
   rent_duration_unit: string
   code: string
   rent_price?: number
+  ppn?: number
+  total_price?: number
   down_payment?: number
   deposit?: number
   payment_term?: string
+  building_area?: number
+  land_area?: number
+  electricity_power?: number
   status?: string // 'inactive' | 'active' | 'pending' | 'expired' | 'terminated' | 'blacklisted'
   payment_status?: 'paid' | 'scheduled' | 'reminder_needed' | 'overdue'
   created_by?: string
@@ -1032,10 +1251,20 @@ export interface Tenant {
   contract_documents?: string[]
   unit_ids?: string[]
   units?: Unit[]
+  asset_ids?: string[]
+  assets?: Asset[]
+  building_type?: 'unit' | 'asset'
   category?: {
     id: number
     name: string
   }
+  bank_id?: number | null
+  bank?: {
+    id: number
+    bank_name: string
+    bank_account: string
+    holder_name: string
+  } | null
   categories?: number[] | any[] // Keep for backward compatibility
 }
 
@@ -1049,28 +1278,83 @@ export interface CreateTenantData {
   contract_documents: string[]
   unit_ids: string[]
   category_id: number
+  bank_id?: number | null
   rent_price?: number
+  ppn?: number
+  total_price?: number
   down_payment?: number
   deposit?: number
   payment_term?: number
   price_per_term?: number
+  building_area?: number
+  land_area?: number
+  electricity_power?: number
 }
 
 export interface UpdateTenantData {
   name?: string
   user_id?: string
   contract_begin_at?: string
+  contract_end_at?: string
   rent_duration?: number
   rent_duration_unit?: string
   tenant_identifications?: string[]
   contract_documents?: string[]
+  building_type?: 'unit' | 'asset'
   unit_ids?: string[]
+  asset_ids?: string[]
+  category?: string
+  bank_id?: number | null
+  sub_category?: string
   categories?: number[]
   rent_price?: number
+  ppn?: number
+  total_price?: number
+  payment_term?: number
   down_payment?: number
   deposit?: number
   deposit_reason?: string
+  building_area?: number
+  land_area?: number
+  electricity_power?: number
   status?: string // 'inactive' | 'active' | 'pending' | 'expired' | 'terminated' | 'blacklisted'
+}
+
+/** Label tampilan status tenant */
+export const TENANT_STATUS_LABELS: Record<string, string> = {
+  inactive: 'Tidak Aktif',
+  active: 'Aktif',
+  pending: 'Pending',
+  expired: 'Expired',
+  terminated: 'Terminated',
+  blacklisted: 'Blacklisted',
+}
+
+const TENANT_STATUS_INT_TO_VALUE: Record<number, string> = {
+  0: 'inactive',
+  1: 'active',
+  2: 'pending',
+  3: 'expired',
+  4: 'terminated',
+  5: 'blacklisted',
+}
+
+/** Normalisasi status tenant dari angka (0–5) atau string ke nilai form/tampilan */
+export function normalizeTenantStatus(
+  status: string | number | null | undefined
+): string | undefined {
+  if (status === undefined || status === null || status === '') return undefined
+
+  const asNumber = typeof status === 'number' ? status : parseInt(String(status), 10)
+  if (!Number.isNaN(asNumber) && TENANT_STATUS_INT_TO_VALUE[asNumber] !== undefined) {
+    const raw = String(status).trim()
+    if (typeof status === 'number' || /^\d+$/.test(raw)) {
+      return TENANT_STATUS_INT_TO_VALUE[asNumber]
+    }
+  }
+
+  const s = String(status).toLowerCase()
+  return TENANT_STATUS_LABELS[s] !== undefined ? s : undefined
 }
 
 // Duration unit constants
@@ -1089,6 +1373,7 @@ export const tenantsApi = {
   async getTenants(params?: {
     name?: string
     user_id?: string
+    asset_id?: string
     category?: number | string
     status?: number | string
     payment_status?: string
@@ -1099,6 +1384,7 @@ export const tenantsApi = {
     const queryParams = new URLSearchParams()
     if (params?.name) queryParams.append('name', params.name)
     if (params?.user_id) queryParams.append('user_id', params.user_id)
+    if (params?.asset_id) queryParams.append('asset_id', params.asset_id)
     if (params?.category) queryParams.append('category', params.category.toString())
     if (params?.status !== undefined && params?.status !== null) {
       queryParams.append('status', params.status.toString())
@@ -1150,22 +1436,54 @@ export const tenantsApi = {
     return apiClient.get<TenantLog[]>(`/api/tenants/${tenantId}/logs`)
   },
 
-  async getTenantDepositLogs(tenantId: string): Promise<ApiResponse<TenantDepositLog[]>> {
-    return apiClient.get<TenantDepositLog[]>(`/api/tenants/${tenantId}/deposito-logs`)
+  async getTenantDepositLogs(tenantId: string, params?: {
+    limit?: number
+    offset?: number
+    orderBy?: 'deposit_date' | 'amount' | 'created_at'
+    order?: 'ASC' | 'DESC'
+  }): Promise<ApiResponse<TenantDepositLog[]>> {
+    const queryParams = new URLSearchParams()
+    if (params?.limit != null) queryParams.append('limit', params.limit.toString())
+    if (params?.offset != null) queryParams.append('offset', params.offset.toString())
+    if (params?.orderBy) queryParams.append('orderBy', params.orderBy)
+    if (params?.order) queryParams.append('order', params.order)
+
+    const endpoint = `/api/tenants/${tenantId}/deposito-logs${queryParams.toString() ? `?${queryParams.toString()}` : ''}`
+    return apiClient.get<TenantDepositLog[]>(endpoint)
+  },
+
+  async createTenantDepositLog(tenantId: string, data: CreateTenantDepositLogData): Promise<ApiResponse<TenantDepositLog>> {
+    return apiClient.post<TenantDepositLog>(`/api/tenants/${tenantId}/deposito-logs`, data)
+  },
+
+  async updateTenantDepositLog(tenantId: string, logId: number, data: UpdateTenantDepositLogData): Promise<ApiResponse<TenantDepositLog>> {
+    return apiClient.put<TenantDepositLog>(`/api/tenants/${tenantId}/deposito-logs/${logId}`, data)
+  },
+
+  async deleteTenantDepositLog(tenantId: string, logId: number): Promise<ApiResponse<void>> {
+    return apiClient.delete<void>(`/api/tenants/${tenantId}/deposito-logs/${logId}`)
   },
 
   async getTenantPaymentLogs(tenantId: string, params?: {
     limit?: number
     offset?: number
     status?: number
+    orderBy?: string
+    order?: 'ASC' | 'DESC'
   }): Promise<ApiResponse<TenantPaymentLog[]>> {
     const queryParams = new URLSearchParams()
-    if (params?.limit) queryParams.append('limit', params.limit.toString())
-    if (params?.offset) queryParams.append('offset', params.offset.toString())
+    if (params?.limit != null) queryParams.append('limit', params.limit.toString())
+    if (params?.offset != null) queryParams.append('offset', params.offset.toString())
     if (params?.status !== undefined && params?.status !== null) queryParams.append('status', params.status.toString())
-    
+    if (params?.orderBy) queryParams.append('orderBy', params.orderBy)
+    if (params?.order) queryParams.append('order', params.order)
+
     const endpoint = `/api/tenants/${tenantId}/payments${queryParams.toString() ? `?${queryParams.toString()}` : ''}`
     return apiClient.get<TenantPaymentLog[]>(endpoint)
+  },
+
+  async getTenantPayment(tenantId: string, paymentId: number): Promise<ApiResponse<TenantPaymentLog>> {
+    return apiClient.get<TenantPaymentLog>(`/api/tenants/${tenantId}/payments/${paymentId}`)
   },
 
   async createTenantPayment(tenantId: string, data: CreateTenantPaymentData): Promise<ApiResponse<TenantPaymentLog>> {
@@ -1174,6 +1492,26 @@ export const tenantsApi = {
 
   async updateTenantPayment(tenantId: string, paymentId: number, data: UpdateTenantPaymentData): Promise<ApiResponse<TenantPaymentLog>> {
     return apiClient.put<TenantPaymentLog>(`/api/tenants/${tenantId}/payments/${paymentId}`, data)
+  },
+
+  async deleteTenantPayment(tenantId: string, paymentId: number): Promise<ApiResponse<void>> {
+    return apiClient.delete<void>(`/api/tenants/${tenantId}/payments/${paymentId}`)
+  },
+
+  async getTenantLegals(tenantId: string): Promise<ApiResponse<TenantLegal[]>> {
+    return apiClient.get<TenantLegal[]>(`/api/tenants/${tenantId}/legals`)
+  },
+
+  async createTenantLegal(tenantId: string, data: CreateTenantLegalData): Promise<ApiResponse<TenantLegal>> {
+    return apiClient.post<TenantLegal>(`/api/tenants/${tenantId}/legals`, data)
+  },
+
+  async updateTenantLegal(tenantId: string, legalId: number, data: UpdateTenantLegalData): Promise<ApiResponse<TenantLegal>> {
+    return apiClient.put<TenantLegal>(`/api/tenants/${tenantId}/legals/${legalId}`, data)
+  },
+
+  async deleteTenantLegal(tenantId: string, legalId: number): Promise<ApiResponse<void>> {
+    return apiClient.delete<void>(`/api/tenants/${tenantId}/legals/${legalId}`)
   },
 }
 
@@ -1321,10 +1659,36 @@ export interface UpdateTaskGroupData {
   is_active?: boolean
 }
 
+export interface Bank {
+  id: number
+  bank_name: string
+  bank_account: string
+  holder_name: string
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateBankData {
+  bank_name: string
+  bank_account: string
+  holder_name: string
+  is_active?: boolean
+}
+
+export interface UpdateBankData {
+  bank_name?: string
+  bank_account?: string
+  holder_name?: string
+  is_active?: boolean
+}
+
 // Task API interface
 export interface Task {
   id: number | string
   name: string
+  is_routine?: boolean
+  assigned_user_id?: string
   is_main_task: boolean
   is_need_validation: boolean
   is_scan: boolean
@@ -1338,6 +1702,18 @@ export interface Task {
   task_group_id?: number | string | null
   days?: number[]
   times?: string[]
+  monthly_frequency?: number
+  due_date?: string | number
+  area?: string
+  non_routine_items?: Array<{
+    due_date?: string
+    area?: string
+    assigned_user_id?: string
+  }>
+  /** Satu UUID untuk semua task non-rutin yang dibuat/diikat bersamaan */
+  non_routine_group_id?: string | null
+  /** Hanya di UI: hasil merge beberapa task non-rutin legacy */
+  _mergedNonRoutineTaskIds?: number[]
   created_at?: string
   updated_at?: string
   created_by?: string
@@ -1349,6 +1725,8 @@ export interface Task {
 
 export interface CreateTaskData {
   name: string
+  is_routine?: boolean
+  assigned_user_id?: string
   is_main_task?: boolean
   is_need_validation?: boolean
   is_scan?: boolean
@@ -1362,10 +1740,22 @@ export interface CreateTaskData {
   task_group_id?: number
   days?: number[]
   times?: string[]
+  monthly_frequency?: number
+  due_date?: string | number
+  area?: string
+  non_routine_items?: Array<{
+    due_date?: string | number
+    area?: string
+    assigned_user_id?: string
+  }>
+  /** Opsional: kirim UUID yang sama pada beberapa create agar satu kelompok */
+  non_routine_group_id?: string
 }
 
 export interface UpdateTaskData {
   name?: string
+  is_routine?: boolean
+  assigned_user_id?: string
   is_main_task?: boolean
   is_need_validation?: boolean
   is_scan?: boolean
@@ -1379,6 +1769,15 @@ export interface UpdateTaskData {
   task_group_id?: number
   days?: number[]
   times?: string[]
+  monthly_frequency?: number
+  due_date?: string | number
+  area?: string
+  non_routine_items?: Array<{
+    due_date?: string | number
+    area?: string
+    assigned_user_id?: string
+  }>
+  non_routine_group_id?: string | null
 }
 
 // Task Log interface
@@ -1437,6 +1836,43 @@ export const taskGroupsApi = {
   },
 }
 
+// Banks-specific API functions
+export const banksApi = {
+  async getBanks(params?: {
+    bank_name?: string
+    is_active?: boolean
+    order?: 'newest' | 'oldest' | 'a-z' | 'z-a'
+    limit?: number
+    offset?: number
+  }): Promise<ApiResponse<Bank[]>> {
+    const queryParams = new URLSearchParams()
+    if (params?.bank_name) queryParams.append('bank_name', params.bank_name)
+    if (params?.is_active !== undefined) queryParams.append('is_active', params.is_active.toString())
+    if (params?.order) queryParams.append('order', params.order)
+    if (params?.limit) queryParams.append('limit', params.limit.toString())
+    if (params?.offset) queryParams.append('offset', params.offset.toString())
+
+    const endpoint = `/api/banks${queryParams.toString() ? `?${queryParams.toString()}` : ''}`
+    return apiClient.get<Bank[]>(endpoint)
+  },
+
+  async getBank(id: number): Promise<ApiResponse<Bank>> {
+    return apiClient.get<Bank>(`/api/banks/${id}`)
+  },
+
+  async createBank(data: CreateBankData): Promise<ApiResponse<Bank>> {
+    return apiClient.post<Bank>('/api/banks', data)
+  },
+
+  async updateBank(id: number, data: UpdateBankData): Promise<ApiResponse<Bank>> {
+    return apiClient.put<Bank>(`/api/banks/${id}`, data)
+  },
+
+  async deleteBank(id: number): Promise<ApiResponse<void>> {
+    return apiClient.delete<void>(`/api/banks/${id}`)
+  },
+}
+
 // Tasks-specific API functions
 export const tasksApi = {
   async getTasks(params?: {
@@ -1445,6 +1881,8 @@ export const tasksApi = {
     role_id?: number
     task_group_id?: number
     is_main_task?: boolean
+    is_routine?: boolean
+    non_routine_group_id?: string
     order?: string
     limit?: number
     offset?: number
@@ -1455,6 +1893,8 @@ export const tasksApi = {
     if (params?.role_id) queryParams.append('role_id', params.role_id.toString())
     if (params?.task_group_id) queryParams.append('task_group_id', params.task_group_id.toString())
     if (params?.is_main_task !== undefined) queryParams.append('is_main_task', params.is_main_task.toString())
+    if (params?.is_routine !== undefined) queryParams.append('is_routine', params.is_routine.toString())
+    if (params?.non_routine_group_id) queryParams.append('non_routine_group_id', params.non_routine_group_id)
     if (params?.order) queryParams.append('order', params.order)
     if (params?.limit) queryParams.append('limit', params.limit.toString())
     if (params?.offset) queryParams.append('offset', params.offset.toString())
@@ -1559,6 +1999,7 @@ export interface ComplaintReport {
   description: string
   reporter_id: string
   tenant_id?: string | null
+  asset_id?: string | null
   status: string | number // 'pending' | 'in_progress' | 'resolved' | 'closed' or 0-3
   priority: string | number // 'low' | 'medium' | 'high' | 'urgent' or 0-3
   created_by?: string | null
@@ -1567,6 +2008,7 @@ export interface ComplaintReport {
   updated_at?: string
   reporter?: User
   tenant?: Tenant
+  asset?: Asset
   createdBy?: User
   updatedBy?: User
   evidences?: Array<{ url: string } | string> // Array of evidence objects with url property or string URLs
@@ -1578,6 +2020,7 @@ export interface CreateComplaintReportData {
   description: string
   reporter_id: string
   tenant_id?: string | null
+  asset_id?: string | null
   status?: number // 0=pending, 1=in_progress, 2=resolved, 3=closed
   priority?: number // 0=low, 1=medium, 2=high, 3=urgent
   evidences?: string[] // Array of URLs
@@ -1615,6 +2058,7 @@ export const complaintReportsApi = {
     type?: 'complaint' | 'report'
     status?: string | number
     priority?: string | number
+    asset_id?: string
     tenant_id?: string
     reporter_id?: string
     order?: string
@@ -1626,6 +2070,7 @@ export const complaintReportsApi = {
     if (params?.type) queryParams.append('type', params.type)
     if (params?.status !== undefined && params?.status !== null) queryParams.append('status', String(params.status))
     if (params?.priority !== undefined && params?.priority !== null) queryParams.append('priority', String(params.priority))
+    if (params?.asset_id) queryParams.append('asset_id', params.asset_id)
     if (params?.tenant_id) queryParams.append('tenant_id', params.tenant_id)
     if (params?.reporter_id) queryParams.append('reporter_id', params.reporter_id)
     if (params?.order) queryParams.append('order', params.order)
@@ -1668,6 +2113,8 @@ export const complaintReportsApi = {
 export interface UserTask {
   id?: number
   user_task_id?: number | string
+  /** true = rutin (generate shift), false = non-rutin (bulanan) */
+  is_routine?: boolean
   user_id: string
   task_id: number | string
   status: 'pending' | 'inprogress' | 'in_progress' | 'completed' | 'cancelled'
@@ -1700,14 +2147,66 @@ export interface UpdateUserTaskData {
   notes?: string
 }
 
+/** Respons GET /api/user-tasks/non-routine (daftar flat, tanpa sub_user_task) */
+export interface NonRoutineUserTasksListResponse {
+  user_tasks: UserTask[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface DailyWorkStatusResponse {
+  day_date: string
+  month_from: string
+  month_to: string
+  today_tasks: UserTask[]
+  month_tasks: UserTask[]
+}
+
 // User Tasks-specific API functions
 export const userTasksApi = {
+  /**
+   * Task non-rutin: kirim rentang bulan Jakarta + period (selaras backend).
+   * Tanpa date_from/date_to di params, dipakai awal–akhir bulan berjalan WIB.
+   */
+  async getNonRoutineUserTasks(params?: {
+    limit?: number
+    offset?: number
+    user_id?: string
+    date_from?: string
+    date_to?: string
+    /** YYYY-MM; default = bulan berjalan Jakarta */
+    period?: string
+  }): Promise<ApiResponse<NonRoutineUserTasksListResponse>> {
+    const month = getJakartaCalendarMonthIsoRange()
+    const date_from = params?.date_from ?? month.date_from
+    const date_to = params?.date_to ?? month.date_to
+    const period = params?.period ?? month.period
+    const limit = params?.limit != null ? params.limit : 200
+
+    const queryParams = new URLSearchParams()
+    queryParams.append('limit', String(Math.min(500, Math.max(1, limit))))
+    if (params?.offset != null) queryParams.append('offset', params.offset.toString())
+    if (params?.user_id) queryParams.append('user_id', params.user_id)
+    queryParams.append('date_from', date_from)
+    queryParams.append('date_to', date_to)
+    queryParams.append('period', period)
+    return apiClient.get<NonRoutineUserTasksListResponse>(
+      `/api/user-tasks/non-routine?${queryParams.toString()}`
+    )
+  },
+
   async getUserTasks(params?: {
     limit?: number
     offset?: number
     user_id?: string
     date_from?: string
     date_to?: string
+    /**
+     * 1 = untuk satu hari: task rutin hanya batch terbaru di hari itu (belum generate = tidak tampil).
+     * 0 / tidak diisi = semua task di rentang (untuk statistik rentang panjang).
+     */
+    routine_latest_batch_only?: boolean | string | number
   }): Promise<ApiResponse<UserTask[]>> {
     const queryParams = new URLSearchParams()
     if (params?.limit) queryParams.append('limit', params.limit.toString())
@@ -1715,27 +2214,92 @@ export const userTasksApi = {
     if (params?.offset) queryParams.append('offset', params.offset.toString())
     if (params?.date_from) queryParams.append('date_from', params.date_from)
     if (params?.date_to) queryParams.append('date_to', params.date_to)
+    const batchOnly = params?.routine_latest_batch_only
+    if (batchOnly === true || batchOnly === 1 || batchOnly === '1' || batchOnly === 'true') {
+      queryParams.append('routine_latest_batch_only', '1')
+    }
     
     const endpoint = `/api/user-tasks${queryParams.toString() ? `?${queryParams.toString()}` : ''}`
     return apiClient.get<UserTask[]>(endpoint)
+  },
+
+  async getDailyWorkStatus(params?: {
+    user_id?: string
+    all_users?: boolean | string | number
+    asset_id?: string
+    non_routine?: boolean | string | number
+    day_date?: string
+    month_from?: string
+    month_to?: string
+    /** Batasi rentang yang di-query: 'day' dan 'month' bisa dipanggil paralel. */
+    scope?: 'day' | 'month' | 'both'
+    limit?: number
+    offset?: number
+  }): Promise<ApiResponse<DailyWorkStatusResponse>> {
+    const queryParams = new URLSearchParams()
+    if (params?.user_id) queryParams.append('user_id', params.user_id)
+    const allUsers = params?.all_users
+    if (allUsers === true || allUsers === 1 || allUsers === '1' || allUsers === 'true') {
+      queryParams.append('all_users', '1')
+    }
+    if (params?.asset_id) queryParams.append('asset_id', params.asset_id)
+    const nonRoutine = params?.non_routine
+    if (nonRoutine === true || nonRoutine === 1 || nonRoutine === '1' || nonRoutine === 'true') {
+      queryParams.append('non_routine', 'true')
+    } else if (
+      nonRoutine === false ||
+      nonRoutine === 0 ||
+      nonRoutine === '0' ||
+      nonRoutine === 'false'
+    ) {
+      queryParams.append('non_routine', 'false')
+    }
+    if (params?.day_date) queryParams.append('day_date', params.day_date)
+    if (params?.month_from) queryParams.append('month_from', params.month_from)
+    if (params?.month_to) queryParams.append('month_to', params.month_to)
+    if (params?.scope) queryParams.append('scope', params.scope)
+    if (params?.limit != null) queryParams.append('limit', String(params.limit))
+    if (params?.offset != null) queryParams.append('offset', String(params.offset))
+    const endpoint = `/api/user-tasks/daily-status${queryParams.toString() ? `?${queryParams.toString()}` : ''}`
+    return apiClient.get<DailyWorkStatusResponse>(endpoint)
   },
 
   async getUpcomingUserTasks(): Promise<ApiResponse<UserTask[]>> {
     return apiClient.get<UserTask[]>('/api/user-tasks/upcoming')
   },
 
-  async generateUpcomingUserTasks(): Promise<ApiResponse<any>> {
-    return apiClient.post<any>('/api/user-tasks/generate-upcoming')
+  async getUserTaskById(id: number): Promise<ApiResponse<UserTask>> {
+    return apiClient.get<UserTask>(`/api/user-tasks/${id}`)
+  },
+
+  async generateUpcomingUserTasks(params?: {
+    asset_id?: string
+    asset_ids?: string[]
+  }): Promise<ApiResponse<any>> {
+    return apiClient.post<any>('/api/user-tasks/generate-upcoming', params ?? {})
   },
 
   async startUserTask(id: number): Promise<ApiResponse<UserTask>> {
     return apiClient.put<UserTask>(`/api/user-tasks/${id}/start`)
   },
 
-  async completeUserTask(id: number, data?: { notes?: string }): Promise<ApiResponse<UserTask>> {
+  async uploadUserTaskEvidenceFile(file: File): Promise<ApiResponse<{ url: string[] }>> {
+    const formData = new FormData()
+    formData.append('file', file)
+    return apiClient.post<{ url: string[] }>('/api/uploads/user-task-evidence', formData)
+  },
+
+  async completeUserTask(
+    id: number,
+    data?: {
+      notes?: string
+      evidences?: { url: string; type?: 'before' | 'after' | string }[]
+    }
+  ): Promise<ApiResponse<UserTask>> {
     return apiClient.put<UserTask>(`/api/user-tasks/${id}/complete`, data)
   },
 
+  /** @deprecated Prefer upload per file + completeUserTask dengan evidences (hindari 413) */
   async completeUserTaskWithFiles(id: number, formData: FormData): Promise<ApiResponse<UserTask>> {
     return apiClient.putFormData<UserTask>(`/api/user-tasks/${id}/complete`, formData)
   },
@@ -1856,6 +2420,118 @@ export interface RevenueGrowth {
   revenue: number[]
 }
 
+// Asset Overview interfaces
+export interface AssetOverviewData {
+  totalLandArea: number
+  totalBuildingArea: number
+  occupancy: number
+  averageRate: number
+}
+
+export interface AssetUtilizationData {
+  category: string
+  value: number
+}
+
+export interface FinancialPerformanceData {
+  quarter: string
+  realisasi: number
+  target: number
+}
+
+export interface LegalTableData {
+  id: number
+  /** Untuk tombol aksi / deep link */
+  tenantId?: string
+  /** ISO date untuk warna titik jatuh tempo & sort */
+  dueDateIso?: string
+  dokumenUrl?: string | null
+  nama: string
+  aset: string
+  unit: string
+  jatuhTempo: string
+  kewajibanMitra: string
+  progress: number
+  dokumen: string
+  status: string
+  tipe: 'legal' | 'payment'
+}
+
+export interface AssetOverviewResponse {
+  overview: AssetOverviewData
+  utilization: AssetUtilizationData[]
+  financial: FinancialPerformanceData[]
+  legal: LegalTableData[]
+}
+
+export interface FinancialTableData {
+  id: number
+  tenantId?: string
+  dueDateIso?: string | null
+  nama: string
+  aset: string
+  unit: string
+  jatuhTempo: string
+  /** Periode tagihan (billing_period) */
+  periodeTagihan?: string
+  /** Nomor SPK */
+  nomorSpk?: string
+  /** Catatan (notes) tagihan */
+  catatan?: string
+  deskripsi: string
+  nomorInvoice: string
+  nilaiInvoice: number
+  /** Sisa tagihan invoice ini (nilai invoice - yang sudah dibayar) */
+  outstandingAmount?: number
+  tanggalInvoice: string
+  /** overdue | reminder_needed | scheduled | paid */
+  status: string
+  aging: number
+}
+
+export type DashboardNonRoutineStatusTone =
+  | 'success'
+  | 'destructive'
+  | 'warning'
+  | 'info'
+  | 'default'
+  | 'secondary'
+
+export interface DashboardNonRoutineWorkItem {
+  id: number
+  nama: string
+  aset: string
+  area: string
+  jatuhTempo: string
+  jenisPekerjaan: string
+  deskripsiPekerjaan: string
+  status: string
+  /** Warna badge / legenda: hijau selesai, merah lewat tempo, kuning ≤7 hari, biru 8–14 hari, dll. */
+  status_tone: DashboardNonRoutineStatusTone
+}
+
+export interface DashboardNonRoutineWorkResponse {
+  items: DashboardNonRoutineWorkItem[]
+  summary: {
+    total: number
+    selesai: number
+    telah_jatuh_tempo: number
+    satu_minggu: number
+    dua_minggu: number
+    dalam_proses: number
+    belum_dijalankan: number
+  }
+  total: number
+  date_from: string
+  date_to: string
+}
+
+export interface DashboardWorkerUserTasksResponse {
+  routine_tasks: UserTask[]
+  non_routine_tasks: UserTask[]
+  non_routine_total: number
+}
+
 // Dashboard API functions
 export const dashboardApi = {
   async getDashboardData(): Promise<ApiResponse<DashboardData>> {
@@ -1869,6 +2545,50 @@ export const dashboardApi = {
   },
   async getRevenueGrowth(): Promise<ApiResponse<RevenueGrowth>> {
     return apiClient.get<RevenueGrowth>('/api/dashboard/revenue-growth')
+  },
+  async getAssetOverview(assetId?: string): Promise<ApiResponse<AssetOverviewResponse>> {
+    const queryParams = assetId ? `?assetId=${assetId}` : ''
+    return apiClient.get<AssetOverviewResponse>(`/api/dashboard/asset-overview${queryParams}`)
+  },
+  async getFinancialTable(assetId?: string): Promise<ApiResponse<FinancialTableData[]>> {
+    const queryParams = assetId ? `?assetId=${assetId}` : ''
+    return apiClient.get<FinancialTableData[]>(`/api/dashboard/financial-table${queryParams}`)
+  },
+
+  async getNonRoutineWork(params?: {
+    asset_id?: string
+    date_from?: string
+    date_to?: string
+    limit?: number
+    offset?: number
+  }): Promise<ApiResponse<DashboardNonRoutineWorkResponse>> {
+    const month = getJakartaCalendarMonthIsoRange()
+    const q = new URLSearchParams()
+    q.set('date_from', params?.date_from ?? month.date_from)
+    q.set('date_to', params?.date_to ?? month.date_to)
+    if (params?.asset_id) q.set('asset_id', params.asset_id)
+    if (params?.limit != null) q.set('limit', String(params.limit))
+    if (params?.offset != null) q.set('offset', String(params.offset))
+    return apiClient.get<DashboardNonRoutineWorkResponse>(
+      `/api/dashboard/non-routine-work?${q.toString()}`
+    )
+  },
+  async getWorkerUserTasks(params?: {
+    limit?: number
+    offset?: number
+    date_from?: string
+    date_to?: string
+    period?: string
+  }): Promise<ApiResponse<DashboardWorkerUserTasksResponse>> {
+    const q = new URLSearchParams()
+    if (params?.limit != null) q.set('limit', String(params.limit))
+    if (params?.offset != null) q.set('offset', String(params.offset))
+    if (params?.date_from) q.set('date_from', params.date_from)
+    if (params?.date_to) q.set('date_to', params.date_to)
+    if (params?.period) q.set('period', params.period)
+    return apiClient.get<DashboardWorkerUserTasksResponse>(
+      `/api/dashboard/worker-user-tasks${q.toString() ? `?${q.toString()}` : ''}`
+    )
   },
 }
 

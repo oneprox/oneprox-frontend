@@ -29,8 +29,8 @@ export default function EditUnitPage() {
         
         if (response.success && response.data) {
           const responseData = response.data as any
-          
-          setUnit(responseData.data)
+          const unitData = responseData?.data ?? responseData
+          setUnit(unitData)
         } else {
           toast.error(response.error || 'Unit tidak ditemukan')
           router.push('/unit')

@@ -7,6 +7,13 @@ import { loginSchema } from "./lib/zod"
 import { ZodError } from "zod"
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  session: {
+    maxAge: 365 * 24 * 60 * 60,
+    updateAge: 24 * 60 * 60,
+  },
+  jwt: {
+    maxAge: 365 * 24 * 60 * 60,
+  },
   providers: [
     Credentials({
       credentials: {
@@ -70,7 +77,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
     }),
   ],
-  secret: process.env.NEXTAUTH_SECRET,
+  secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
   trustHost: true, // Required for production deployments (VPS, Vercel, etc.)
   // Untuk VPS, pastikan NEXTAUTH_URL diset dengan benar di environment variables
   // Contoh: NEXTAUTH_URL=https://oneprox.id

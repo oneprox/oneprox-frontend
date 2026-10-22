@@ -194,22 +194,6 @@ export default function AssetsPage() {
         </BreadcrumbList>
       </Breadcrumb>
 
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Assets</h1>
-          <p className="text-muted-foreground">
-            Kelola data aset dan properti
-          </p>
-        </div>
-        {can_add && (
-          <Button onClick={() => router.push('/asset/create')}>
-            <Plus className="mr-2 h-4 w-4" />
-            Tambah Asset
-          </Button>
-        )}
-      </div>
-
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7 hidden">
         <Card>
@@ -300,10 +284,21 @@ export default function AssetsPage() {
 
       {/* Search and Actions */}
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
-            <CardTitle>Daftar Assets</CardTitle>
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">Assets</h1>
+              <p className="text-muted-foreground">
+                Kelola data aset dan properti
+              </p>
+            </div>
             <div className="flex items-center gap-2">
+              {can_add && (
+                <Button onClick={() => router.push('/asset/create')}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Tambah Asset
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={handleRefresh} disabled={loading}>
                 <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               </Button>

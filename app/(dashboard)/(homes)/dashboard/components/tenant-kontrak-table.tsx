@@ -7,6 +7,7 @@ import Link from "next/link"
 import { DashboardExpiringTenant, Tenant, TenantPaymentLog } from "@/lib/api"
 import { tenantsApi } from "@/lib/api"
 import { useEffect, useState } from "react"
+import TenantDetailDialog from "@/components/dialogs/tenant-detail-dialog"
 
 interface TenantWithPayment extends Tenant {
   deadlineDate?: string
@@ -14,13 +15,19 @@ interface TenantWithPayment extends Tenant {
   unpaidPayment?: TenantPaymentLog | null
 }
 
-export default function TenantKontrakTable() {
+interface TenantKontrakTableProps {
+  selectedAssetId?: string
+}
+
+export default function TenantKontrakTable({ selectedAssetId = 'all' }: TenantKontrakTableProps) {
   const [tenants, setTenants] = useState<TenantWithPayment[]>([])
   const [loading, setLoading] = useState(true)
+  const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
 
   useEffect(() => {
     loadTenants()
-  }, [])
+  }, [selectedAssetId])
 
   const loadTenants = async () => {
     try {
@@ -46,6 +53,26 @@ export default function TenantKontrakTable() {
         const tenantStatus = tenant.status?.toLowerCase() || ''
         if (tenantStatus !== 'active') {
           continue
+        }
+        
+        // Filter by selected asset if needed
+        if (selectedAssetId !== 'all') {
+          // Check if tenant has any unit in the selected asset
+          let hasUnitInAsset = false
+          if (tenant.units && tenant.units.length > 0) {
+            hasUnitInAsset = tenant.units.some((u: any) => {
+              const unitAssetId = u.asset?.id || u.asset_id
+              return unitAssetId === selectedAssetId
+            })
+          } else if (tenant.unit_ids && tenant.unit_ids.length > 0) {
+            // If units array is not populated, we need to check units separately
+            // For now, skip this tenant if we can't verify
+            continue
+          }
+          
+          if (!hasUnitInAsset) {
+            continue
+          }
         }
         
         // Payment status diambil langsung dari kolom payment_status di tabel tenant
@@ -233,7 +260,14 @@ export default function TenantKontrakTable() {
               </TableHeader>
               <TableBody>
                 {tenants.map((tenant) => (
-                  <TableRow key={tenant.id}>
+                  <TableRow 
+                    key={tenant.id}
+                    className="cursor-pointer hover:bg-gray-50 transition-colors"
+                    onClick={() => {
+                      setSelectedTenant(tenant)
+                      setDialogOpen(true)
+                    }}
+                  >
                     <TableCell className="font-medium text-sm text-gray-900 max-w-xs whitespace-normal break-words">
                       {getTenantUnitName(tenant)}
                     </TableCell>
@@ -241,13 +275,22 @@ export default function TenantKontrakTable() {
                       {formatDate(tenant.deadlineDate)}
                     </TableCell>
                     <TableCell className="text-sm text-gray-600">
-                      {tenant.unpaidPayment?.amount ? (
+                      {tenant.unpaidPayment &&
+                      (tenant.unpaidPayment.billing_amount ??
+                        tenant.unpaidPayment.paid_amount ??
+                        tenant.unpaidPayment.amount) ? (
                         new Intl.NumberFormat('id-ID', {
                           style: 'currency',
                           currency: 'IDR',
                           minimumFractionDigits: 0,
                           maximumFractionDigits: 0,
-                        }).format(tenant.unpaidPayment.amount)
+                        }).format(
+                          Number(
+                            tenant.unpaidPayment.billing_amount ??
+                              tenant.unpaidPayment.paid_amount ??
+                              tenant.unpaidPayment.amount
+                          )
+                        )
                       ) : '-'}
                     </TableCell>
                     <TableCell>
@@ -267,6 +310,13 @@ export default function TenantKontrakTable() {
           </div>
         )}
       </CardContent>
+
+      {/* Tenant Detail Dialog */}
+      <TenantDetailDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        tenant={selectedTenant}
+      />
     </Card>
   )
 }

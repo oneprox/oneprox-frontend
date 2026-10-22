@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { AlertCircle, Clock, Loader2 } from "lucide-react"
 import { tenantsApi, Tenant, TenantPaymentLog } from "@/lib/api"
 import LoadingSkeleton from "@/components/loading-skeleton"
+import TenantDetailDialog from "@/components/dialogs/tenant-detail-dialog"
 
 interface TenantWithPaymentStatus extends Tenant {
   paymentStatus?: 'overdue' | 'expiring'
@@ -17,6 +18,8 @@ export default function TenantPaymentCard() {
   const [overdueTenants, setOverdueTenants] = useState<TenantWithPaymentStatus[]>([])
   const [expiringTenants, setExpiringTenants] = useState<TenantWithPaymentStatus[]>([])
   const [loading, setLoading] = useState(true)
+  const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('id-ID', {
@@ -186,7 +189,14 @@ export default function TenantPaymentCard() {
           {overdueTenants.length > 0 ? (
             <div className="space-y-3">
               {overdueTenants.map((tenant) => (
-                <div key={tenant.id} className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                <div 
+                  key={tenant.id} 
+                  className="p-3 bg-red-50 border border-red-200 rounded-lg cursor-pointer hover:bg-red-100 transition-colors"
+                  onClick={() => {
+                    setSelectedTenant(tenant)
+                    setDialogOpen(true)
+                  }}
+                >
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate">
@@ -200,9 +210,19 @@ export default function TenantPaymentCard() {
                           Terlambat {tenant.daysOverdue} hari
                         </p>
                       )}
-                      {tenant.lastPayment && tenant.lastPayment.amount && (
+                      {tenant.lastPayment &&
+                        (tenant.lastPayment.billing_amount ??
+                          tenant.lastPayment.paid_amount ??
+                          tenant.lastPayment.amount) && (
                         <p className="text-xs text-gray-600 mt-1">
-                          Tagihan: {formatCurrency(tenant.lastPayment.amount)}
+                          Tagihan:{' '}
+                          {formatCurrency(
+                            Number(
+                              tenant.lastPayment.billing_amount ??
+                                tenant.lastPayment.paid_amount ??
+                                tenant.lastPayment.amount
+                            )
+                          )}
                         </p>
                       )}
                     </div>
@@ -228,7 +248,14 @@ export default function TenantPaymentCard() {
           {expiringTenants.length > 0 ? (
             <div className="space-y-3">
               {expiringTenants.map((tenant) => (
-                <div key={tenant.id} className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <div 
+                  key={tenant.id} 
+                  className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg cursor-pointer hover:bg-yellow-100 transition-colors"
+                  onClick={() => {
+                    setSelectedTenant(tenant)
+                    setDialogOpen(true)
+                  }}
+                >
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate">
@@ -254,6 +281,13 @@ export default function TenantPaymentCard() {
           )}
         </div>
       </CardContent>
+
+      {/* Tenant Detail Dialog */}
+      <TenantDetailDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        tenant={selectedTenant}
+      />
     </Card>
   )
 }

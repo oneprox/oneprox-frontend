@@ -260,6 +260,7 @@ export default function ComplaintReportsTable({
               <TableHead>Title</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Priority</TableHead>
+              <TableHead>Asset</TableHead>
               <TableHead>Tenant</TableHead>
               <TableHead>Reported By</TableHead>
               <TableHead>Created At</TableHead>
@@ -280,6 +281,7 @@ export default function ComplaintReportsTable({
                 <TableCell className="font-medium">{report.title || '-'}</TableCell>
                 <TableCell>{getStatusBadge(report.status)}</TableCell>
                 <TableCell>{getPriorityBadge(report.priority)}</TableCell>
+                <TableCell>{report.asset?.name || report.asset_id || '-'}</TableCell>
                 <TableCell>{report.tenant?.name || '-'}</TableCell>
                 <TableCell>
                   {report.reporter?.name || report.reporter_id || '-'}
@@ -360,6 +362,10 @@ export default function ComplaintReportsTable({
                       <span className="font-medium">{report.tenant.name}</span>
                     </div>
                   )}
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Asset:</span>
+                    <span className="font-medium">{report.asset?.name || report.asset_id || '-'}</span>
+                  </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Reported By:</span>
                     <span className="font-medium">{report.reporter?.name || report.reporter_id || '-'}</span>

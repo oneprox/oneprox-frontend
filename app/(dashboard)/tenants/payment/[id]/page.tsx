@@ -17,18 +17,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { useIsTenantRole } from '@/hooks/useIsTenantRole'
 import toast from 'react-hot-toast'
 
 export default function UpdateTenantPaymentPage() {
   const router = useRouter()
   const params = useParams()
   const tenantId = params.id as string
+  const isTenantRole = useIsTenantRole()
   
   const [tenant, setTenant] = useState<Tenant | null>(null)
   const [loading, setLoading] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
   const [formData, setFormData] = useState({
-    amount: '',
+    paid_amount: '',
     payment_method: '',
     notes: '',
   })
@@ -60,6 +62,14 @@ export default function UpdateTenantPaymentPage() {
     loadTenant()
   }, [tenantId, router])
 
+  // Role tenant tidak boleh mencatat pembayaran; backend juga menolak dengan 403
+  useEffect(() => {
+    if (isTenantRole === true) {
+      toast.error('Anda tidak memiliki akses untuk mencatat pembayaran')
+      router.replace('/dashboard-tenant')
+    }
+  }, [isTenantRole, router])
+
   const formatPrice = (value: number | string): string => {
     if (value === null || value === undefined || value === '') return ''
     const numValue = typeof value === 'string' ? parseFloat(value.replace(/\./g, '')) : value
@@ -77,7 +87,7 @@ export default function UpdateTenantPaymentPage() {
   }
 
   const handleInputChange = (field: string, value: string) => {
-    if (field === 'amount') {
+    if (field === 'paid_amount') {
       const parsedValue = parsePrice(value)
       setFormData(prev => ({ ...prev, [field]: formatPrice(parsedValue) }))
     } else {
@@ -92,8 +102,8 @@ export default function UpdateTenantPaymentPage() {
   const validateForm = () => {
     const newErrors: Record<string, string> = {}
 
-    if (!formData.amount || parsePrice(formData.amount) <= 0) {
-      newErrors.amount = 'Jumlah pembayaran harus diisi dan lebih dari 0'
+    if (!formData.paid_amount || parsePrice(formData.paid_amount) <= 0) {
+      newErrors.paid_amount = 'Jumlah dibayar harus diisi dan lebih dari 0'
     }
 
     if (!formData.payment_method) {
@@ -122,8 +132,20 @@ export default function UpdateTenantPaymentPage() {
 
     setLoading(true)
     try {
+      const paid = parsePrice(formData.paid_amount)
+      const now = new Date()
+      const billingPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+      const paymentDeadline = now.toISOString().slice(0, 10)
+
+      // Catat pembayaran: total tagihan = jumlah dibayar, tanpa rincian PPN terpisah
       const paymentData: CreateTenantPaymentData = {
-        amount: parsePrice(formData.amount),
+        billing_period: billingPeriod,
+        amount: paid,
+        ppn_percent: 0,
+        ppn: 0,
+        billing_amount: paid,
+        payment_deadline: paymentDeadline,
+        paid_amount: paid,
         payment_method: formData.payment_method,
         notes: formData.notes.trim(),
       }
@@ -166,6 +188,10 @@ export default function UpdateTenantPaymentPage() {
         </div>
       </div>
     )
+  }
+
+  if (isTenantRole !== false) {
+    return null
   }
 
   return (
@@ -215,19 +241,19 @@ export default function UpdateTenantPaymentPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="amount">
-                Jumlah Pembayaran <span className="text-red-500">*</span>
+              <Label htmlFor="paid_amount">
+                Jumlah Dibayar <span className="text-red-500">*</span>
               </Label>
               <Input
-                id="amount"
+                id="paid_amount"
                 type="text"
-                value={formData.amount}
-                onChange={(e) => handleInputChange('amount', e.target.value)}
-                placeholder="Masukkan jumlah pembayaran"
-                className={errors.amount ? 'border-red-500' : ''}
+                value={formData.paid_amount}
+                onChange={(e) => handleInputChange('paid_amount', e.target.value)}
+                placeholder="Masukkan jumlah dibayar"
+                className={errors.paid_amount ? 'border-red-500' : ''}
               />
-              {errors.amount && (
-                <p className="text-sm text-red-500">{errors.amount}</p>
+              {errors.paid_amount && (
+                <p className="text-sm text-red-500">{errors.paid_amount}</p>
               )}
             </div>
 

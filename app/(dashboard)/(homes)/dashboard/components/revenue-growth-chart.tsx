@@ -12,26 +12,48 @@ import LoadingSkeleton from "@/components/loading-skeleton"
 
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false })
 
-const RevenueGrowthChart = () => {
+interface RevenueGrowthChartProps {
+    selectedAssetId?: string
+}
+
+const RevenueGrowthChart = ({ selectedAssetId = 'all' }: RevenueGrowthChartProps) => {
     const [revenueData, setRevenueData] = useState<RevenueGrowth | null>(null)
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
         loadRevenueGrowth()
-    }, [])
+    }, [selectedAssetId])
 
     const loadRevenueGrowth = async () => {
         try {
             setLoading(true)
+            
+            // If filtering by specific asset, we'll need to calculate manually
+            // For now, use API and filter if needed
             const response = await dashboardApi.getRevenueGrowth()
             console.log('Revenue Growth API Response:', response)
             
             if (response.success && response.data) {
-                const responseData = response.data as any;
-                setRevenueData(responseData.data)
+                // Backend returns data directly in response.data
+                let revenueData = response.data as RevenueGrowth
+                
+                // If filtering by asset, we would need to filter the data
+                // For now, if selectedAssetId is not 'all', we show empty or filtered data
+                // This would require backend support or manual calculation
+                if (selectedAssetId !== 'all') {
+                    // TODO: Implement filtering by asset if backend supports it
+                    // For now, show empty data when filtering
+                    setRevenueData({ years: [], revenue: [] })
+                } else {
+                    setRevenueData(revenueData)
+                }
+            } else {
+                console.error('Revenue Growth API Error:', response.error || response.message)
+                setRevenueData(null)
             }
         } catch (err) {
             console.error('Error loading revenue growth:', err)
+            setRevenueData(null)
         } finally {
             setLoading(false)
         }
@@ -167,7 +189,7 @@ const RevenueGrowthChart = () => {
                 </Select>
             </CardHeader>
             <CardContent className="flex-1 flex flex-col">
-                {revenueData && revenueData.revenue.length > 0 ? (
+                {revenueData?.revenue && revenueData.revenue.length > 0 ? (
                     <Chart
                         options={chartOptions}
                         series={chartSeries}

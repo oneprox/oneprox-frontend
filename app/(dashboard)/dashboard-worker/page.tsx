@@ -4,7 +4,12 @@ import React, { useState, useEffect, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2, Clock, CheckCircle2, Calendar, MapPin, ClipboardList } from 'lucide-react'
-import { attendanceApi, userTasksApi, Attendance, UserTask } from '@/lib/api'
+import { attendanceApi, dashboardApi, userTasksApi, Attendance, UserTask } from '@/lib/api'
+import {
+  filterRoutineTasksForActiveShift,
+  normalizeFlatUserTask,
+} from '@/lib/work/userTasksSplit'
+import { getJakartaCalendarMonthIsoRange } from '@/lib/work/jakartaMonthRange'
 import toast from 'react-hot-toast'
 import LoadingSkeleton from '@/components/loading-skeleton'
 import AttendanceCard from '@/components/attendance/attendance-card'
@@ -14,7 +19,8 @@ import { CompleteTaskDialog } from '@/components/work/CompleteTaskDialog'
 function DashboardWorkerContent() {
   const router = useRouter()
   const [attendanceHistory, setAttendanceHistory] = useState<Attendance[]>([])
-  const [userTasks, setUserTasks] = useState<UserTask[]>([])
+  const [routineUserTasks, setRoutineUserTasks] = useState<UserTask[]>([])
+  const [nonRoutineUserTasks, setNonRoutineUserTasks] = useState<UserTask[]>([])
   const [isLoadingAttendance, setIsLoadingAttendance] = useState(true)
   const [isLoadingTasks, setIsLoadingTasks] = useState(true)
   const [selectedUserTask, setSelectedUserTask] = useState<UserTask | null>(null)
@@ -43,24 +49,29 @@ function DashboardWorkerContent() {
     }
   }
 
-  // Load user tasks
   const loadUserTasks = async () => {
     try {
       setIsLoadingTasks(true)
-      const response = await userTasksApi.getUserTasks({ limit: 10 })
-      
-      if (response.success && response.data) {
-        const responseData = response.data as any
-        const tasks = Array.isArray(responseData.data) ? responseData.data : (Array.isArray(responseData) ? responseData : [])
-        setUserTasks(tasks)
-      } else {
-        console.error('Failed to load user tasks:', response.error)
-        setUserTasks([])
-      }
+      const month = getJakartaCalendarMonthIsoRange()
+      const response = await dashboardApi.getWorkerUserTasks({
+        limit: 10000,
+        date_from: month.date_from,
+        date_to: month.date_to,
+        period: month.period,
+      })
+      const responseData = response.success && response.data ? (response.data as any) : null
+      const payload = responseData?.data ?? responseData
+      const routine = Array.isArray(payload?.routine_tasks) ? payload.routine_tasks : []
+      const nonRoutineRaw = Array.isArray(payload?.non_routine_tasks) ? payload.non_routine_tasks : []
+      const nonRoutine = nonRoutineRaw.map(normalizeFlatUserTask)
+
+      setRoutineUserTasks(routine)
+      setNonRoutineUserTasks(nonRoutine)
     } catch (error) {
       console.error('Error loading user tasks:', error)
       toast.error('Terjadi kesalahan saat memuat data task')
-      setUserTasks([])
+      setRoutineUserTasks([])
+      setNonRoutineUserTasks([])
     } finally {
       setIsLoadingTasks(false)
     }
@@ -147,6 +158,40 @@ function DashboardWorkerContent() {
       router.push(route)
     }
   }
+
+  const flattenRoutineTasks = (tasks: UserTask[]): UserTask[] => {
+    return tasks.flatMap((task) => {
+      const mainTaskId = task.user_task_id ?? task.id
+      const normalizedMain: UserTask = {
+        ...task,
+        user_task_id: mainTaskId,
+      }
+      const subTasks = Array.isArray(task.sub_user_task)
+        ? task.sub_user_task.map((subTask) => ({
+            ...subTask,
+            user_task_id: subTask.user_task_id ?? subTask.id,
+          }))
+        : []
+      return [normalizedMain, ...subTasks]
+    })
+  }
+
+  /**
+   * List rutin shift aktif (WIB):
+   * - batch hari ini yang jendela shift-nya masih berjalan, atau
+   * - batch shift kemarin yang melewati tengah malam dan belum mencapai end_time.
+   * Statistik di bawah memakai data bulan berjalan.
+   */
+  const routineTasksForToday = filterRoutineTasksForActiveShift(routineUserTasks)
+
+  const allTasksForStats = [...flattenRoutineTasks(routineUserTasks), ...nonRoutineUserTasks]
+  const isTaskCompleted = (t: UserTask) => t.status === 'completed' || !!t.completed_at
+  const isTaskInProgress = (t: UserTask) =>
+    (t.status === 'in_progress' || t.status === 'inprogress') &&
+    !!(t.started_at || t.start_at) &&
+    !t.completed_at
+  const isTaskPending = (t: UserTask) =>
+    t.status === 'pending' && !(t.started_at || t.start_at) && !t.completed_at
 
   return (
     <div className="space-y-6">
@@ -259,14 +304,43 @@ function DashboardWorkerContent() {
                 Daftar tugas yang perlu dikerjakan. Klik task untuk membuka halaman detail.
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <TaskList
-                userTasks={userTasks}
-                isLoading={isLoadingTasks}
-                onStartTask={handleStartTask}
-                onCompleteTask={handleCompleteTask}
-                onTaskClick={handleTaskClick}
-              />
+            <CardContent className="space-y-8">
+              {isLoadingTasks ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-semibold text-foreground">Task non-rutin</h3>
+                    <TaskList
+                      userTasks={nonRoutineUserTasks}
+                      isLoading={false}
+                      onStartTask={handleStartTask}
+                      onCompleteTask={handleCompleteTask}
+                      onTaskClick={handleTaskClick}
+                      variant="non-routine"
+                      emptyListMessage="Belum ada task non-rutin"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-semibold text-foreground">Task rutin (generate)</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Tugas rutin shift aktif (hari ini atau shift kemarin yang melewati tengah malam dan belum berakhir). Statistik di bawah memakai data bulan berjalan.
+                    </p>
+                    <TaskList
+                      userTasks={routineTasksForToday}
+                      isLoading={false}
+                      onStartTask={handleStartTask}
+                      onCompleteTask={handleCompleteTask}
+                      onTaskClick={handleTaskClick}
+                      variant="routine"
+                      emptyListMessage="Belum ada task rutin pada shift aktif"
+                      filterByTaskRequirement={false}
+                    />
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
 
@@ -278,7 +352,7 @@ function DashboardWorkerContent() {
                 Statistik Tugas
               </CardTitle>
               <CardDescription>
-                Ringkasan status tugas Anda
+                Ringkasan status tugas Anda bulan ini (task rutin + non-rutin)
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -290,19 +364,19 @@ function DashboardWorkerContent() {
                 <div className="grid grid-cols-3 gap-4">
                   <div className="text-center p-4 rounded-lg bg-gray-50">
                     <div className="text-2xl font-bold text-gray-900">
-                      {userTasks.filter(t => t.status === 'pending' && !t.started_at && !t.start_at).length}
+                      {allTasksForStats.filter(isTaskPending).length}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">Pending</div>
                   </div>
                   <div className="text-center p-4 rounded-lg bg-blue-50">
                     <div className="text-2xl font-bold text-blue-900">
-                      {userTasks.filter(t => (t.status === 'in_progress' || t.status === 'inprogress') && (t.started_at || t.start_at) && !t.completed_at).length}
+                      {allTasksForStats.filter(isTaskInProgress).length}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">Sedang Dikerjakan</div>
                   </div>
                   <div className="text-center p-4 rounded-lg bg-green-50">
                     <div className="text-2xl font-bold text-green-900">
-                      {userTasks.filter(t => t.status === 'completed' || t.completed_at).length}
+                      {allTasksForStats.filter(isTaskCompleted).length}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">Selesai</div>
                   </div>

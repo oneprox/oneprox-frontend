@@ -23,6 +23,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Loader2, AlertTriangle, Upload, Camera, Image as ImageIcon, X } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { UPLOAD_MAX_FILE_BYTES, UPLOAD_MAX_FILE_MB } from '@/lib/uploadLimits'
 
 interface ComplaintReportEditDialogProps {
   open: boolean
@@ -165,10 +166,8 @@ export default function ComplaintReportEditDialog({
         return
       }
 
-      // Validate file size (max 10MB)
-      const maxSize = 10 * 1024 * 1024 // 10MB
-      if (file.size > maxSize) {
-        toast.error('File size must be less than 10MB')
+      if (file.size > UPLOAD_MAX_FILE_BYTES) {
+        toast.error(`Ukuran file maksimal ${UPLOAD_MAX_FILE_MB}MB`)
         return
       }
 
@@ -241,7 +240,7 @@ export default function ComplaintReportEditDialog({
       const updateData: UpdateComplaintReportData = {
         status: statusValue,
         notes: notes.trim(),
-        photo_evidence: photoUrl || (photoFile ?? undefined)
+        photo_evidence: photoUrl ?? '',
       }
 
       const response = await complaintReportsApi.updateComplaintReport(complaintReport.id, updateData)

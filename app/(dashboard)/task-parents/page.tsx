@@ -33,6 +33,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import toast from 'react-hot-toast'
 import TaskDetailDialog from '@/components/dialogs/task-detail-dialog'
+import { mergeNonRoutineTasksForDisplay } from '@/lib/mergeNonRoutineTasksForDisplay'
 
 interface TaskWithChildren extends Task {
   children?: TaskWithChildren[]
@@ -55,6 +56,7 @@ export default function TaskParentsPage() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [isManageDialogOpen, setIsManageDialogOpen] = useState(false)
   const [selectedParentIds, setSelectedParentIds] = useState<number[]>([])
+  const [manageSearchTerm, setManageSearchTerm] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null)
@@ -129,6 +131,8 @@ export default function TaskParentsPage() {
           task_group_id: task.task_group_id ? (typeof task.task_group_id === 'string' ? parseInt(task.task_group_id) : task.task_group_id) : undefined,
           parent_task_ids: task.parent_task_ids ? (Array.isArray(task.parent_task_ids) ? task.parent_task_ids.map((id: any) => typeof id === 'string' ? parseInt(id) : id) : []) : [],
         }))
+
+        tasksData = mergeNonRoutineTasksForDisplay(tasksData)
         
         setTasks(tasksData)
       } else {
@@ -320,15 +324,27 @@ export default function TaskParentsPage() {
 
     setDeleting(true)
     try {
-      const response = await tasksApi.deleteTask(taskToDelete.id as number)
-      
-      if (response.success) {
-        toast.success('Task berhasil dihapus')
+      const mergedIds = taskToDelete._mergedNonRoutineTaskIds
+      const idsToDelete =
+        mergedIds && mergedIds.length > 0
+          ? mergedIds
+          : [taskToDelete.id as number]
+
+      const results = await Promise.all(idsToDelete.map((id) => tasksApi.deleteTask(id)))
+      const allOk = results.every((r) => r.success)
+
+      if (allOk) {
+        toast.success(
+          idsToDelete.length > 1
+            ? `${idsToDelete.length} task non-rutin berhasil dihapus`
+            : 'Task berhasil dihapus'
+        )
         setDeleteDialogOpen(false)
         setTaskToDelete(null)
         await loadTasks()
       } else {
-        toast.error(response.error || 'Gagal menghapus task')
+        const err = results.find((r) => !r.success)
+        toast.error(err?.error || 'Gagal menghapus task')
       }
     } catch (error) {
       console.error('Delete task error:', error)
@@ -417,8 +433,23 @@ export default function TaskParentsPage() {
           ) : null}
         </TableCell>
         <TableCell className="font-medium max-w-[300px]" style={{ paddingLeft: level > 0 ? `${level * 2}rem` : undefined }}>
-          <div className="truncate" title={task.name}>
-            {task.name}
+          <div className="space-y-1 min-w-0">
+            <div className="truncate" title={task.name}>
+              {task.name}
+            </div>
+            {task.is_routine === false && (
+              <div className="flex flex-wrap gap-1">
+                <Badge variant="secondary" className="text-xs font-normal">
+                  Non-rutin
+                </Badge>
+                <Badge variant="outline" className="text-xs font-normal">
+                  {task.monthly_frequency ??
+                    task.non_routine_items?.length ??
+                    1}
+                  × / bulan
+                </Badge>
+              </div>
+            )}
           </div>
         </TableCell>
         <TableCell>{task.duration} menit</TableCell>
@@ -447,14 +478,16 @@ export default function TaskParentsPage() {
             >
               <Edit className="w-5 h-5" />
             </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              onClick={() => handleManageParents(task)}
-              className="rounded-[50%] text-blue-500 bg-blue-500/10"
-            >
-              <GitBranch className="w-5 h-5" />
-            </Button>
+            {task.is_routine !== false && (
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => handleManageParents(task)}
+                className="rounded-[50%] text-blue-500 bg-blue-500/10"
+              >
+                <GitBranch className="w-5 h-5" />
+              </Button>
+            )}
             <Button
               size="icon"
               variant="ghost"
@@ -503,27 +536,23 @@ export default function TaskParentsPage() {
         </BreadcrumbList>
       </Breadcrumb>
 
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Task</h1>
-          <p className="text-muted-foreground">
-            Kelola task dan relasi parent-child
-          </p>
-        </div>
-        <Button onClick={() => router.push('/tasks/create')}>
-          <Plus className="mr-2 h-4 w-4" />
-          Buat Task Baru
-        </Button>
-      </div>
-
       {/* Filters */}
       <Card>
-        <CardHeader>
-          <CardTitle>Daftar Tasks</CardTitle>
-          <CardDescription>
-            Hierarki tasks dengan relasi parent-child
-          </CardDescription>
+        <CardHeader className="pb-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">Task</h1>
+              <p className="text-muted-foreground">
+                Kelola task dan relasi parent-child
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button onClick={() => router.push('/tasks/create')}>
+                <Plus className="mr-2 h-4 w-4" />
+                Buat Task Baru
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap items-center gap-4">
@@ -640,95 +669,151 @@ export default function TaskParentsPage() {
       </Card>
 
       {/* Manage Parents Dialog */}
-      <Dialog open={isManageDialogOpen} onOpenChange={setIsManageDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Kelola Parent Tasks: {selectedTask?.name}</DialogTitle>
-            <DialogDescription>
-              Pilih parent tasks untuk task ini. Task akan menjadi child dari parent yang dipilih.
+      <Dialog open={isManageDialogOpen} onOpenChange={(open) => {
+        setIsManageDialogOpen(open)
+        if (!open) {
+          setManageSearchTerm('')
+        }
+      }}>
+        <DialogContent className="w-[calc(100vw-1rem)] sm:w-full sm:max-w-3xl p-0 max-h-[92vh] overflow-y-auto overflow-x-hidden">
+          <DialogHeader className="space-y-2">
+            <DialogTitle className="px-4 sm:px-6 pt-4 sm:pt-6 pr-10 text-base sm:text-lg leading-snug break-words whitespace-normal">
+              Kelola Parent Tasks: {selectedTask?.name}
+            </DialogTitle>
+            <DialogDescription className="px-4 sm:px-6 pr-10 text-sm leading-snug break-words whitespace-normal">
+              Pilih parent task untuk task ini. Task akan menjadi child dari parent yang dipilih.
             </DialogDescription>
           </DialogHeader>
 
           {selectedTask && (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>Pilih Parent Tasks</Label>
-                <div className="border rounded-lg p-4 max-h-[400px] overflow-y-auto">
-                  {tasks
-                    .filter(t => t.id !== selectedTask.id)
-                    .map(task => {
-                      const taskId = task.id as number
-                      const isChecked = selectedParentIds.includes(taskId)
-                      
-                      return (
-                        <div key={task.id} className="flex items-center space-x-2 py-2">
-                          <Checkbox
-                            id={`parent-${task.id}`}
-                            checked={isChecked}
-                            onCheckedChange={(checked) => {
-                              if (checked) {
-                                setSelectedParentIds([...selectedParentIds, taskId])
-                              } else {
-                                setSelectedParentIds(selectedParentIds.filter(id => id !== taskId))
-                              }
-                            }}
-                          />
-                          <label
-                            htmlFor={`parent-${task.id}`}
-                            className="flex-1 cursor-pointer"
-                          >
-                            <div className="font-medium truncate" title={task.name}>{task.name}</div>
-                            <div className="text-sm text-muted-foreground">
-                              {taskGroups.find(tg => tg.id === task.task_group_id)?.name || 'No group'}
-                            </div>
-                          </label>
-                        </div>
-                      )
-                    })}
-                </div>
-              </div>
-
-              {selectedParentIds.length > 0 && (
-                <div className="space-y-2">
-                  <Label>Parent Tasks yang Dipilih:</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedParentIds.map(parentId => {
-                      const parent = tasks.find(t => t.id === parentId)
-                      return parent ? (
-                        <span
-                          key={parentId}
-                          className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm truncate max-w-[200px] inline-block"
-                          title={parent.name}
-                        >
-                          {parent.name}
-                        </span>
-                      ) : null
-                    })}
+            <div className="px-4 sm:px-6 pb-4 sm:pb-6">
+              <div className="space-y-3">
+                <div className="rounded-lg border bg-muted/30 p-2 sm:p-3">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      value={manageSearchTerm}
+                      onChange={(e) => setManageSearchTerm(e.target.value)}
+                      placeholder="Cari parent task..."
+                      className="h-9 pl-9 bg-background"
+                    />
                   </div>
                 </div>
-              )}
 
-              <div className="flex justify-end gap-2 pt-4">
-                <Button
-                  variant="outline"
-                  onClick={() => setIsManageDialogOpen(false)}
-                  disabled={isSaving}
-                >
-                  Batal
-                </Button>
-                <Button
-                  onClick={handleSaveParents}
-                  disabled={isSaving}
-                >
-                  {isSaving ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Menyimpan...
-                    </>
-                  ) : (
-                    'Simpan'
-                  )}
-                </Button>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Pilih Parent Tasks</Label>
+                    <Badge variant="secondary">
+                      {selectedParentIds.length} dipilih
+                    </Badge>
+                  </div>
+                  <div className="border rounded-lg p-1.5 sm:p-2 max-h-[46vh] sm:max-h-[360px] overflow-y-auto space-y-1 bg-background">
+                    {tasks
+                      .filter(t => t.id !== selectedTask.id)
+                      .filter((task) =>
+                        task.name.toLowerCase().includes(manageSearchTerm.toLowerCase()) ||
+                        (taskGroups.find(tg => tg.id === task.task_group_id)?.name || 'No group')
+                          .toLowerCase()
+                          .includes(manageSearchTerm.toLowerCase())
+                      )
+                      .map(task => {
+                        const taskId = task.id as number
+                        const isChecked = selectedParentIds.includes(taskId)
+                        const groupName = taskGroups.find(tg => tg.id === task.task_group_id)?.name || 'No group'
+
+                        return (
+                          <label
+                            key={task.id}
+                            htmlFor={`parent-${task.id}`}
+                            className={`flex items-start gap-2.5 rounded-md border px-2.5 sm:px-3 py-2 cursor-pointer transition-colors ${
+                              isChecked
+                                ? 'border-blue-300 bg-blue-50/60'
+                                : 'border-transparent hover:border-border hover:bg-muted/40'
+                            }`}
+                          >
+                            <Checkbox
+                              id={`parent-${task.id}`}
+                              checked={isChecked}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setSelectedParentIds([...selectedParentIds, taskId])
+                                } else {
+                                  setSelectedParentIds(selectedParentIds.filter(id => id !== taskId))
+                                }
+                              }}
+                              className="mt-0.5"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="font-medium leading-snug break-words whitespace-normal" title={task.name}>
+                                {task.name}
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-0.5 break-words whitespace-normal">
+                                Group: {groupName}
+                              </div>
+                            </div>
+                          </label>
+                        )
+                      })}
+                    {tasks
+                      .filter(t => t.id !== selectedTask.id)
+                      .filter((task) =>
+                        task.name.toLowerCase().includes(manageSearchTerm.toLowerCase()) ||
+                        (taskGroups.find(tg => tg.id === task.task_group_id)?.name || 'No group')
+                          .toLowerCase()
+                          .includes(manageSearchTerm.toLowerCase())
+                      ).length === 0 && (
+                      <div className="text-sm text-muted-foreground text-center py-8">
+                        Tidak ada parent task yang cocok
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {selectedParentIds.length > 0 && (
+                  <div className="space-y-2">
+                    <Label>Parent Tasks yang Dipilih:</Label>
+                    <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                      {selectedParentIds.map(parentId => {
+                        const parent = tasks.find(t => t.id === parentId)
+                        return parent ? (
+                          <span
+                            key={parentId}
+                            className="px-2.5 py-1 bg-blue-100 text-blue-800 rounded-full text-xs sm:text-sm break-words whitespace-normal max-w-full inline-block"
+                            title={parent.name}
+                          >
+                            {parent.name}
+                          </span>
+                        ) : null
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-2 pt-3 border-t sticky bottom-0 bg-background">
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsManageDialogOpen(false)}
+                    disabled={isSaving}
+                    size="sm"
+                  >
+                    Batal
+                  </Button>
+                  <Button
+                    onClick={handleSaveParents}
+                    disabled={isSaving}
+                    className="min-w-[96px] sm:min-w-[110px]"
+                    size="sm"
+                  >
+                    {isSaving ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Menyimpan...
+                      </>
+                    ) : (
+                      'Simpan'
+                    )}
+                  </Button>
+                </div>
               </div>
             </div>
           )}
@@ -748,8 +833,11 @@ export default function TaskParentsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Hapus Task</AlertDialogTitle>
             <AlertDialogDescription>
-              Apakah Anda yakin ingin menghapus task "{taskToDelete?.name}"? 
-              Tindakan ini tidak dapat dibatalkan dan akan menghapus semua data terkait task ini.
+              Apakah Anda yakin ingin menghapus task &quot;{taskToDelete?.name}&quot;?
+              {taskToDelete?._mergedNonRoutineTaskIds &&
+              taskToDelete._mergedNonRoutineTaskIds.length > 1
+                ? ` Ini akan menghapus ${taskToDelete._mergedNonRoutineTaskIds.length} task terkait (gabungan tampilan non-rutin).`
+                : ' Tindakan ini tidak dapat dibatalkan dan akan menghapus semua data terkait task ini.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

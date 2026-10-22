@@ -7,6 +7,22 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Loader2, Camera } from 'lucide-react'
 import { UserTask, userTasksApi, settingsApi } from '@/lib/api'
+import {
+  compressFilesForCompleteTask,
+  compressImageFile,
+  formatFileSize,
+} from '@/lib/compressImage'
+import {
+  isFileWithinUploadLimit,
+  UPLOAD_MAX_FILE_BYTES,
+  uploadLimitErrorLabel,
+} from '@/lib/uploadLimits'
+import {
+  blockDialogsBelow,
+  createFullscreenOverlay,
+  mountOverlayOnBody,
+  removeOverlayFromBody,
+} from '@/lib/overlayAboveDialog'
 import toast from 'react-hot-toast'
 
 interface CompleteTaskDialogProps {
@@ -39,7 +55,9 @@ export function CompleteTaskDialog({
   const [qrLocation, setQrLocation] = useState<{ latitude: number; longitude: number } | null>(null)
   const [isLocationValid, setIsLocationValid] = useState<boolean | null>(null)
   const [isCheckingLocation, setIsCheckingLocation] = useState(false)
-  const [radiusDistance, setRadiusDistance] = useState<number>(20000) // Default 20000 meters
+  const [isScanCodeValid, setIsScanCodeValid] = useState<boolean | null>(null)
+  const [scannedCode, setScannedCode] = useState<string | null>(null)
+  const [radiusDistance, setRadiusDistance] = useState<number>(5) // Default 20000 meters
 
   const task = userTask?.task
   const userRoleName = userTask?.user?.role?.name?.toLowerCase()
@@ -50,14 +68,28 @@ export function CompleteTaskDialog({
       try {
         const response = await settingsApi.getSettingByKey('task_radius_distance')
         if (response.success && response.data) {
-          const value = parseFloat(response.data.value)
-          if (!isNaN(value) && value > 0) {
-            setRadiusDistance(value)
+          // Handle different response structures
+          const settingData = response.data as any
+          // Get value from setting object - could be direct or nested
+          const settingValue = settingData.value || (settingData.data && settingData.data.value)
+          
+          if (settingValue) {
+            const value = parseFloat(settingValue)
+            if (!isNaN(value) && value > 0) {
+              console.log('Loaded task radius distance from settings:', value)
+              setRadiusDistance(value)
+            } else {
+              console.warn('Invalid task radius distance value from settings:', settingValue)
+            }
+          } else {
+            console.warn('No value found in task radius distance setting')
           }
+        } else {
+          console.warn('Failed to load task radius distance setting:', response.error || response.message)
         }
       } catch (error) {
         console.error('Error loading task radius distance:', error)
-        // Keep default value on error
+        // Keep default value (20000 meters) on error
       }
     }
     loadRadiusDistance()
@@ -192,32 +224,14 @@ export function CompleteTaskDialog({
     })
   }
 
-  const handleFileChange = (field: 'fileBefore' | 'fileAfter' | 'fileScan', file: File | null) => {
+  const handleFileChange = async (field: 'fileBefore' | 'fileAfter' | 'fileScan', file: File | null) => {
     if (file) {
-      // For keamanan role with need_validation: only allow after attachment
-      if (task?.is_need_validation && (userRoleName?.toLowerCase() === 'keamanan' || userRoleName?.toLowerCase() === 'security')) {
-        if (field === 'fileBefore') {
-          toast.error('Untuk role keamanan, hanya boleh mengupload foto After')
-          return
-        }
-        // Clear fileBefore if it exists when uploading after
-        if (field === 'fileAfter') {
-          setFormData(prev => ({
-            ...prev,
-            fileBefore: null,
-            fileAfter: file
-          }))
-          setFilePreview(prev => {
-            const newPreview = { ...prev }
-            delete newPreview.before
-            return newPreview
-          })
-        } else {
-          setFormData(prev => ({ ...prev, [field]: file }))
-        }
-      } else {
-        setFormData(prev => ({ ...prev, [field]: file }))
+      if (!isFileWithinUploadLimit(file)) {
+        toast.error(uploadLimitErrorLabel(file.name))
+        return
       }
+      const compressed = await compressImageFile(file)
+      setFormData(prev => ({ ...prev, [field]: compressed }))
       
       // Read and set preview for the new file
       const reader = new FileReader()
@@ -225,7 +239,7 @@ export function CompleteTaskDialog({
         const previewKey = field === 'fileBefore' ? 'before' : field === 'fileAfter' ? 'after' : 'scan'
         setFilePreview(prev => ({ ...prev, [previewKey]: e.target?.result as string }))
       }
-      reader.readAsDataURL(file)
+      reader.readAsDataURL(compressed)
     } else {
       setFormData(prev => {
         const newData = { ...prev }
@@ -242,6 +256,7 @@ export function CompleteTaskDialog({
   }
 
   const captureFromCamera = async (field: 'fileBefore' | 'fileAfter' | 'fileScan') => {
+    let unblockDialogs: (() => void) | null = null
     try {
       // Check if getUserMedia is available
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -259,8 +274,8 @@ export function CompleteTaskDialog({
         return
       }
 
-      // Mark camera modal as open
       setIsCameraModalOpen(true)
+      unblockDialogs = blockDialogsBelow()
 
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { facingMode: 'environment' } // Prefer back camera on mobile
@@ -276,15 +291,11 @@ export function CompleteTaskDialog({
         canvas.width = video.videoWidth
         canvas.height = video.videoHeight
 
-        // Create modal overlay with very high z-index and pointer-events
-        const modal = document.createElement('div')
-        modal.id = 'camera-modal-overlay'
-        modal.style.cssText = 'position: fixed; inset: 0; background-color: rgba(0, 0, 0, 0.9); display: flex; align-items: center; justify-content: center; z-index: 10000; pointer-events: auto;'
-        
-        // Create modal content
+        const modal = createFullscreenOverlay('camera-modal-overlay')
         const modalContent = document.createElement('div')
         modalContent.id = 'camera-modal-content'
-        modalContent.style.cssText = 'background-color: white; padding: 1rem; border-radius: 0.5rem; max-width: 28rem; width: 100%; margin: 1rem; position: relative; z-index: 10001; pointer-events: auto;'
+        modalContent.style.cssText =
+          'background-color: white; padding: 1rem; border-radius: 0.5rem; max-width: 28rem; width: 100%; margin: 1rem; position: relative; z-index: 10001; pointer-events: auto;'
         
         // Create video element
         const previewVideo = document.createElement('video')
@@ -298,64 +309,11 @@ export function CompleteTaskDialog({
         const buttonContainer = document.createElement('div')
         buttonContainer.style.cssText = 'display: flex; gap: 0.5rem; pointer-events: auto;'
         
-        // Disable pointer events on all dialogs below first
-        const existingDialogs = document.querySelectorAll('[data-radix-dialog-content]')
-        const dialogOverlays = document.querySelectorAll('[data-radix-dialog-overlay]')
-        
-        existingDialogs.forEach((dialog: any) => {
-          dialog.style.pointerEvents = 'none'
-        })
-        
-        dialogOverlays.forEach((overlay: any) => {
-          overlay.style.pointerEvents = 'none'
-        })
-        
-        // Prevent Dialog from closing while camera modal is open
-        const preventDialogClose = (e: Event) => {
-          e.preventDefault()
-          e.stopPropagation()
-          e.stopImmediatePropagation()
-        }
-        
-        // Add event listeners to prevent dialog close
-        existingDialogs.forEach((dialog: any) => {
-          dialog.addEventListener('click', preventDialogClose, true)
-          dialog.addEventListener('mousedown', preventDialogClose, true)
-        })
-        
-        dialogOverlays.forEach((overlay: any) => {
-          overlay.addEventListener('click', preventDialogClose, true)
-          overlay.addEventListener('mousedown', preventDialogClose, true)
-        })
-        
-        // Re-enable pointer events and remove listeners when modal is removed
-        const cleanup = () => {
-          existingDialogs.forEach((dialog: any) => {
-            dialog.style.pointerEvents = ''
-            dialog.removeEventListener('click', preventDialogClose, true)
-            dialog.removeEventListener('mousedown', preventDialogClose, true)
-          })
-          
-          dialogOverlays.forEach((overlay: any) => {
-            overlay.style.pointerEvents = ''
-            overlay.removeEventListener('click', preventDialogClose, true)
-            overlay.removeEventListener('mousedown', preventDialogClose, true)
-          })
-        }
-        
-        // Function to close camera modal and re-enable underlying dialog
         const closeModal = () => {
-          stream.getTracks().forEach(track => track.stop())
-          if (document.body.contains(modal)) {
-            document.body.removeChild(modal)
-          }
-          // Mark camera modal as closed
+          stream.getTracks().forEach((track) => track.stop())
+          removeOverlayFromBody(modal)
           setIsCameraModalOpen(false)
-          // Re-enable pointer events on underlying dialog
-          // Use setTimeout to ensure modal removal is complete
-          setTimeout(() => {
-            cleanup()
-          }, 50)
+          setTimeout(() => unblockDialogs?.(), 50)
         }
         
         // Create capture button
@@ -370,10 +328,10 @@ export function CompleteTaskDialog({
           e.stopPropagation()
           e.stopImmediatePropagation()
           context?.drawImage(previewVideo, 0, 0)
-          canvas.toBlob((blob) => {
+          canvas.toBlob(async (blob) => {
             if (blob) {
-              const file = new File([blob], `capture-${Date.now()}.jpg`, { type: 'image/jpeg' })
-              handleFileChange(field, file)
+              const raw = new File([blob], `capture-${Date.now()}.jpg`, { type: 'image/jpeg' })
+              await handleFileChange(field, raw)
             }
             // Close only the camera modal, keep Complete Task dialog open
             closeModal()
@@ -435,9 +393,11 @@ export function CompleteTaskDialog({
           }
         }, true)
         
-        document.body.appendChild(modal)
+        mountOverlayOnBody(modal)
       })
     } catch (error: any) {
+      setIsCameraModalOpen(false)
+      unblockDialogs?.()
       console.error('Error accessing camera:', error)
       const errorName = error?.name || 'UnknownError'
       let errorMsg = 'Gagal mengakses kamera'
@@ -459,6 +419,16 @@ export function CompleteTaskDialog({
   }
 
   const handleScanBarcode = async () => {
+    let unblockDialogs: (() => void) | null = null
+    let statusUpdateInterval: ReturnType<typeof setInterval> | null = null
+    let scanModal: HTMLDivElement | null = null
+
+    const dismissOverlayOnly = () => {
+      if (scanModal) removeOverlayFromBody(scanModal)
+      setIsCameraModalOpen(false)
+      setTimeout(() => unblockDialogs?.(), 50)
+    }
+
     try {
       // Check if getUserMedia is available
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -480,29 +450,43 @@ export function CompleteTaskDialog({
         return
       }
 
-      // Create modal first
-      const modal = document.createElement('div')
-      modal.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50'
-      modal.innerHTML = `
-        <div class="bg-white p-4 rounded-lg max-w-md w-full">
-          <div id="qr-reader" class="w-full mb-4 rounded"></div>
-          <p id="scan-status" class="text-sm text-center text-gray-600 mb-4">Meminta izin kamera...</p>
-          <div class="flex gap-2">
-            <button id="cancel-scan-btn" class="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded">Batal</button>
-          </div>
-        </div>
-      `
-      document.body.appendChild(modal)
+      setIsCameraModalOpen(true)
+      unblockDialogs = blockDialogsBelow()
 
-      const qrReaderElement = modal.querySelector('#qr-reader') as HTMLDivElement
-      const scanStatus = modal.querySelector('#scan-status') as HTMLParagraphElement
-      const cancelBtn = modal.querySelector('#cancel-scan-btn') as HTMLButtonElement
+      scanModal = createFullscreenOverlay('qr-scan-modal-overlay')
+      const modal = scanModal
+      const modalContent = document.createElement('div')
+      modalContent.style.cssText =
+        'background-color: white; padding: 1rem; border-radius: 0.5rem; max-width: 28rem; width: calc(100% - 2rem); position: relative; z-index: 10001; pointer-events: auto;'
+
+      const qrReaderElement = document.createElement('div')
+      qrReaderElement.id = 'qr-reader'
+      qrReaderElement.className = 'w-full mb-4 rounded'
+
+      const scanStatus = document.createElement('p')
+      scanStatus.id = 'scan-status'
+      scanStatus.className = 'text-sm text-center text-gray-600 mb-4'
+      scanStatus.textContent = 'Meminta izin kamera...'
+
+      const buttonRow = document.createElement('div')
+      buttonRow.className = 'flex gap-2'
+
+      const cancelBtn = document.createElement('button')
+      cancelBtn.id = 'cancel-scan-btn'
+      cancelBtn.type = 'button'
+      cancelBtn.className = 'flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded'
+      cancelBtn.textContent = 'Batal'
+
+      buttonRow.appendChild(cancelBtn)
+      modalContent.appendChild(qrReaderElement)
+      modalContent.appendChild(scanStatus)
+      modalContent.appendChild(buttonRow)
+      modal.appendChild(modalContent)
+      mountOverlayOnBody(modal)
 
       if (!qrReaderElement || !scanStatus) {
         toast.error('Gagal membuat elemen scanner')
-        if (document.body.contains(modal)) {
-          document.body.removeChild(modal)
-        }
+        dismissOverlayOnly()
         return
       }
 
@@ -520,9 +504,7 @@ export function CompleteTaskDialog({
         tempStream = null
       } catch (permissionError: any) {
         const errorName = permissionError?.name || 'UnknownError'
-        if (document.body.contains(modal)) {
-          document.body.removeChild(modal)
-        }
+        dismissOverlayOnly()
         
         if (errorName === 'NotAllowedError' || errorName === 'PermissionDeniedError') {
           toast.error('Izin kamera diperlukan untuk scan barcode. Silakan berikan izin kamera di pengaturan browser.')
@@ -540,21 +522,21 @@ export function CompleteTaskDialog({
       let isScanning = true
       let isStopped = false
 
-      // Helper function to safely stop scanner
-      const safeStopScanner = async () => {
-        if (isStopped) {
-          return
-        }
-        isStopped = true
-        isScanning = false
-        try {
-          await html5QrCode.stop()
-        } catch (err: any) {
-          // Ignore error if scanner is already stopped
-          if (err?.message && err.message.includes('not running')) {
-          } else {
+      const dismissScanOverlay = async (stopScanner = false) => {
+        if (stopScanner && !isStopped) {
+          isStopped = true
+          isScanning = false
+          try {
+            await html5QrCode.stop()
+          } catch {
+            /* scanner may already be stopped */
           }
         }
+        if (statusUpdateInterval) {
+          clearInterval(statusUpdateInterval)
+          statusUpdateInterval = null
+        }
+        dismissOverlayOnly()
       }
 
       // Get camera configuration after permission is granted
@@ -604,14 +586,44 @@ export function CompleteTaskDialog({
           
           // Parse QR code data
           let qrData: { code?: string; latitude?: number; longitude?: number } = {}
+          let scannedCodeValue: string = ''
           try {
             qrData = JSON.parse(decodedText)
             console.log('[SCAN] Parsed QR data:', qrData)
+            // Extract scan code from QR data
+            scannedCodeValue = qrData.code || decodedText
           } catch (e) {
             console.error('[SCAN] Failed to parse QR code as JSON:', e)
             // If not JSON, just use the text as scan code
+            scannedCodeValue = decodedText
             qrData = { code: decodedText }
           }
+
+          // Validate scan code matches task scan code
+          const taskScanCode = task?.scan_code?.trim()
+          const isValidScanCode = taskScanCode && scannedCodeValue.trim() === taskScanCode
+          
+          console.log('[SCAN] Scan code validation:', {
+            scannedCode: scannedCodeValue,
+            taskScanCode: taskScanCode,
+            isValid: isValidScanCode
+          })
+
+          if (!isValidScanCode) {
+            // Scan code doesn't match
+            scanStatus.textContent = 'QR Code tidak sesuai dengan task ini!'
+            scanStatus.className = 'text-sm text-center text-red-600 mb-4 font-medium'
+            setIsScanCodeValid(false)
+            setScannedCode(scannedCodeValue)
+            toast.error(`QR Code tidak sesuai! Task ini memerlukan scan code: ${taskScanCode || 'tidak ada'}`)
+            
+            await dismissScanOverlay(true)
+            return
+          }
+
+          // Scan code is valid, continue with location check
+          setIsScanCodeValid(true)
+          setScannedCode(scannedCodeValue)
 
           // Check location if latitude and longitude are present
           if (qrData.latitude !== undefined && qrData.longitude !== undefined) {
@@ -641,56 +653,12 @@ export function CompleteTaskDialog({
             setIsLocationValid(true) // No location check needed
           }
           
-          // Set scan code first
+          // Set scan code — foto bukti opsional, diambil terpisah setelah scan
           setFormData(prev => ({ ...prev, scanCode: decodedText }))
 
-          // Capture screenshot for evidence and close modal
-          setTimeout(() => {
-            const videoElement = qrReaderElement.querySelector('video') as HTMLVideoElement
-            if (videoElement && videoElement.videoWidth && videoElement.videoHeight) {
-              const canvas = document.createElement('canvas')
-              const context = canvas.getContext('2d')
-              if (context) {
-                canvas.width = videoElement.videoWidth
-                canvas.height = videoElement.videoHeight
-                context.drawImage(videoElement, 0, 0)
-                
-                canvas.toBlob((blob) => {
-                  if (blob) {
-                    console.log('[SCAN] Image captured:', {
-                      size: blob.size,
-                      type: blob.type
-                    })
-                    const file = new File([blob], `scan-${Date.now()}.jpg`, { type: 'image/jpeg' })
-                    setFormData(prev => ({ ...prev, fileScan: file, scanCode: decodedText }))
-                    handleFileChange('fileScan', file)
-                  }
-                  // Stop scanner and close modal after screenshot is captured
-                  safeStopScanner().then(() => {
-                    if (document.body.contains(modal)) {
-                      document.body.removeChild(modal)
-                    }
-                    toast.success('QR Code berhasil di-scan!')
-                  })
-                }, 'image/jpeg', 0.9)
-              } else {
-                // If canvas context is not available, stop scanner and close modal immediately
-                safeStopScanner().then(() => {
-                  if (document.body.contains(modal)) {
-                    document.body.removeChild(modal)
-                  }
-                  toast.success('QR Code berhasil di-scan!')
-                })
-              }
-            } else {
-              // If video element is not available, stop scanner and close modal immediately
-              safeStopScanner().then(() => {
-                if (document.body.contains(modal)) {
-                  document.body.removeChild(modal)
-                }
-                toast.success('QR Code berhasil di-scan!')
-              })
-            }
+          setTimeout(async () => {
+            await dismissScanOverlay(true)
+            toast.success('QR Code berhasil di-scan!')
           }, 100)
         }
       }
@@ -787,15 +755,12 @@ export function CompleteTaskDialog({
           }
           
           toast.error(errorMsg)
-          if (document.body.contains(modal)) {
-            document.body.removeChild(modal)
-          }
+          await dismissScanOverlay(true)
           return
         }
       }
 
-      // Update status periodically
-      let statusUpdateInterval = setInterval(() => {
+      statusUpdateInterval = setInterval(() => {
         if (isScanning) {
           const elapsed = Math.floor(Date.now() / 1000) % 60
           scanStatus.textContent = `Mencari QR code... (${elapsed}s)`
@@ -803,16 +768,13 @@ export function CompleteTaskDialog({
       }, 1000)
 
       cancelBtn.onclick = async () => {
-        isScanning = false
-        clearInterval(statusUpdateInterval)
-        
-        await safeStopScanner()
-        
-        if (document.body.contains(modal)) {
-          document.body.removeChild(modal)
-        }
+        await dismissScanOverlay(true)
       }
     } catch (error: any) {
+      setIsCameraModalOpen(false)
+      unblockDialogs?.()
+      const modalEl = document.getElementById('qr-scan-modal-overlay')
+      if (modalEl) removeOverlayFromBody(modalEl)
       console.error('[SCAN] Unexpected error in handleScanBarcode:', error)
       const errorMessage = error?.message || error?.toString() || 'Unknown error'
       const errorName = error?.name || 'UnknownError'
@@ -838,29 +800,14 @@ export function CompleteTaskDialog({
   const handleSubmit = async () => {
     if (!userTask || !task) return
 
-    // Role-based attachment validation
+    // Validation attachment for task that needs validation
     if (task.is_need_validation) {
       const hasBefore = formData.fileBefore !== null
       const hasAfter = formData.fileAfter !== null
-      
-      // For keamanan role: must have after attachment only
-      if (userRoleName?.toLowerCase() === 'keamanan' || userRoleName?.toLowerCase() === 'security') {
-        if (!hasAfter) {
-          toast.error('Untuk role keamanan, wajib mengupload foto After')
-          return
-        }
-        if (hasBefore) {
-          toast.error('Untuk role keamanan, hanya boleh mengupload foto After')
-          return
-        }
-      }
-      
-      // For kebersihan role: must have both before AND after attachments
-      if (userRoleName?.toLowerCase() === 'kebersihan' || userRoleName?.toLowerCase() === 'cleaning') {
-        if (!hasBefore || !hasAfter) {
-          toast.error('Untuk role kebersihan, wajib mengupload foto Before dan After')
-          return
-        }
+
+      if (!hasBefore || !hasAfter) {
+        toast.error('Task validasi wajib upload foto Before dan After')
+        return
       }
     }
 
@@ -868,6 +815,27 @@ export function CompleteTaskDialog({
     if (task.is_scan) {
       if (!formData.scanCode || formData.scanCode.trim() === '') {
         toast.error('Task ini memerlukan scan barcode. Silakan scan QR code terlebih dahulu.')
+        return
+      }
+
+      // Validate scan code matches task scan code
+      let scannedCodeValue = ''
+      try {
+        const qrData = JSON.parse(formData.scanCode)
+        scannedCodeValue = qrData.code || formData.scanCode
+      } catch (e) {
+        scannedCodeValue = formData.scanCode
+      }
+
+      const taskScanCode = task.scan_code?.trim()
+      if (taskScanCode && scannedCodeValue.trim() !== taskScanCode) {
+        toast.error(`QR Code tidak sesuai dengan task ini! Task ini memerlukan scan code: ${taskScanCode}`)
+        return
+      }
+
+      // Check if scan code validation failed
+      if (isScanCodeValid === false) {
+        toast.error('QR Code tidak sesuai dengan task ini. Silakan scan QR code yang benar.')
         return
       }
 
@@ -913,35 +881,50 @@ export function CompleteTaskDialog({
       }
 
       // Check if we need to upload files
-      const hasFiles = formData.fileBefore || formData.fileAfter || formData.fileScan
+      const staged: { file: File; field: 'before' | 'after' | 'scan' }[] = []
+      if (formData.fileBefore) staged.push({ file: formData.fileBefore, field: 'before' })
+      if (formData.fileAfter) staged.push({ file: formData.fileAfter, field: 'after' })
+      if (task.is_scan && formData.fileScan) {
+        staged.push({ file: formData.fileScan, field: 'scan' })
+      }
 
-      if (hasFiles) {
-        const formDataToSend = new FormData()
-        if (formData.remark) {
-          formDataToSend.append('notes', formData.remark)
-        }
-        if (formData.fileBefore) {
-          formDataToSend.append('file_before', formData.fileBefore)
-        }
-        if (formData.fileAfter) {
-          formDataToSend.append('file_after', formData.fileAfter)
-        }
-        if (formData.fileScan) {
-          formDataToSend.append('file_scan', formData.fileScan)
-        }
-        if (formData.scanCode) {
-          formDataToSend.append('scan_code', formData.scanCode)
+      if (staged.length > 0) {
+        const compressed = await compressFilesForCompleteTask(staged)
+        const evidences: { url: string; type: string }[] = []
+
+        for (const item of compressed) {
+          const uploadRes = await userTasksApi.uploadUserTaskEvidenceFile(item.file)
+          if (!uploadRes.success) {
+            throw new Error(
+              uploadRes.error ||
+                `Gagal upload ${item.field} (${formatFileSize(item.file.size)})`
+            )
+          }
+          const payload = uploadRes.data as { url?: string | string[] } | undefined
+          const url = Array.isArray(payload?.url)
+            ? payload.url[0]
+            : typeof payload?.url === 'string'
+              ? payload.url
+              : null
+          if (!url) {
+            throw new Error(`Upload ${item.field} tidak mengembalikan URL file`)
+          }
+          evidences.push({
+            url,
+            type: item.field === 'scan' ? 'after' : item.field,
+          })
         }
 
-        const response = await userTasksApi.completeUserTaskWithFiles(Number(userTaskId), formDataToSend)
+        const response = await userTasksApi.completeUserTask(Number(userTaskId), {
+          notes: formData.remark || undefined,
+          evidences,
+        })
 
         if (response.success) {
           toast.success('Task berhasil diselesaikan')
           onOpenChange(false)
           resetForm()
           onComplete()
-          
-          // Check if this is a child task and auto-complete parent if all children are done
           await checkAndCompleteParentTask(userTask)
         } else {
           throw new Error(response.error || 'Gagal menyelesaikan task')
@@ -966,7 +949,12 @@ export function CompleteTaskDialog({
       }
     } catch (error: any) {
       console.error('Error completing task:', error)
-      toast.error(error.message || 'Terjadi kesalahan saat menyelesaikan task')
+      const msg = String(error?.message || '')
+      if (msg.includes('413') || msg.toLowerCase().includes('too large') || msg.toLowerCase().includes('melebihi')) {
+        toast.error('Ukuran foto terlalu besar. Coba ambil ulang foto atau kurangi jumlah lampiran.')
+      } else {
+        toast.error(error.message || 'Terjadi kesalahan saat menyelesaikan task')
+      }
     } finally {
       setIsSubmitting(false)
     }
@@ -984,6 +972,8 @@ export function CompleteTaskDialog({
     setQrLocation(null)
     setIsLocationValid(null)
     setIsCheckingLocation(false)
+    setIsScanCodeValid(null)
+    setScannedCode(null)
   }
 
   // Check if all child tasks are completed and auto-complete parent if needed
@@ -1103,69 +1093,52 @@ export function CompleteTaskDialog({
           {/* Validation Form (if is_need_validation) */}
           {task.is_need_validation && (
             <div className="space-y-4">
-              {/* Role-based requirement message */}
-              {(userRoleName?.toLowerCase() === 'keamanan' || userRoleName?.toLowerCase() === 'security') && (
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
-                  <p className="text-sm text-blue-800">
-                    <strong>Catatan:</strong> Untuk role keamanan, Anda wajib mengupload foto After
-                  </p>
-                </div>
-              )}
-              {(userRoleName?.toLowerCase() === 'kebersihan' || userRoleName?.toLowerCase() === 'cleaning') && (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-md">
-                  <p className="text-sm text-amber-800">
-                    <strong>Catatan:</strong> Untuk role kebersihan, Anda wajib mengupload foto Before <strong>dan</strong> After
-                  </p>
-                </div>
-              )}
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-md">
+                <p className="text-sm text-amber-800">
+                  <strong>Catatan:</strong> Task validasi wajib mengupload foto <strong>Before</strong> dan <strong>After</strong>
+                </p>
+              </div>
               
-              {/* Foto Before - hanya untuk kebersihan */}
-              {(userRoleName?.toLowerCase() === 'kebersihan' || userRoleName?.toLowerCase() === 'cleaning') && (
-                <div>
-                  <Label>Foto Before <span className="text-red-500">*</span></Label>
-                  <div className="flex gap-2 mt-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => captureFromCamera('fileBefore')}
-                      className="flex items-center gap-2"
-                    >
-                      <Camera className="h-4 w-4" />
-                      Ambil Foto
+              <div>
+                <Label>Foto Before <span className="text-red-500">*</span></Label>
+                <div className="flex gap-2 mt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => captureFromCamera('fileBefore')}
+                    className="flex items-center gap-2"
+                  >
+                    <Camera className="h-4 w-4" />
+                    Ambil Foto
+                  </Button>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) handleFileChange('fileBefore', file)
+                    }}
+                    className="hidden"
+                    id="file-before-input"
+                  />
+                  <label htmlFor="file-before-input">
+                    <Button type="button" variant="outline" asChild>
+                      <span>Pilih File</span>
                     </Button>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0]
-                        if (file) handleFileChange('fileBefore', file)
-                      }}
-                      className="hidden"
-                      id="file-before-input"
-                    />
-                    <label htmlFor="file-before-input">
-                      <Button type="button" variant="outline" asChild>
-                        <span>Pilih File</span>
-                      </Button>
-                    </label>
-                  </div>
-                  {filePreview.before && (
-                    <img
-                      src={filePreview.before}
-                      alt="Before"
-                      className="mt-2 w-full max-w-xs h-32 object-cover rounded"
-                    />
-                  )}
+                  </label>
                 </div>
-              )}
+                {filePreview.before && (
+                  <img
+                    src={filePreview.before}
+                    alt="Before"
+                    className="mt-2 w-full max-w-xs h-32 object-cover rounded"
+                  />
+                )}
+              </div>
 
               <div>
-                <Label>Foto After {
-                  ((userRoleName?.toLowerCase() === 'kebersihan' || userRoleName?.toLowerCase() === 'cleaning') || 
-                   (userRoleName?.toLowerCase() === 'keamanan' || userRoleName?.toLowerCase() === 'security')) && 
-                  <span className="text-red-500">*</span>
-                }</Label>
+                <Label>Foto After <span className="text-red-500">*</span></Label>
                 <div className="flex gap-2 mt-2">
                   <Button
                     type="button"
@@ -1220,18 +1193,24 @@ export function CompleteTaskDialog({
                   <span className="sm:hidden">Scan</span>
                 </Button>
               </div>
-              {filePreview.scan && (
-                <img
-                  src={filePreview.scan}
-                  alt="Scan"
-                  className="mt-2 w-full max-w-xs h-24 sm:h-32 object-cover rounded"
-                />
-              )}
               {formData.scanCode && (
                 <div className="mt-2 space-y-2">
                   <div className="p-2 bg-gray-100 rounded text-xs sm:text-sm break-all">
-                    <span className="font-medium">Kode:</span> {formData.scanCode}
+                    <span className="font-medium">Kode:</span> {scannedCode || formData.scanCode}
                   </div>
+                  {/* Scan Code Validation Status */}
+                  {isScanCodeValid === false && (
+                    <div className="flex items-start sm:items-center gap-2 text-xs sm:text-sm text-red-600 font-medium">
+                      <span className="text-base sm:text-lg flex-shrink-0">✗</span>
+                      <span className="break-words">QR Code tidak sesuai dengan task ini. Task ini memerlukan scan code: {task.scan_code || 'tidak ada'}</span>
+                    </div>
+                  )}
+                  {isScanCodeValid === true && (
+                    <div className="flex items-start sm:items-center gap-2 text-xs sm:text-sm text-green-600 font-medium">
+                      <span className="text-base sm:text-lg flex-shrink-0">✓</span>
+                      <span className="break-words">QR Code sesuai dengan task ini</span>
+                    </div>
+                  )}
                   {qrLocation && (
                     <div className="space-y-1.5">
                       {isCheckingLocation && (
@@ -1259,6 +1238,58 @@ export function CompleteTaskDialog({
                         </div>
                       )}
                     </div>
+                  )}
+                </div>
+              )}
+
+              {isScanCodeValid === true && formData.scanCode && (
+                <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
+                  <Label>Foto Bukti <span className="text-muted-foreground font-normal">(opsional)</span></Label>
+                  <p className="text-xs text-muted-foreground">
+                    Setelah scan berhasil, Anda dapat melampirkan foto jika diperlukan.
+                  </p>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => captureFromCamera('fileScan')}
+                      className="flex items-center gap-2"
+                    >
+                      <Camera className="h-4 w-4" />
+                      Ambil Foto
+                    </Button>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) handleFileChange('fileScan', file)
+                        e.target.value = ''
+                      }}
+                      className="hidden"
+                      id="file-scan-input"
+                    />
+                    <label htmlFor="file-scan-input">
+                      <Button type="button" variant="outline" asChild>
+                        <span>Pilih File</span>
+                      </Button>
+                    </label>
+                    {formData.fileScan && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => handleFileChange('fileScan', null)}
+                      >
+                        Hapus Foto
+                      </Button>
+                    )}
+                  </div>
+                  {filePreview.scan && (
+                    <img
+                      src={filePreview.scan}
+                      alt="Foto bukti"
+                      className="mt-2 w-full max-w-xs h-24 sm:h-32 object-cover rounded"
+                    />
                   )}
                 </div>
               )}
@@ -1292,13 +1323,45 @@ export function CompleteTaskDialog({
             </Button>
             <Button
               onClick={handleSubmit}
-              disabled={
-                isSubmitting || 
-                isCheckingLocation || 
-                (qrLocation !== null && isLocationValid === false) ||
-                (task.is_scan && (!formData.scanCode || formData.scanCode.trim() === '')) ||
-                (task.is_need_validation && !formData.fileBefore && !formData.fileAfter)
-              }
+              disabled={(() => {
+                // Always disabled if submitting or checking location
+                if (isSubmitting || isCheckingLocation) {
+                  return true
+                }
+
+                // Validation for scan barcode
+                if (task.is_scan) {
+                  // Must have scan code
+                  if (!formData.scanCode || formData.scanCode.trim() === '') {
+                    return true
+                  }
+                  
+                  // Scan code must be valid (match task scan code)
+                  if (isScanCodeValid === false) {
+                    return true
+                  }
+                  
+                  // If QR code has location data, location must be valid
+                  if (qrLocation !== null) {
+                    // Disabled if location is invalid or validation hasn't completed
+                    if (isLocationValid === false || isLocationValid === null) {
+                      return true
+                    }
+                    // Only enabled if location is valid (isLocationValid === true)
+                  }
+                  // If no location data, just need scan code (already checked above)
+                }
+
+                // Validation for photo attachments (is_need_validation)
+                if (task.is_need_validation) {
+                  // For validation task: always need both before and after
+                  if (!formData.fileBefore || !formData.fileAfter) {
+                    return true
+                  }
+                }
+
+                return false
+              })()}
             >
               {isSubmitting ? (
                 <>

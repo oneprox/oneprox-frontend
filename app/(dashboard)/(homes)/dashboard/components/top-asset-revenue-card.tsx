@@ -3,16 +3,20 @@
 import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Home, Loader2 } from "lucide-react"
-import { dashboardApi, TopAssetRevenue } from "@/lib/api"
+import { dashboardApi, TopAssetRevenue, assetsApi } from "@/lib/api"
 import LoadingSkeleton from "@/components/loading-skeleton"
 
-export default function TopAssetRevenueCard() {
+interface TopAssetRevenueCardProps {
+  selectedAssetId?: string
+}
+
+export default function TopAssetRevenueCard({ selectedAssetId = 'all' }: TopAssetRevenueCardProps) {
   const [topAssets, setTopAssets] = useState<TopAssetRevenue[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     loadTopAssets()
-  }, [])
+  }, [selectedAssetId])
 
   const loadTopAssets = async () => {
     try {
@@ -20,10 +24,34 @@ export default function TopAssetRevenueCard() {
       const response = await dashboardApi.getTopAssetRevenue()
       
       if (response.success && response.data) {
-        // Response.data should be the array directly from createResponse
-        const responseData = response.data as any;
-        const data = Array.isArray(responseData.data) ? responseData.data : []
+        // Backend returns array directly in response.data
+        let data = Array.isArray(response.data) ? response.data : []
+        
+        // Filter by selected asset if needed
+        if (selectedAssetId !== 'all') {
+          // Get asset name to filter by name (since TopAssetRevenue doesn't have id)
+          try {
+            const assetResponse = await assetsApi.getAsset(selectedAssetId)
+            if (assetResponse.success && assetResponse.data) {
+              const assetData = assetResponse.data as any
+              const asset = assetData.data || assetData
+              const assetName = asset.name
+              // Filter to show only the selected asset by name
+              data = data.filter((item: TopAssetRevenue) => item.name === assetName)
+            } else {
+              // If asset not found, show empty
+              data = []
+            }
+          } catch (err) {
+            console.error('Error loading asset for filtering:', err)
+            data = []
+          }
+        }
+        
         setTopAssets(data)
+      } else {
+        console.error('Top Asset Revenue API Error:', response.error || response.message)
+        setTopAssets([])
       }
     } catch (err) {
       console.error('Error loading top asset revenue:', err)
