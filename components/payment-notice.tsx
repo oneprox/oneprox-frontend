@@ -18,11 +18,20 @@ export function PaymentNotice() {
 
   const [open, setOpen] = useState(false);
 
+  // Local calendar day as YYYY-MM-DD, used to show the popup once per day.
+  const today = () => {
+    const d = new Date();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${d.getFullYear()}-${mm}-${dd}`;
+  };
+
   useEffect(() => {
     if (!enabled) return;
-    // Shows once per browser session; reappears on next login / new session.
+    // Shows once per day; dismissing hides it only for the rest of today,
+    // then it reappears the next day.
     try {
-      if (sessionStorage.getItem("payment_notice_dismissed") !== "1") {
+      if (localStorage.getItem("payment_notice_dismissed_date") !== today()) {
         setOpen(true);
       }
     } catch {
@@ -34,7 +43,7 @@ export function PaymentNotice() {
 
   const close = () => {
     try {
-      sessionStorage.setItem("payment_notice_dismissed", "1");
+      localStorage.setItem("payment_notice_dismissed_date", today());
     } catch {
       /* ignore */
     }
