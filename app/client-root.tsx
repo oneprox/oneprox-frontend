@@ -7,6 +7,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import Header from "@/components/layout/header";
 import Footer from "@/components/layout/footer";
 import { RouteGuard } from "@/components/route-guard";
+import { PaymentNotice } from "@/components/payment-notice";
 
 export function ClientRoot({
   defaultOpen,
@@ -29,6 +30,7 @@ export function ClientRoot({
           <Header />
           <main className="min-w-0 flex-1">
             <div className="content-area min-h-0 w-full min-w-0 max-w-full bg-neutral-100 px-4 pb-4 pt-20 dark:bg-[#1e2734] md:px-6 md:pb-6 md:pt-24">
+              <PaymentNotice />
               <RouteGuard>{children}</RouteGuard>
             </div>
           </main>
